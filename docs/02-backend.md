@@ -915,6 +915,13 @@ fallback, including when its other owner has no active rule. Money attribution a
 rejects unknown barcodes and conflicting supplied exact identifiers. POSM keeps sending one actual
 scan code; `triggerBarcode` in the response stays that actual code, not the first catalogue alias.
 
+Both normalized and fuzzy name fallback retain numeric multiplicity, dose units (including
+concentration denominators), and release modifiers such as DSR. Explicit recognized dosage forms
+must agree; known capsule/tablet/plural abbreviations are normalized without lowering the fuzzy
+threshold. No new acceptance path for omitted forms is added: existing similarity and ambiguity
+checks still apply. Name fallback remains secondary to exact identifiers and does not establish
+clinical interchangeability.
+
 ## Dashboard Journal
 
 Each recommended product in one receipt retains its own nonnegative attribution
