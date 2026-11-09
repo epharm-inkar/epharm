@@ -1,0 +1,14 @@
+{
+  "sampleCount": 19,
+  "note": "Sampled container peaks, not continuous maxima; CPU100% is one core.",
+  "containers": {
+    "backend": {
+      "cpuPercentMax": 152.07,
+      "memoryMiBMax": 927.7
+    },
+    "postgres": {
+      "cpuPercentMax": 26.8,
+      "memoryMiBMax": 156.9
+    }
+  }
+}

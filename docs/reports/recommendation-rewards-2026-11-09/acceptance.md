@@ -137,3 +137,46 @@ passed. Results are retained in `checks.json`. Containers, networks and five syn
 database volumes created for these local runs were removed after acceptance. Docker
 Desktop, started for this task, was stopped again. Private fixtures and diagnostics
 were retained; foreign projects and user/production data were not pruned.
+
+## Integration with main updated during the task
+
+After the preceding acceptance, the local `origin/main` reference advanced to
+`fbb4545e` (PR #158). Its release-publication migration V099 is preserved unchanged;
+our local unapplied reward migration was renamed V100. The updated main was merged
+only into the feature branch, in `01022001`; no main promotion or production action
+was performed. The original load artifacts above remain historical measurements of
+`127a47e6` and are not silently presented as measurements of the newer binary.
+
+Both native popup paths were retained: main's actual-visibility checks, 60-second
+expiration/reopen and background shown-ACK buffer, plus our first immutable display
+snapshot. `PendingShownPings` now forwards an optional frozen reward baseline through
+that same durable path. A 256 KiB per-record /8 MiB serialized buffer bound admits a
+512-line baseline without restoring unbounded memory or synchronous SQLite writes.
+Legacy calls remain valid; root reward flags remain off by default.
+
+`checks-after-main-merge.json` records **172/172 backend checks, zero failures/skips**,
+including the previously tested monetary flow, nine new identity-conflict checks,
+five source-bound, four receipt-race and nine shared-wallet concurrency checks.
+The merged V099+V100 schema booted successfully. Native checks: **664 PASS, 14 explicit
+Windows-only SKIP, zero FAIL** with canonical physical TMPDIR. The default macOS
+`/var` temp alias caused 40 initial test failures under main's new symlink guards;
+using `/private/var/...` retained those guards and passed the portable suite.
+The 11 shown-buffer tests passed, including frozen first baseline/restart and bounds.
+WPF cross-build had zero errors/warnings; Windows runtime was not claimed. Frontend
+code was unchanged by this main update; its 65 checks, lint and build remain valid.
+
+The merged candidate JAR SHA is
+`75d4eec7767060afe7c5578be9ce5f9362121e08150e8d9ddeef3938c6c48d3e`.
+A fresh 1500-actor measurement on this binary is retained separately below.
+
+Merged-candidate result: **1500/1500 actors, peak authenticated actors1500,
+peak concurrent HTTP requests50, elapsed185.02s**.
+All HTTP gates and the read-only SQL oracle passed;1440 recipients ×400KZT
+=**576000KZT**, no money for60 negative controls, no duplicate sources, no
+HTTP/transport/429/semantic failures and zero PostgreSQL deadlocks. First-sale
+p95/p99=47.11/601.46ms; recommendation
+p95/p99=23.18/749.57ms. Same thresholds, real125s payment
+delay and60s arrival spread; no shortened clock or weakened assertions.
+Artifacts: `load-1500-after-main-merge.json`, `oracle-1500-after-main-merge.txt`,
+`resources-1500-after-main-merge.json`. Test containers/network and this additional
+synthetic DB volume were removed after recording the results.
