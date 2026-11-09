@@ -120,6 +120,7 @@ data class RecommendResponse(
     val sessionId: String,
     val recommendations: List<RecommendationDto>,
     val conflicts: List<ConflictDto> = emptyList(),
+    val rewardEvidenceProtocol: Int? = null,
 )
 
 /** Результат рекомендации: фармацевт принял замену/cross-sell или пропустил. */
@@ -145,6 +146,7 @@ data class OutcomeResponse(
 data class MarkShownRequest(
     @field:NotNull
     val shownAt: java.time.Instant,
+    @field:Valid val rewardEvidence: RewardShownEvidence? = null,
 )
 
 data class MarkShownResponse(val eventId: String, val ok: Boolean)
@@ -202,6 +204,7 @@ data class PosSaleRequest(
     @field:NotNull
     @field:Valid
     val items: List<PosSaleItemDto> = emptyList(),
+    @field:Valid val rewardEvidence: RewardSaleEvidence? = null,
     @field:NotNull
     val printedAt: java.time.Instant,
 )

@@ -13,6 +13,84 @@ namespace CustomerDisplay.Core.Tests
     public sealed class StandardNReceiptLifecycleTests
     {
         [Fact]
+        public void RewardOptInCapturesRealSnapshotShowIncreaseAndLaterVerifiedPhysicalSale()
+        {
+            using var window = new MainWindow();
+            window.EnableRewardEvidence();
+            var receipt = RewardReceipt(100, 1);
+            window.Observe(receipt);
+            var shown = window.ShowReward("event-synthetic", "4601164003157");
+            Assert.True(shown!.CartComplete);
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(119));
+            var increased = RewardReceipt(100, 2);
+            window.Observe(increased);
+            window.AdvanceReceiptTime(TimeSpan.FromMinutes(5));
+            window.PrintWithStates(Posted(increased, 100));
+            var report = Assert.Single(window.Reports);
+            Assert.True(report.RewardEvidence!.JournalComplete);
+            Assert.Equal(shown.CheckoutSessionId, report.RewardEvidence.CheckoutSessionId);
+            var change = Assert.Single(report.RewardEvidence.Changes);
+            Assert.Equal((1m, 2m, "event-synthetic"), (change.BeforeQty, change.AfterQty, change.EventId));
+            Assert.Equal(100, report.RewardEvidence.Completion.SourceDocumentId);
+            Assert.Equal(-200m, report.RewardEvidence.Completion.SignedTotal);
+            Assert.Empty(Directory.GetFiles(Path.Combine(window.StorageRoot, "receipts", "reward-evidence"), "*.json"));
+        }
+
+        [Fact]
+        public void FailedDatabaseReadRetainsOrdinarySaleButRewardEvidenceRequiresReview()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            var receipt = RewardReceipt(100, 1); window.Observe(receipt);
+            window.ShowReward("event-synthetic", "4601164003157");
+            window.DatabaseFailed();
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(10));
+            var increased = RewardReceipt(100, 2); window.Observe(increased);
+            window.PrintWithStates(Posted(increased, 100));
+            var report = Assert.Single(window.Reports);
+            Assert.False(report.RewardEvidence!.JournalComplete);
+            Assert.Single(report.RewardEvidence.Changes);
+        }
+
+        [Fact]
+        public void LogDeleteReaddBetweenEqualDatabaseSnapshotsCannotReviveEarlierEligibleUnits()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.Observe(RewardReceipt(100, 1)); window.ShowReward("event-synthetic", "4601164003157");
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(10));
+            var increased = RewardReceipt(100, 2); window.Observe(increased);
+            window.AdvanceReceiptTime(TimeSpan.FromMinutes(3));
+            window.ObserveLogLine(Item(10, "Item", "4601164003157", 100, 0));
+            window.ObserveLogLine(Item(10, "Item", "4601164003157", 100, 2));
+            window.Observe(increased); // Same qty as the last DB read does not prove continuity.
+            window.PrintWithStates(Posted(increased, 100));
+            var evidence = Assert.Single(window.Reports).RewardEvidence!;
+            Assert.False(evidence.JournalComplete);
+            Assert.Single(evidence.Changes);
+        }
+
+        [Fact]
+        public void RewardEvidenceIsOptInAndUnknownNativeUnitsRemainReviewOnly()
+        {
+            using var disabled = new MainWindow(); var receipt = Receipt(100, 10);
+            disabled.Observe(receipt); disabled.PrintWithStates(Posted(receipt, 100));
+            Assert.Null(Assert.Single(disabled.Reports).RewardEvidence);
+            using var enabled = new MainWindow(); enabled.EnableRewardEvidence();
+            enabled.Observe(receipt with { WorkstationId = "9" });
+            Assert.False(enabled.ShowReward("event-synthetic", "4601164003157")!.CartComplete);
+            enabled.PrintWithStates(Posted(receipt with { WorkstationId = "9" }, 100));
+            Assert.False(Assert.Single(enabled.Reports).RewardEvidence!.JournalComplete);
+        }
+
+        private static StandardNReceiptSnapshot RewardReceipt(long document, decimal qty)
+        {
+            var source = Receipt(document, 10);
+            var line = source.Lines.Single() with { Qty = qty, SourceTotal = qty * 100, SignedQuantity = -qty,
+                SignedAmount = -qty * 100, UnitSemantics = "full_package" };
+            return source with { WorkstationId = "9", Lines = [line], Documents = [source.Documents!.Single() with {
+                Lines = [line], SignedTotal = -100 * qty }] };
+        }
+
+        [Fact]
         public void FractionalKztProofIsPreservedWithoutRoundingQueueRetirementOrAck()
         {
             using var window = new MainWindow();
@@ -1128,7 +1206,14 @@ namespace CustomerDisplay
         internal void CloseReceiptObservers() => Dispatcher.Invoke(StopPhysicalReceiptObservers);
         internal void AdvanceReceiptTime(TimeSpan time) => _testReceiptNow += time;
         internal void KeepDraft(string id) { SavedDrafts.Add(id); _activeReceiptDraftId = id; }
-        internal void DatabaseFailed() => _receiptObservations.ReadFailed();
+        internal void DatabaseFailed() { _receiptObservations.ReadFailed(); InvalidateRewardObservation(); }
+        internal void EnableRewardEvidence() {
+            _posmConfig.RecommendationRewardsEnabled = true;
+            _posmConfig.ReceiptCaptureDir = Path.Combine(_storageRoot, "receipts");
+        }
+        internal RewardShownEvidence? ShowReward(string eventId, string barcode) => CaptureRewardShown(new Recommendation {
+            EventId = eventId, RecommendBarcode = barcode, RecommendSku = "catalogue-synthetic",
+        }, _testReceiptNow);
         internal void ObserveMissingForSessions(string?[] workstations, string? selected)
         {
             if (ReceiptObservationGate.CanConfirmEmptyReceipt(workstations, selected, "CASH-1")) Observe(null);
@@ -1194,6 +1279,7 @@ namespace CustomerDisplay
         }
         private sealed class UnavailableReceiptDatabase
         {
+            public string? RewardSourceNamespace => new('a', 64);
             public IReadOnlyList<StandardNReceiptSnapshot>? States { get; set; }
             private ReceiptProbeBlock? _block;
             private ReceiptProbeBlock? _active;

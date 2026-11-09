@@ -76,6 +76,9 @@ namespace CustomerDisplay.Services
         private string? _optionsDbUser;
         private string? _optionsDbPassword;
         private string? _successfulConnectionKey;
+        private string? _rewardSourceNamespace;
+        // Only the digest of the successfully opened source is exposed; never credentials or paths.
+        public string? RewardSourceNamespace => _rewardSourceNamespace;
         private string? _loggedConnectionSource;
         private string? _loggedActiveUserShape;
         private readonly Dictionary<string, string?> _userNameCache = new(StringComparer.OrdinalIgnoreCase);
@@ -1300,6 +1303,7 @@ namespace CustomerDisplay.Services
                 {
                     conn.Open();
                     _successfulConnectionKey = candidate.Key;
+                    _rewardSourceNamespace = RecommendationRewardJournal.SourceNamespace(candidate.Host, candidate.Port, dbPath, _machineName);
                     if (!string.Equals(_loggedConnectionSource, candidate.Source, StringComparison.Ordinal))
                     {
                         _loggedConnectionSource = candidate.Source;

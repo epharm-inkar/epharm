@@ -130,6 +130,7 @@ class LegacyPosmWireContractTest {
                 recommendations, sales, mockk<ScreenService>(), mockk<CdpService>(), releases,
                 presence, identity, authentication, MerchTaskDelivery(tasks,
                     mockk<NativeMerchTaskDeliveryService> { every { ownsNativeDeliveryToken(any()) } returns false }, false),
+                mockk<kz.epharm.posm.service.RecommendationRewardService>(relaxed = true),
             ),
         )
         .setControllerAdvice(GlobalExceptionHandler())
@@ -224,7 +225,7 @@ class LegacyPosmWireContractTest {
     @ValueSource(strings = ["V1057", "V1066"])
     fun `historical completed sale binds quantities instant and nullable fiscal metadata`(version: String) {
         val captured = slot<PosSaleRequest>()
-        every { sales.record(capture(captured), any()) } returns true
+        every { sales.record(capture(captured), any(), any()) } returns true
         mvc.perform(wireRequest(step(version, "sale")))
             .andExpect(status().isOk).andExpect(jsonPath("$.accepted").value(true))
         val sale = captured.captured
@@ -276,7 +277,7 @@ class LegacyPosmWireContractTest {
         listOf(missing, nullTime, badTime, badHash, badMoney).forEach { payload ->
             mvc.perform(wireRequest(step, payload)).andExpect(status().isBadRequest)
         }
-        verify(exactly = 0) { sales.record(any(), any()) }
+        verify(exactly = 0) { sales.record(any(), any(), any()) }
     }
 
     @ParameterizedTest
@@ -419,7 +420,7 @@ class LegacyPosmWireContractTest {
                 .andExpect(status().isUnauthorized)
         }
         verify(exactly = 0) { recommendations.recommend(any()) }
-        verify(exactly = 0) { sales.record(any(), any()) }
+        verify(exactly = 0) { sales.record(any(), any(), any()) }
         verify { jdbc wasNot Called }
     }
 }

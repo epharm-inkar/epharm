@@ -175,6 +175,7 @@ app:
   posm:
     sale-bonus:
       enabled: ${POSM_SALE_BONUS_ENABLED:false}
+      auto-credit-enabled: ${POSM_SALE_BONUS_AUTO_CREDIT_ENABLED:false}
       eligible-after: ${POSM_SALE_BONUS_ELIGIBLE_AFTER:}
     staff-auth-enabled: ${POSM_STAFF_AUTH_ENABLED:false}
     staff-registration-sms-required: ${POSM_STAFF_REGISTRATION_SMS_REQUIRED:true}

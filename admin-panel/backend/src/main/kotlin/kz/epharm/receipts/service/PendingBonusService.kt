@@ -88,12 +88,6 @@ class PendingBonusService(
      */
     @Transactional
     fun expireStale(olderThan: Duration): Int {
-        val cutoff = Instant.now().minus(olderThan)
-        val stale = pendingBonusRepository.findAll().filter {
-            it.status == PendingBonusStatus.awaiting_receipt && it.createdAt.isBefore(cutoff)
-        }
-        stale.forEach { it.status = PendingBonusStatus.expired }
-        pendingBonusRepository.saveAll(stale)
-        return stale.size
+        return pendingBonusRepository.expireAwaitingBefore(Instant.now().minus(olderThan))
     }
 }

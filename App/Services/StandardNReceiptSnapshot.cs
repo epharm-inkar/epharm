@@ -26,6 +26,8 @@ public sealed record StandardNReceiptLine(
     public decimal? SignedQuantity { get; init; }
     public decimal? SignedAmount { get; init; }
     public decimal? SignedPrice { get; init; }
+    // Only an adapter with a proven native unit contract may set full_package.
+    public string UnitSemantics { get; init; } = "unknown";
 }
 
 public sealed record StandardNReceiptDocument(
@@ -52,6 +54,7 @@ public sealed record StandardNReceiptSnapshot(
 {
     public long? LinkId { get; init; }
     public IReadOnlyList<StandardNReceiptDocument>? Documents { get; init; }
+    public string? WorkstationId { get; init; }
 }
 
 // Private on-device observation, never an authorization token or a public sale payload.

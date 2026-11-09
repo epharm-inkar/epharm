@@ -4,7 +4,9 @@ import jakarta.persistence.LockModeType
 import kz.epharm.promo.entity.PromoEntity
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.util.Optional
 
@@ -13,6 +15,11 @@ interface PromoRepository : JpaRepository<PromoEntity, String> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM PromoEntity p WHERE p.id = :id")
     fun findForUpdate(id: String): Optional<PromoEntity>
+
+    /** Serialize against reward reservations and never lower a budget below the current committed spend. */
+    @Modifying(flushAutomatically = true)
+    @Query(value = "UPDATE promos SET budget=:budget WHERE id=:id AND spent<=:budget", nativeQuery = true)
+    fun updateBudgetIfCoversSpent(@Param("id") id: String, @Param("budget") budget: Long): Int
 
     fun findAllByOrderByUpdatedAtDesc(): List<PromoEntity>
     fun findAllByStatusRawOrderByUpdatedAtDesc(statusRaw: String): List<PromoEntity>

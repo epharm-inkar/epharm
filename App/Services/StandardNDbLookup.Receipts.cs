@@ -23,6 +23,7 @@ public sealed partial class StandardNDbLookup
             foreach (var group in groups)
             {
                 var observed = group.Snapshot;
+                string? verifiedWorkstationId;
                 using (var sessionCommand = connection.CreateCommand())
                 {
                     sessionCommand.Transaction = transaction;
@@ -33,7 +34,9 @@ public sealed partial class StandardNDbLookup
                     using var reader = sessionCommand.ExecuteReader();
                     if (!reader.Read()) throw new InvalidDataException("Original receipt session is unavailable.");
                     var session = StandardNReceiptProjection.Session(reader);
+                    verifiedWorkstationId = session.WorkstationId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
                     if (reader.Read() || session.SessionId != observed.SessionId || session.UserId != group.PharmacistId ||
+                        observed.WorkstationId != null && observed.WorkstationId != verifiedWorkstationId ||
                         StaffSessionResolver.CanonicalComputer(session.WorkstationName) != StaffSessionResolver.CanonicalComputer(_machineName) ||
                         StaffSessionResolver.CanonicalComputer(observed.WorkstationName) != StaffSessionResolver.CanonicalComputer(_machineName))
                         throw new InvalidDataException("Original physical receipt session/workstation is not proven.");
@@ -77,7 +80,7 @@ public sealed partial class StandardNDbLookup
                     (document.DeviceNumber!.ToUpperInvariant(), document.FiscalShift, document.FiscalNumber)).ToArray();
                 if (counters.Distinct().Count() != counters.Length)
                     throw new InvalidDataException("Physical fiscal counter identity is ambiguous.");
-                result.Add(observed with { Documents = documents, Lines = lines });
+                result.Add(observed with { Documents = documents, Lines = lines, WorkstationId = verifiedWorkstationId });
             }
             states = result;
             return true;
@@ -133,7 +136,8 @@ public sealed partial class StandardNDbLookup
             if (lines.Count > StandardNReceiptProjection.MaxLines) throw new InvalidDataException("Receipt detail bound exceeded.");
             EnrichReceiptProductIdentity(connection, transaction, lines);
             receipt = StandardNReceiptProjection.Current(session.SessionId, session.WorkstationName!,
-                new(session.UserId, session.UserName, session.SessionId), active, members, lines);
+                new(session.UserId, session.UserName, session.SessionId), active, members, lines) with
+                { WorkstationId = session.WorkstationId?.ToString(System.Globalization.CultureInfo.InvariantCulture) };
             return true;
         }
         catch (Exception error)

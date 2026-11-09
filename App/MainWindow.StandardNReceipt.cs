@@ -47,7 +47,7 @@ namespace CustomerDisplay
                     }
                     else
                     {
-                        Dispatcher.Invoke(() => _receiptObservations.ReadFailed());
+                        Dispatcher.Invoke(() => { _receiptObservations.ReadFailed(); InvalidateRewardObservation(); });
                     }
                 }
                 catch (OperationCanceledException)
@@ -56,7 +56,7 @@ namespace CustomerDisplay
                 }
                 catch (Exception ex)
                 {
-                    Dispatcher.Invoke(() => _receiptObservations.ReadFailed());
+                    Dispatcher.Invoke(() => { _receiptObservations.ReadFailed(); InvalidateRewardObservation(); });
                     Log($"Монитор активного чека Standard-N временно недоступен: {ex.GetBaseException().Message}");
                 }
 
@@ -74,6 +74,8 @@ namespace CustomerDisplay
             ConfirmPhysicalReceiptPrints();
             if (receipt == null)
             {
+                if (_standardNDocumentId.HasValue && _lastFinalizedStandardNDocumentId != _standardNDocumentId)
+                    InvalidateRewardObservation();
                 if (!_standardNReceiptInitialized)
                 {
                     _standardNReceiptInitialized = true;
@@ -140,6 +142,7 @@ namespace CustomerDisplay
                 _standardNDocumentId = receipt.DocumentId;
             }
 
+            var observedPharmacist = receipt.Pharmacist;
             receipt = RememberObservedReceipt(receipt);
 
             var targetPartIds = receipt.Lines.Select(line => line.PartId).ToHashSet();
@@ -213,6 +216,7 @@ namespace CustomerDisplay
                 }
             }
 
+            ObserveRewardSnapshot(receipt with { Pharmacist = observedPharmacist });
             _standardNReceiptInitialized = true;
             if (!changed) return;
 
@@ -263,6 +267,10 @@ namespace CustomerDisplay
             // обновляем поля + ставим новое количество
             var idx = ReceiptItems.IndexOf(existing);
             var previousQty = existing.Qty;
+            // A log-only decrease can be followed by a re-add between full DB polls. Without
+            // exact native line ordering, never keep earlier eligible units alive through it.
+            if (!incoming.SourceDocumentId.HasValue && incoming.Qty < previousQty)
+                _rewardJournal?.MarkIncomplete(_session.SessionId);
             // Plain receipt rows do not notify WPF: replace the bound object without mutating it.
             existing = existing.Clone();
             // A duplicate observation from the other Standard-N source can omit presentation fields.
@@ -290,6 +298,7 @@ namespace CustomerDisplay
         private bool RemoveItemByPartId(int partId)
         {
             var matches = ReceiptItems.Where(item => item.PartId == partId).ToArray();
+            if (matches.Length > 0) _rewardJournal?.MarkIncomplete(_session.SessionId);
             if (matches.Length > 1)
             {
                 Log("Удаление из лога без DOCS.ID неоднозначно; ожидается точный снимок физических строк БД.");
@@ -319,7 +328,7 @@ namespace CustomerDisplay
         /// закрывает popup, открывает новую сессию.
         /// </summary>
         private bool OnReceiptFinalized(string captureSource, StandardNReceiptDocument proof,
-            CheckoutSession capturedSession, DateTimeOffset markerAt)
+            CheckoutSession capturedSession, DateTimeOffset markerAt, StandardNReceiptSnapshot? completionSource = null)
         {
             var sourceDocumentId = proof.DocumentId;
             if (!ReceiptFinalizationRules.IsConfirmedPrint(captureSource) ||
@@ -341,6 +350,7 @@ namespace CustomerDisplay
                 markerAt);
             if (sale != null)
             {
+                AttachRewardSale(sale, capturedSession, proof, completionSource, markerAt);
                 FiscalReceiptCaptureResult? fiscalCapture = null;
                 try
                 {

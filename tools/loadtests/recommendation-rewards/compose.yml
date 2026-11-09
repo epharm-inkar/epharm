@@ -1,0 +1,72 @@
+name: epharm-reward-load
+services:
+  postgres:
+    image: postgres:16-alpine
+    mem_limit: 1536m
+    cpus: 1.5
+    environment:
+      POSTGRES_DB: ${DATABASE:?Generated isolated database required}
+      POSTGRES_USER: reward_load
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?Generated local-only password required}
+    command: [postgres, -c, shared_buffers=256MB, -c, max_connections=40, -c, log_min_duration_statement=500]
+    volumes: [reward-db:/var/lib/postgresql/data]
+    networks: [isolated]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U reward_load -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  backend:
+    image: eclipse-temurin:22-jre
+    mem_limit: 2560m
+    cpus: 2.5
+    working_dir: /app
+    command: [java, -Xms512m, -Xmx1200m, -XX:MaxDirectMemorySize=256m, -jar, /app/app.jar]
+    volumes:
+      - ${BACKEND_JAR:?Explicit local candidate boot JAR required}:/app/app.jar:ro
+    ports: ['127.0.0.1:19081:8080']
+    networks: [isolated]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      SPRING_PROFILES_ACTIVE: test,isolated-reward-load
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DATABASE:?Generated isolated database required}
+      SPRING_DATASOURCE_USERNAME: reward_load
+      SPRING_DATASOURCE_PASSWORD: ${PG_PASSWORD:?Generated local-only password required}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: '16'
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: '4'
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: '10000'
+      MANAGEMENT_HEALTH_REDIS_ENABLED: 'false'
+      JWT_SECRET: ${JWT_SECRET:?Generated local-only signing key required}
+      OTP_DEV_MODE: 'true'
+      POSM_LEGACY_DEVICE_KEY_ENABLED: 'false'
+      POSM_STAFF_AUTH_ENABLED: 'false'
+      POSM_SALE_BONUS_ENABLED: 'true'
+      POSM_SALE_BONUS_AUTO_CREDIT_ENABLED: 'true'
+      POSM_SALE_BONUS_ELIGIBLE_AFTER: ${ELIGIBLE_AFTER:?Explicit UTC cutoff immediately before run required}
+      STOREFRONT_CATALOG_ENABLED: 'false'
+      MEDUSA_ENABLED: 'false'
+      MERCH_TASKS_ENABLED: 'false'
+      MERCH_AUTOMATION_ENABLED: 'false'
+      STANDARDN_DIRECTORY_ENABLED: 'false'
+      FULFILLMENT_ENABLED: 'false'
+      SENTRY_DSN: ''
+      APP_ENVIRONMENT: isolated-load
+      APP_PUBLIC_BASE_URL: http://127.0.0.1:19081
+      LOGGING_LEVEL_KZ_EPHARM: INFO
+  runner:
+    image: node:22-bookworm-slim
+    profiles: [tools]
+    network_mode: service:backend
+    mem_limit: 512m
+    cpus: 1
+    working_dir: /repo/tools/loadtests/recommendation-rewards
+    entrypoint: [node]
+    volumes:
+      - .:/repo/tools/loadtests/recommendation-rewards:ro
+      - ../../../load-tests:/repo/load-tests:ro
+      - ${REWARD_FIXTURE:?Explicit private fixture directory required}:/fixture
+networks:
+  isolated: { internal: true }
+volumes:
+  reward-db:

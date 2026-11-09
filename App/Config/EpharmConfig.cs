@@ -53,6 +53,8 @@ namespace CustomerDisplay.Config
         public int PopupAutoCloseSec { get; set; } = 30;
         public string OutboxDbPath { get; set; } = @"C:\Epharm\outbox.db";
         public int OutboxFlushSec { get; set; } = 5;
+        /// <summary>Optional evidence capture only; the backend independently decides rewards.</summary>
+        public bool RecommendationRewardsEnabled { get; set; } = false;
         /// <summary>Контур выдачи интернет-заказов. Backend также имеет независимый kill switch.</summary>
         public bool FulfillmentEnabled { get; set; } = false;
         /// <summary>
@@ -238,6 +240,8 @@ namespace CustomerDisplay.Config
             if (Env("EPHARM_RECEIPT_CAPTURE_ENABLED", cfg.ReceiptCaptureEnabled ? "true" : "false") == "false")
                 cfg.ReceiptCaptureEnabled = false;
             cfg.ReceiptCaptureDir = Env("EPHARM_RECEIPT_CAPTURE_DIR", cfg.ReceiptCaptureDir);
+            cfg.RecommendationRewardsEnabled = string.Equals(Env("EPHARM_RECOMMENDATION_REWARDS_ENABLED",
+                cfg.RecommendationRewardsEnabled ? "true" : "false"), "true", StringComparison.OrdinalIgnoreCase);
             cfg.FiscalReceiptInboxDir = Env("EPHARM_FISCAL_RECEIPT_INBOX_DIR", cfg.FiscalReceiptInboxDir);
             var trustedFiscalSources = Env("EPHARM_FISCAL_RECEIPT_TRUSTED_SOURCES", "");
             if (!string.IsNullOrWhiteSpace(trustedFiscalSources))

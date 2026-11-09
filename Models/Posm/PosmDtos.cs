@@ -145,5 +145,7 @@ namespace CustomerDisplay.Models.Posm
     public sealed class MarkShownRequest
     {
         public DateTimeOffset ShownAt { get; set; } = DateTimeOffset.UtcNow;
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public RewardShownEvidence? RewardEvidence { get; set; }
     }
 }

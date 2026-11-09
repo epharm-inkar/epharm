@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <Compile Include="..\Models\Posm\SaleReport.cs" Link="Models\SaleReport.cs" />
+    <Compile Include="..\Models\Posm\RecommendationRewards.cs" Link="Models\RecommendationRewards.cs" />
     <Compile Include="..\Models\Posm\Fulfillment.cs" Link="Models\Fulfillment.cs" />
     <Compile Include="..\Models\Posm\AppVersion.cs" Link="Models\AppVersion.cs" />
     <Compile Include="..\Models\Posm\PosmDtos.cs" Link="Models\PosmDtos.cs" />
@@ -39,6 +40,8 @@
     <Compile Include="..\App\Services\FiscalReceiptInboxSource.cs" Link="Services\FiscalReceiptInboxSource.cs" />
     <Compile Include="..\App\Services\ReceiptArtifactStore.cs" Link="Services\ReceiptArtifactStore.cs" />
     <Compile Include="..\App\Services\ReceiptSaleId.cs" Link="Services\ReceiptSaleId.cs" />
+    <Compile Include="..\App\Services\RecommendationRewardJournal.cs" Link="Services\RecommendationRewardJournal.cs" />
+    <Compile Include="..\App\MainWindow.Rewards.cs" Link="ReceiptLifecycle\MainWindow.Rewards.cs" />
     <Compile Include="..\App\Services\SaleReporter.cs" Link="Services\SaleReporter.cs" />
     <Compile Include="..\App\Services\CheckoutSession.cs" Link="Services\CheckoutSession.cs" />
     <Compile Include="..\App\Services\FulfillmentOrderCache.cs" Link="Services\FulfillmentOrderCache.cs" />

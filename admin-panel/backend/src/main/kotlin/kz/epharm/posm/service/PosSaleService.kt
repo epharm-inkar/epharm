@@ -29,6 +29,7 @@ class PosSaleService(
     @Value("\${app.posm.fiscal-artifact-trusted-sources:standardn-kkm-sdk,ofd-api}")
     trustedFiscalSourcesRaw: String,
     private val saleBonuses: RecommendationSaleBonusService,
+    private val rewards: RecommendationRewardService,
 ) {
 
     private val log = LoggerFactory.getLogger(PosSaleService::class.java)
@@ -39,7 +40,7 @@ class PosSaleService(
         .toSet()
 
     @Transactional
-    fun record(req: PosSaleRequest, identity: PosmPharmacistIdentity): Boolean {
+    fun record(req: PosSaleRequest, identity: PosmPharmacistIdentity, deviceId: String? = null): Boolean {
         saleBonuses.beforeSale(req.sessionId)
         val fiscalArtifact = validateFiscalArtifact(req)
         val existing = posSaleRepository.findById(req.saleId).orElse(null)
@@ -48,6 +49,19 @@ class PosSaleService(
             // A retry with the same id may enrich only fiscal evidence; reconciliation and sale
             // attribution must not run twice.
             validateExistingSaleIdentity(existing, req)
+            if (existing.rewardEvidence != null || req.rewardEvidence != null) {
+                val sameItems = existing.items.size == req.items.size && existing.items.zip(req.items).all { (a, b) ->
+                    a.sku == b.sku.orEmpty() && a.barcode == b.barcode && a.name == b.name && a.qty == b.qty &&
+                        a.price == b.price && a.total == b.total
+                }
+                if (!sameItems || existing.reportedPharmacistId != identity.reportedPharmacistId ||
+                    existing.deviceId != deviceId || existing.captureSource != req.captureSource ||
+                    java.time.Duration.between(existing.printedAt, req.printedAt).abs() > java.time.Duration.ofMillis(1) ||
+                    !rewards.sameEvidence(existing.rewardEvidence, req.rewardEvidence)) {
+                    throw ResponseStatusException(HttpStatus.CONFLICT, "Immutable reward sale evidence conflicts with the stored sale")
+                }
+                rewards.sale(existing)
+            }
             if (fiscalArtifact != null && existing.artifactSha256 != null &&
                 !existing.matches(fiscalArtifact)
             ) {
@@ -114,6 +128,8 @@ class PosSaleService(
                     )
                 },
                 printedAt = req.printedAt,
+                rewardEvidence = req.rewardEvidence,
+                deviceId = deviceId,
             ),
         )
         if (identity.pharmacistId.isBlank()) {
@@ -128,11 +144,11 @@ class PosSaleService(
 
         // Атрибуция показ→продажа (V032): закрываем рекомендации этой сессии, чей товар попал в чек.
         attributionService.attributeSale(sale, productIds.filterNotNull().toSet())
-        saleBonuses.afterSale(sale)
+        if (sale.rewardEvidence == null) saleBonuses.afterSale(sale) else rewards.sale(sale)
 
         // Сверка/начисление допустимы только для доверенного внутреннего pharmacistId.
         // Сырой Standard-N USER_ID всё равно сохранён выше и отображается в аналитике.
-        if (req.pharmacistId.isNotBlank()) {
+        if (req.pharmacistId.isNotBlank() && req.rewardEvidence == null) {
             reconcileService.ingestLogSale(
                 LogSaleInput(
                     pharmacistId = req.pharmacistId,

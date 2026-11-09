@@ -46,6 +46,8 @@ namespace CustomerDisplay.Models.Posm
         public long TotalAmount { get; set; }
         public List<SaleReportItem> Items { get; set; } = new();
         public DateTimeOffset PrintedAt { get; set; } = DateTimeOffset.UtcNow;
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public RewardSaleEvidence? RewardEvidence { get; set; }
     }
 
     /// <summary>Полезная нагрузка для отложенной отправки результата рекомендации (в outbox).</summary>
@@ -65,5 +67,7 @@ namespace CustomerDisplay.Models.Posm
     {
         public string EventId { get; set; } = "";
         public DateTimeOffset ShownAt { get; set; } = DateTimeOffset.UtcNow;
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public RewardShownEvidence? RewardEvidence { get; set; }
     }
 }

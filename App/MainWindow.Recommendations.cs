@@ -692,7 +692,7 @@ namespace CustomerDisplay
                 TriggerBarcode = rec.TriggerBarcode,
                 TriggerName = rec.TriggerName,
             };
-            EnqueueShownPing(rec.EventId);
+            EnqueueShownPing(rec);
         }
 
         /// <summary>
@@ -701,12 +701,15 @@ namespace CustomerDisplay
         /// событие (INSERT OR IGNORE идемпотентно). Демо-карточки (клавиша D / превью) не шлём — их
         /// eventId нет в БД. Любая ошибка проглатывается: касса не должна тормозить из-за телеметрии.
         /// </summary>
-        private void EnqueueShownPing(string eventId)
+        private void EnqueueShownPing(Recommendation recommendation)
         {
+            var eventId = recommendation.EventId;
             if (_outbox == null || eventId.StartsWith("demo", StringComparison.OrdinalIgnoreCase)) return;
             try
             {
-                var payload = new OutboxShownPayload { EventId = eventId, ShownAt = DateTimeOffset.UtcNow };
+                var shownAt = DateTimeOffset.UtcNow;
+                var payload = new OutboxShownPayload { EventId = eventId, ShownAt = shownAt,
+                    RewardEvidence = CaptureRewardShown(recommendation, shownAt) };
                 _outbox.Enqueue("shown_" + eventId, "shown", JsonSerializer.Serialize(payload, EpharmJson.Options));
             }
             catch (Exception ex)
@@ -931,6 +934,7 @@ namespace CustomerDisplay
         private void StartNewCheckoutSession()
         {
             _session = new CheckoutSession();
+            _rewardSnapshot = null;
         }
     }
 }

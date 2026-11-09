@@ -165,6 +165,9 @@ data class AccessCapabilities(
     val canExportPharmacists: Boolean = false,
     val canExportLearnerCredentials: Boolean = false,
     val canExportCampaignReports: Boolean = false,
+    val canViewRecommendationRewards: Boolean = false,
+    val canReviewRecommendationRewards: Boolean = false,
+    val canExportRecommendationRewards: Boolean = false,
     val note: String = "Explicit grants also require existing role checks; NOT_READY routes deny managed accounts",
 )
 
@@ -208,7 +211,10 @@ class UnifiedAccountAccessService(
             canExportPayouts = canUseExplicit(access, catalog.payoutExport),
             canExportPharmacists = canUseExplicit(access, catalog.pharmacistExport),
             canExportLearnerCredentials = canRequestCredentialExport(access),
-            canExportCampaignReports = canUseExplicit(access, catalog.campaignReportExport))
+            canExportCampaignReports = canUseExplicit(access, catalog.campaignReportExport),
+            canViewRecommendationRewards = canUseExplicit(access, UnifiedAdminCatalog.key("motivation", "sales_review", "view")),
+            canReviewRecommendationRewards = canUseExplicit(access, UnifiedAdminCatalog.key("motivation", "sales_review", "approve")),
+            canExportRecommendationRewards = canUseExplicit(access, UnifiedAdminCatalog.key("motivation", "sales_review", "export")))
     }
 
     private fun canUseExplicit(access: LoadedAccess, key: PermissionKey): Boolean {

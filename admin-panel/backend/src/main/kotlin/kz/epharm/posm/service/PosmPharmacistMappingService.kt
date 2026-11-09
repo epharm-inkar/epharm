@@ -135,7 +135,7 @@ class PosmPharmacistMappingService(
                 createdAt = now,
                 updatedAt = now,
             )
-        val saved = mappings.save(entity)
+        val saved = mappings.saveAndFlush(entity)
         auditAction?.let { action -> audit(saved, action, actor.userId) }
         return PosmPharmacistMappingDto(
             id = saved.id.toString(), pharmacyId = pharmacy.id, pharmacyName = pharmacy.name,

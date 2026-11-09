@@ -1,5 +1,43 @@
 # Backend
 
+## Local candidate: recommendation sale rewards
+
+Optional evidence protocol 1 extends the existing POSM recommend/shown/sales routes;
+older clients keep their existing journal and attribution behavior. Both
+`POSM_SALE_BONUS_ENABLED` and `POSM_SALE_BONUS_AUTO_CREDIT_ENABLED` default to false.
+Auto credit additionally requires an explicit `POSM_SALE_BONUS_ELIGIBLE_AFTER` cutoff;
+there is no historical backfill. This task does not enable them in production.
+
+The first actual display snapshot is immutable. Only newly added, remaining full
+packages in the same checkout and physical document/line, added within 0–120 seconds
+inclusive, qualify after positively confirmed payment (payment can be later).
+An explicit same-pharmacy HQ Standard-N USER mapping is required for automatic money;
+RPS login, supplied internal IDs and fuzzy name matching are not financial proof.
+Unknown units, incomplete evidence and ambiguous employees go to HQ. The current native
+adapter does not establish full-package semantics for raw QUANT, so real desk evidence
+with unknown units cannot automatically credit. See [POSM contract](05-posm-client.md).
+
+Physical and fiscal receipt fences, per-product cases, ordered transaction locks,
+finite campaign budgets and the existing append-only wallet prevent replay and
+concurrent double credit. Bonuses use `receipt_bonus` and the same balance read by
+the separate `/learn`. A refund retains the original credit and opens HQ review,
+including when the refund arrives before the original sale. Native refund capture
+is not yet supplied by the Standard-N adapter.
+
+HQ routes: `/api/admin/reconcile/recommendation-rewards`, `/{id}`, `/export.xlsx`
+and `/{id}/decision`. They require explicit scoped `motivation.sales_review`
+view/export/approve grants; the financial approve grant is not inferred from a page
+view permission. Review requires a reason, explicit payment/package confirmation,
+same-pharmacy active beneficiary, verified source-user mapping and canonical receipt
+keys. Conflicting source evidence cannot be approved through a checkbox. XLSX respects
+the same scopes/filters and rejects more than 10,000 rows instead of truncating.
+
+Rollback: disable both sale-bonus flags before running an older backend that lacks
+the new financial guards; keep V099 and the ledger/evidence. Merely reverting the
+binary while leaving legacy monetary processing enabled is not a verified rollback.
+The isolated HTTP/SQL workload and acceptance criteria are in
+[`tools/loadtests/recommendation-rewards`](../tools/loadtests/recommendation-rewards/README.md).
+
 ## RPS registration availability
 
 The authenticated POSM identity is `(pharmacyId, deviceId)`, not the Windows/device

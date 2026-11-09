@@ -55,7 +55,7 @@ Only an offer with a positive individual reward is green; a zero-reward offer st
 it has no reward. Closing the popup does not accept or reject a recommendation, and the panel does
 not promise an Esc shortcut because it cannot take keyboard focus from Standard-N.
 
-The optional sale-bonus bridge does not invent an `accepted` action. With
+The legacy optional sale-bonus bridge does not invent an `accepted` action. With
 `POSM_SALE_BONUS_ENABLED=true` and an explicit UTC activation cutoff, only a real display ACK
 and a matching `standardn-print-log` sale may create one source-bound bonus reservation per
 sale/product. Both must identify the same pharmacy, session and trusted pharmacist. Exact,
@@ -65,6 +65,65 @@ or outside the 30-minute show-to-sale window fails closed. Historical events are
 The resulting receipt goes to HQ moderation, never automatic credit or Excel heuristic approval.
 After approval the bonus uses the same ePharm wallet as training and verified merchandising.
 The bridge defaults to disabled; blank cashier identity does not prevent recommendation display.
+
+### Local candidate: recommendation reward evidence v1
+
+The new optional evidence chain is separate from the legacy 30-minute show-to-sale moderation
+bridge. It records the **first actual visible show**, not the recommendation HTTP response or a
+click on the read-only popup. Its baseline and timestamp are immutable for that `eventId`;
+reopening the same offer cannot reset the timer or multiply rewards. Delayed delivery of the
+shown outbox item does not move the display time forward.
+
+A recommended product must be observed being added within **0–120 seconds inclusive** after
+that show, in the same logical `CheckoutSession.SessionId`. An ordered addition in the same
+clock tick is allowed. A product already present in the shown baseline is excluded from automatic
+credit. The client preserves all observed quantity transitions, including decreases and late
+increases; removing/readding a native line gives it a new local generation. Eligibility is limited
+to the remaining, actually sold full packages added in time. Late increases do not earn a reward,
+and decreases conservatively consume eligible quantity first. Multiple shows cannot reward the
+same sold units repeatedly.
+
+Payment can occur later than the 120-second addition window. It still requires the existing
+anchored print cue **and** `IsPostedPhysicalSale`: a freshly verified posted physical document,
+signed final details and fiscal device/number/shift. The logical checkout may contain linked
+documents, but each addition must match the physical document and native line of its completed
+sale. A print command, cart disappearance or UI-only line is not payment evidence; unproven
+line-ID migration cannot justify an automatic reward. Source identities at show/addition/completion must agree; the beneficiary comes
+from the explicit HQ mapping of the native Standard-N `USER_ID` in that pharmacy. Names, an
+independent RPS login or a body-supplied internal account ID cannot replace that mapping. A known
+RPS mismatch requires HQ review.
+
+`App/Services/RecommendationRewardJournal.cs` stores a private atomic, checksummed observation
+journal, bounded to 32 checkouts / 8 MiB and 2,048 changes per checkout. Optional `rewardEvidence`
+travels on the existing shown and sale DTOs/outbox; there is no new addition HTTP request. Sale
+evidence is frozen before queueing. The local journal retires only after the group's nonempty
+sales have been durably queued and its other physical documents have been resolved; the offline
+outbox retains the sale evidence.
+Read gaps, corrupt/lost state, a restart interval, ambiguous log-only removal or exhausted bounds
+lower completeness and never block the cash desk. Source namespaces are 64-character SHA-256
+digests of the successful database source; raw paths, passwords and RPS tokens are not sent.
+
+The backend independently verifies the evidence, canonical physical/fiscal receipt and product,
+recipient, remaining quantity, immutable offer terms and budget. Canonical sale/product
+deduplication and the existing wallet credit path prevent repeated delivery or different sale
+aliases from creating another credit. Complete eligible evidence may credit the common ePharm
+wallet automatically; uncertainty is routed to HQ. A refund is an HQ review/hold case, including
+after credit, and never automatically debits the pharmacist.
+
+This remains **local-only candidate work**, not an enabled production rollout. Local
+`RecommendationRewardsEnabled` / `EPHARM_RECOMMENDATION_REWARDS_ENABLED` defaults to `false`.
+Server `POSM_SALE_BONUS_ENABLED` and `POSM_SALE_BONUS_AUTO_CREDIT_ENABLED` also default to `false`;
+automatic credit additionally requires an explicit `POSM_SALE_BONUS_ELIGIBLE_AFTER` cutoff.
+Legacy DTOs, recommendation display, receipts, customer screen, QR, RPS and separate `/learn`
+continue independently.
+
+**Acceptance limits:** the current Firebird adapter reads decimal `QUANT` without a documented
+full-package unit/pack coefficient. Its real lines deliberately remain `unitSemantics=unknown`,
+so their journal is incomplete and they require HQ rather than guessed automatic rewards. A
+supported adapter must prove `full_package`; positive tests use explicit synthetic adapter
+fixtures. Native refund capture is not implemented. Core/contract tests and a Windows-targeted
+WPF build do not constitute a real Windows runtime or pharmacy acceptance test; that runtime
+has not been exercised for this candidate.
 
 Merchandising tasks are accepted only while both the task deadline (when present) and QR-token
 expiration remain in the future. An already-open window hides its QR at expiry rather than waiting

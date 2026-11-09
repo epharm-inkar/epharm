@@ -111,7 +111,7 @@ namespace CustomerDisplay.Services
                     case "shown":
                         var sh = JsonSerializer.Deserialize<OutboxShownPayload>(item.Payload, EpharmJson.Options);
                         return sh != null && await _api
-                            .MarkShownAsync(sh.EventId, sh.ShownAt)
+                            .MarkShownAsync(sh.EventId, sh.ShownAt, sh.RewardEvidence)
                             .ConfigureAwait(false);
                     default:
                         return true; // неизвестный тип — выкидываем, чтобы не копился

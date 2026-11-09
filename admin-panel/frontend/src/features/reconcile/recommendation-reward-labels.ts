@@ -1,0 +1,52 @@
+import type { RewardState } from './recommendation-rewards-api'
+
+export const rewardStates: Record<RewardState, string> = {
+  waiting_evidence: 'Ожидает доказательств',
+  not_eligible: 'Нет оснований для бонуса',
+  review_required: 'Проверить вручную',
+  ready: 'Готово к начислению',
+  credited: 'Начислено',
+  rejected: 'Отклонено',
+  refund_review: 'Проверить возврат',
+}
+const reasons: Record<string, string> = {
+  credited: 'Бонус за подтверждённую продажу начислен',
+  qualified: 'Добавление и оплата подтверждены',
+  no_timely_addition: 'Нет подтверждённого добавления товара в течение 2 минут после показа',
+  addition_outside_window: 'Товар добавлен позднее 2 минут после показа',
+  product_preexisting: 'Товар уже был в чеке до показа',
+  shown_evidence_missing: 'Нет подтверждения фактического показа рекомендации',
+  before_activation: 'Показ сделан до включения начислений',
+  shown_context_mismatch: 'Касса, сотрудник или чек не совпадают с показом',
+  baseline_incomplete: 'Начальный состав чека подтверждён не полностью',
+  offer_not_eligible: 'Условия рекомендации не позволяют начислить бонус',
+  display_time_inconsistent: 'Время показа требует проверки',
+  receipt_context_mismatch: 'Сессия чека не совпадает',
+  source_identity_missing: 'Источник или сотрудник кассы не подтверждены',
+  employee_identity_mismatch: 'Сотрудник ePharm не совпадает с сотрудником Стандарт-Н',
+  payment_not_confirmed: 'Оплата чека не подтверждена',
+  paid_lines_inconsistent: 'Данные оплаченных строк чека не совпадают',
+  paid_total_inconsistent: 'Итог чека не совпадает с его строками',
+  journal_incomplete: 'История изменения чека неполная',
+  journal_inconsistent: 'История изменения чека противоречива',
+  line_lifecycle_inconsistent: 'Добавление, удаление или количество товара требуют проверки',
+  evidence_in_future: 'Время кассы опережает сервер',
+  product_unresolved: 'Товар не сопоставлен с каталогом',
+  package_unit_unverified: 'Количество полных упаковок не подтверждено',
+  offer_terms_conflict: 'Для товара найдены разные условия бонуса',
+  amount_overflow: 'Сумма выходит за допустимый диапазон',
+  reward_budget_missing: 'Бюджет акции не задан',
+  reward_budget_invalid: 'Бюджет акции требует проверки',
+  reward_budget_exhausted: 'Бюджет акции исчерпан',
+  employee_unverified: 'Нет подтверждённого сопоставления сотрудника с этой аптекой',
+  automatic_credit_disabled: 'Автоматические начисления отключены',
+  reservation_conflict: 'Для этой продажи уже есть другое основание начисления',
+  receipt_payload_conflict: 'Повторная доставка содержит другие данные чека',
+  shown_payload_conflict: 'Повторное подтверждение показа содержит другие данные',
+  refund_reported: 'Касса сообщила о возврате; ранее начисленные деньги сохранены',
+  refund_requires_review: 'Возврат требует отдельной проверки',
+  refund_review: 'Возврат требует отдельной проверки',
+}
+export function rewardReason(code: string): string {
+  return reasons[code] ?? `Требуется проверка (${code || 'причина не передана'})`
+}

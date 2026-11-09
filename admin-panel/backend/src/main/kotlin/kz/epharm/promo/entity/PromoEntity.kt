@@ -6,6 +6,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.PrePersist
 import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
+import org.hibernate.annotations.DynamicUpdate
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import java.time.Instant
@@ -33,6 +34,7 @@ data class PromoTier(
 )
 
 @Entity
+@DynamicUpdate
 @Table(name = "promos")
 class PromoEntity(
     @Id

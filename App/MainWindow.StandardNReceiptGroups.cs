@@ -211,7 +211,7 @@ public partial class MainWindow
                 }
                 else if (StandardNReceiptProjection.IsPostedPhysicalSale(document))
                 {
-                    if (!OnReceiptFinalized("standardn-print-log", document, session, printedAt))
+                    if (!OnReceiptFinalized("standardn-print-log", document, session, printedAt, state))
                     {
                         _physicalReceiptRetryAfter[key] = now.AddSeconds(30);
                         continue;
@@ -230,6 +230,7 @@ public partial class MainWindow
             if (!SaveObservedReceiptGroup(group)) continue;
             if (state.Documents!.Any(document => !StandardNReceiptProjection.IsResolvedPhysicalDocument(group, document))) continue;
             _receiptArtifacts!.RetireObservedGroup(group);
+            _rewardJournal?.Retire(group.CheckoutSessionId);
             _observedReceiptGroups.Remove(key);
             _physicalReceiptRetryAfter.Remove(key);
             _receiptObservations.LogChanged();

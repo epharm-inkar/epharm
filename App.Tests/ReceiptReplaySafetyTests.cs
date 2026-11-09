@@ -214,6 +214,43 @@ public sealed class ReceiptReplaySafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task RewardEvidenceSurvivesOfflineReplayAndIsSentOnTheExistingShownAndSaleRoutes()
+    {
+        var shownAt = DateTimeOffset.Parse("2026-11-09T10:00:00Z");
+        var shown = new RewardShownEvidence { CheckoutSessionId = "synthetic-checkout", ObservationId = "shown-observation",
+            Identity = new RewardSourceIdentity { RawUserId = "17", NativeSessionId = 80, WorkstationId = "9", SourceNamespace = "standardn_synthetic" },
+            CartComplete = false, Lines = [new RewardCartLine { SourceDocumentId = 100, SourceLineId = 501, Qty = 2 }] };
+        var sale = new SaleReport { SaleId = "synthetic-reward-sale", CaptureSource = "standardn-print-log",
+            RewardEvidence = new RewardSaleEvidence { CheckoutSessionId = "synthetic-checkout", JournalComplete = false,
+                Changes = [new RewardLineChange { ObservationId = "addition-observation", EventId = "synthetic-event", GenerationId = "line-generation",
+                    Sequence = 1, BeforeQty = 2, AfterQty = 3, ObservedAt = shownAt.AddSeconds(119) }],
+                Completion = new RewardCompletionEvidence { Status = "paid", Source = "standardn-posted-print", SourceDocumentId = 100 } } };
+        var queue = new OfflineOutbox(DbPath);
+        queue.Enqueue("shown_synthetic-event", "shown", JsonSerializer.Serialize(new OutboxShownPayload {
+            EventId = "synthetic-event", ShownAt = shownAt, RewardEvidence = shown }, EpharmJson.Options));
+        queue.Enqueue(sale.SaleId, "sale", JsonSerializer.Serialize(sale, EpharmJson.Options));
+        using var server = new LoopbackEndpoint();
+        using var api = new EpharmApiClient(new EpharmConfig { BackendBaseUrl = server.BaseUrl, DeviceKey = "synthetic-key" });
+        using var flusher = new OutboxFlusher(new OfflineOutbox(DbPath), api, 3600);
+        server.Available = false;
+        await flusher.FlushNowAsync();
+        Assert.Empty(queue.DequeueReady(10)); // Retry scheduling remains persisted until reconnect.
+        Assert.Equal(2, server.Requests.Count);
+        server.Available = true; queue.MarkAllDue();
+        await flusher.FlushNowAsync();
+        Assert.Empty(queue.DequeueReady(10));
+        var requests = server.Requests.ToArray();
+        Assert.Equal(4, requests.Length);
+        var actualShown = JsonSerializer.Deserialize<MarkShownRequest>(requests.Last(request => request.Path.EndsWith("/shown")).Body, EpharmJson.Options)!;
+        Assert.Equal(shownAt, actualShown.ShownAt);
+        Assert.Equal("shown-observation", actualShown.RewardEvidence!.ObservationId);
+        Assert.Equal(2m, Assert.Single(actualShown.RewardEvidence.Lines).Qty);
+        var actualSale = JsonSerializer.Deserialize<SaleReport>(requests.Last(request => request.Path == "/api/posm/sales").Body, EpharmJson.Options)!;
+        Assert.Equal("addition-observation", Assert.Single(actualSale.RewardEvidence!.Changes).ObservationId);
+        Assert.False(actualSale.RewardEvidence.JournalComplete); // UNKNOWN must remain UNKNOWN through replay.
+    }
+
+    [Fact]
     public void JsonSelectionHandlesInvalidPayloadsAndLegacyPropertyCasingWithoutChangingStoredRows()
     {
         var queue = new OfflineOutbox(DbPath);

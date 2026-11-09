@@ -314,14 +314,17 @@ namespace CustomerDisplay.Services
         /// Фиксация фактического показа рекомендации (V032). false при ошибке — вызов уходит в
         /// OfflineOutbox для гарантированной доставки. shownAt — client-время показа попапа.
         /// </summary>
-        public async Task<bool> MarkShownAsync(string eventId, DateTimeOffset shownAt, CancellationToken ct = default)
+        public Task<bool> MarkShownAsync(string eventId, DateTimeOffset shownAt, CancellationToken ct = default) =>
+            MarkShownAsync(eventId, shownAt, null, ct);
+
+        public async Task<bool> MarkShownAsync(string eventId, DateTimeOffset shownAt, RewardShownEvidence? rewardEvidence, CancellationToken ct = default)
         {
             try
             {
                 using var resp = await _http
                     .PostAsJsonAsync(
                         $"/api/posm/recommendations/{eventId}/shown",
-                        new MarkShownRequest { ShownAt = shownAt }, JsonOpts, ct)
+                        new MarkShownRequest { ShownAt = shownAt, RewardEvidence = rewardEvidence }, JsonOpts, ct)
                     .ConfigureAwait(false);
                 return resp.IsSuccessStatusCode;
             }
