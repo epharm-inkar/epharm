@@ -1,0 +1,26 @@
+{
+  "source": "authoritative ePharm pharmacist table on .76; read-only snapshot",
+  "serverReportedAtUtc": "2026-11-09T20:45:27.644318Z",
+  "clientReportDate": "2026-11-10",
+  "isolation": "REPEATABLE READ READ ONLY; rollback; statement timeout5s/lock timeout1s",
+  "accounts": 507,
+  "active": 494,
+  "pending": 13,
+  "blocked": 0,
+  "withoutPharmacy": 13,
+  "duplicateGroups": {
+    "exactIin": 0,
+    "exactPhone": 0,
+    "normalizedAsciiDigitsIin": 0,
+    "normalizedKzPhone": 0,
+    "trimmedCasefoldedWhitespaceFullName": 0
+  },
+  "separateLoginEmailColumns": false,
+  "existingUniqueIndexNames": ["pharmacists_pkey", "ux_pharmacists_iin", "ux_pharmacists_phone"],
+  "accountChanges": false,
+  "limits": [
+    "Different spelling or a different mistaken IIN may describe the same person; aggregates do not prove real-world identity.",
+    "Repeated name alone would not prove duplicate accounts.",
+    "Raw-value unique indexes alone do not forbid alternate phone formats; current normalized groups are nevertheless zero."
+  ]
+}
