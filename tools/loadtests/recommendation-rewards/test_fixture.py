@@ -44,6 +44,12 @@ class FixtureTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 fixture.generate(name, count)
 
+    def test_oracle_accepts_both_jackson_instant_serializations(self):
+        sql = fixture.verification_sql(fixture.generate("unit", 8))
+        self.assertIn("jsonb_typeof(s.reward_evidence->'changes'->0->'observedAt')='number'", sql)
+        self.assertIn("THEN to_timestamp(", sql)
+        self.assertIn("ELSE (s.reward_evidence->'changes'->0->>'observedAt')::timestamptz END", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

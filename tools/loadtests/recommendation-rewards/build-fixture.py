@@ -100,6 +100,10 @@ def verification_sql(f):
     count = len(f["actors"])
     credited = sum(a["expectedBonus"] > 0 for a in f["actors"])
     total = sum(a["expectedBonus"] for a in f["actors"])
+    # Hibernate's JSONB mapper stores Instant as epoch seconds; HTTP uses ISO strings.
+    instant = """(CASE WHEN jsonb_typeof(s.reward_evidence->'changes'->0->'observedAt')='number'
+        THEN to_timestamp((s.reward_evidence->'changes'->0->>'observedAt')::double precision)
+        ELSE (s.reward_evidence->'changes'->0->>'observedAt')::timestamptz END)"""
     return "\\set ON_ERROR_STOP on\nBEGIN READ ONLY;\n" + guard(f["expectedDatabase"]) + f"""
 DO $$ BEGIN
   IF (SELECT count(*) FROM reward_load_expected) <> {count}
@@ -162,12 +166,12 @@ DO $$ BEGIN
       JOIN recommendation_events v ON v.session_id=e.session_id
       WHERE e.expected_bonus>0 AND (
         jsonb_array_length(s.reward_evidence->'changes')<>1
-        OR ((s.reward_evidence->'changes'->0->>'observedAt')::timestamptz-v.displayed_at)>interval '120 seconds'
-        OR ((s.reward_evidence->'changes'->0->>'observedAt')::timestamptz-v.displayed_at)<interval '0 seconds'))
+        OR ({instant}-v.displayed_at)>interval '120 seconds'
+        OR ({instant}-v.displayed_at)<interval '0 seconds'))
     THEN RAISE EXCEPTION 'Positive cart addition was not really within the display window'; END IF;
   IF EXISTS (SELECT 1 FROM pos_sales s JOIN reward_load_expected e ON e.sale_id=s.id
       JOIN recommendation_events v ON v.session_id=e.session_id WHERE e.scenario='late121'
-      AND ((s.reward_evidence->'changes'->0->>'observedAt')::timestamptz-v.displayed_at)<=interval '120 seconds')
+      AND ({instant}-v.displayed_at)<=interval '120 seconds')
     THEN RAISE EXCEPTION '121-second control did not exercise a real late addition'; END IF;
 END $$;
 SELECT {count} AS actual_paid_actors, {credited} AS credited_employees, {total} AS credited_kzt,
