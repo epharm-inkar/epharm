@@ -87,7 +87,7 @@ campaign budgets, permission grants, schema/storage capacity and evidence retent
 then perform a controlled pilot. There is no automatic enablement or backfill.
 For rollback to an older binary, disable both sale-bonus flags first and prevent
 older manual/Excel reconciliation writers from deciding v2 reservations. Retain
-V099, financial ledger and source evidence; an older writer lacks the new guards.
+V100, financial ledger and source evidence; an older writer lacks the new guards.
 
 ## Completed load acceptance
 

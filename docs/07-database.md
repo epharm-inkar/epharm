@@ -9,7 +9,7 @@ and [restore evidence](reports/unification-2026-10-29/isolated-restore-verificat
 
 Migrations: Flyway files in `admin-panel/backend/src/main/resources/db/migration/`.
 
-Local reward candidate V099 is additive and has not been applied to production by
+Local reward candidate V100 is additive and has not been applied to production by
 this task. It adds nullable evidence/device columns on `pos_sales`, immutable first
 show snapshots, canonical physical/fiscal receipt fences, per-product reward cases,
 review audit and durable refund-first holds. The tables are
@@ -20,7 +20,7 @@ rewritten. Money is still written only through existing `pending_bonuses`, `rece
 and `pharmacist_wallet_entries`; no parallel balance or historical credit is created.
 Both sale-bonus flags remain off by default. See [backend monetary contract](02-backend.md).
 
-Current migration range in source: V001-V099. At the historical unification verification,
+Current migration range in source: V001-V100. At the historical unification verification,
 V066 and V067 were applied only to the isolated candidate; that verification did not deploy
 them. All original business-table
 column, primary-key and row-count fingerprints survived the upgrade; Flyway history gained

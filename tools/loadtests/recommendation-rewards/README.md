@@ -46,7 +46,7 @@ export ELIGIBLE_AFTER="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export REWARD_FIXTURE=/ABS/PRIVATE/reward-smoke01
 ```
 
-Start only the dedicated isolated stack. The network has `internal: true`; PG has no published port; the app port requests loopback only. Docker versions that suppress published ports on internal networks remain supported: the optional Node runner shares only the backend network namespace and calls its loopback, with no external egress. `SPRING_PROFILES_ACTIVE=test,isolated-reward-load` avoids dev seeding and the bundled real-pharmacy importer. The candidate must include V099 and evidence protocol 1. Feature switches are enabled only for this isolated stack, with an explicit current cutoff. Legacy device authentication is disabled.
+Start only the dedicated isolated stack. The network has `internal: true`; PG has no published port; the app port requests loopback only. Docker versions that suppress published ports on internal networks remain supported: the optional Node runner shares only the backend network namespace and calls its loopback, with no external egress. `SPRING_PROFILES_ACTIVE=test,isolated-reward-load` avoids dev seeding and the bundled real-pharmacy importer. The candidate must include V100 and evidence protocol 1. Feature switches are enabled only for this isolated stack, with an explicit current cutoff. Legacy device authentication is disabled.
 
 ```sh
 docker compose --env-file "$REWARD_FIXTURE/compose.private.env" -f tools/loadtests/recommendation-rewards/compose.yml up -d
