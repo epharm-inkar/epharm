@@ -38,6 +38,7 @@ class FixtureTest(unittest.TestCase):
                          "physical_key IS NULL", "fiscal_key IS NULL", "spent=1600", "e.scenario='late121'",
                          "interval '120 seconds'", "s.pharmacist_source='standardn_explicit_mapping'"):
             self.assertIn(required, sql)
+        self.assertIn("datname=current_database() AND deadlocks<>0", sql)
 
     def test_reject_unsafe_database_names_or_unbounded_count(self):
         for name, count in (("../prod", 8), ("PROD", 8), ("x" * 17, 8), ("unit", 7), ("unit", 1501)):

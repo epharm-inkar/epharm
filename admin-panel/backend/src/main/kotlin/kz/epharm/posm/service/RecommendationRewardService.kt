@@ -80,6 +80,7 @@ class RecommendationRewardService(
         if (enabled) {
             val replay = sales.findByPharmacyIdAndSessionIdOrderByCreatedAtAsc(event.pharmacyId, event.sessionId)
                 .filter { it.rewardEvidence != null }
+            if (replay.isEmpty()) return
             // A checkout can contain several physical sales/cashiers: take the whole lock set first.
             replay.map { it.pharmacistId }.filter(String::isNotBlank).distinct().sorted().forEach {
                 jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "reward-pharmacist:$it")
@@ -88,7 +89,7 @@ class RecommendationRewardService(
             val promos = jdbc.queryForList("""SELECT DISTINCT s.promo_id FROM recommendation_reward_shows s
                 JOIN recommendation_events e ON e.id=s.event_id WHERE e.pharmacy_id=? AND e.session_id=?
                 AND s.promo_id IS NOT NULL ORDER BY s.promo_id""", event.pharmacyId, event.sessionId)
-            promos.forEach { jdbc.queryForList("SELECT id FROM promos WHERE id=? FOR UPDATE", it["promo_id"]) }
+            promos.forEach { jdbc.queryForList("SELECT id FROM promos WHERE id=? FOR NO KEY UPDATE", it["promo_id"]) }
             replay.forEach(::sale)
         }
     }
@@ -118,7 +119,7 @@ class RecommendationRewardService(
         }
         // Lock the complete funding set in a deterministic order before the first wallet mutation.
         snapshots.values.mapNotNull { it.promoId }.distinct().sorted().forEach {
-            jdbc.queryForList("SELECT id FROM promos WHERE id=? FOR UPDATE", it)
+            jdbc.queryForList("SELECT id FROM promos WHERE id=? FOR NO KEY UPDATE", it)
         }
         val decisions = policy.evaluate(sale, evidence, snapshots, products::resolveStrongProductIds)
         val bodyProducts = products.resolveStrongProductIds(sale.items.map { CartItemDto(it.sku, it.barcode, it.name, it.qty) })

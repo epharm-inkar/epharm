@@ -302,6 +302,27 @@ class RecommendationRewardFlowIntegrationTest {
         }
     }
 
+    @Test fun `sixteen concurrent normal shown ACKs sharing one campaign do not deadlock on its foreign key`() {
+        val world = world(budget = 10_000)
+        val first = employee()
+        val actors = (0 until 16).map { index -> flow(world = world, employee = if (index == 0) first else employee(base = first)) }
+        parallel(actors.map { actor -> { acknowledge(actor) } })
+        assertThat(number("SELECT count(*) FROM recommendation_reward_shows WHERE promo_id=?", world.offers.single().promo)).isEqualTo(16)
+        assertThat(spent(world.offers.single())).isZero()
+        assertThat(number("SELECT coalesce(sum(balance),0) FROM pharmacists WHERE pharmacy_id=?", first.pharmacy)).isZero()
+        actors.chunked(4).forEach { group -> parallel(group.map { actor -> { deliver(actor, payment(actor)) } }) }
+        actors.forEach { actor ->
+            assertCredit(actor, 400)
+            assertThat(balance(actor.employee)).isEqualTo(400)
+        }
+        assertThat(spent(world.offers.single())).isEqualTo(6400)
+        assertThat(number("SELECT coalesce(sum(balance),0) FROM pharmacists WHERE pharmacy_id=?", first.pharmacy)).isEqualTo(6400)
+        assertThat(number("SELECT count(*) FROM recommendation_sale_rewards WHERE pharmacy_id=? AND state='credited'", first.pharmacy)).isEqualTo(16)
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", first.pharmacy)).isEqualTo(16)
+        assertThat(number("""SELECT count(*) FROM pharmacist_wallet_entries e JOIN pharmacists p ON p.id=e.pharmacist_id
+            WHERE p.pharmacy_id=? AND e.source='receipt_bonus'""", first.pharmacy)).isEqualTo(16)
+    }
+
     @Test fun `HQ scope restricts list detail export and decisions while verified unknown units can be approved once`() {
         val local = flow()
         val foreign = flow()

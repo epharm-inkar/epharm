@@ -106,6 +106,8 @@ def verification_sql(f):
         ELSE (s.reward_evidence->'changes'->0->>'observedAt')::timestamptz END)"""
     return "\\set ON_ERROR_STOP on\nBEGIN READ ONLY;\n" + guard(f["expectedDatabase"]) + f"""
 DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_stat_database WHERE datname=current_database() AND deadlocks<>0)
+    THEN RAISE EXCEPTION 'Concurrent reward flow encountered a PostgreSQL deadlock'; END IF;
   IF (SELECT count(*) FROM reward_load_expected) <> {count}
     OR (SELECT count(*) FROM pharmacists) <> {count}
     THEN RAISE EXCEPTION 'Fixture cardinality changed'; END IF;

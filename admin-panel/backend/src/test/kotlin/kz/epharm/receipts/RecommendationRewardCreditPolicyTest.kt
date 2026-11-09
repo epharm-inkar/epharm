@@ -42,7 +42,7 @@ class RecommendationRewardCreditPolicyTest {
             items=listOf(PosSaleItem(productId="product",qty=3.0,price=400,total=1200)))
         every { jdbc.queryForList(match { it.contains("FROM recommendation_sale_rewards") }, *anyVararg()) } answers { listOf(HashMap(reward)) }
         every { jdbc.queryForList("SELECT status,pharmacy_id FROM pharmacists WHERE id=?", any<String>()) } answers { listOf(HashMap(person)) }
-        every { jdbc.queryForList("SELECT budget,spent FROM promos WHERE id=? FOR UPDATE", any<String>()) } answers { listOf(HashMap(budget)) }
+        every { jdbc.queryForList("SELECT budget,spent FROM promos WHERE id=? FOR NO KEY UPDATE", any<String>()) } answers { listOf(HashMap(budget)) }
         every { sales.findById("sale") } answers { Optional.of(sale) }
         every { jdbc.update(any<String>(), *anyVararg()) } answers {
             val statement=firstArg<String>()

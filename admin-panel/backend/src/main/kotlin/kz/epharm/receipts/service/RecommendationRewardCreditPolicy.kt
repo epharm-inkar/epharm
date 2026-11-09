@@ -49,7 +49,8 @@ class RecommendationRewardCreditPolicy(private val jdbc: JdbcTemplate, private v
         if (paidPackages < BigDecimal.valueOf(reward.packages) || receipt.parsedAmount != paidAmount ||
             receipt.parsedAt != sale.printedAt) conflict("reward_sale_quantity_conflict")
         val promo = reward.promo ?: return budgetReview(reward, "reward_budget_missing")
-        val budget = jdbc.queryForList("SELECT budget,spent FROM promos WHERE id=? FOR UPDATE", promo).singleOrNull()
+        // Funding changes no key: allow concurrent FK references without lock-upgrade deadlocks.
+        val budget = jdbc.queryForList("SELECT budget,spent FROM promos WHERE id=? FOR NO KEY UPDATE", promo).singleOrNull()
             ?: return budgetReview(reward, "reward_budget_missing")
         val limit = number(budget, "budget"); val spent = number(budget, "spent")
         if (limit <= 0 || spent < 0 || spent > limit) return budgetReview(reward, "reward_budget_invalid")
