@@ -1,0 +1,100 @@
+{
+  "backendFinalRun": {
+    "tests": 145,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": [
+      {
+        "name": "kz.epharm.posm.LegacyPosmWireContractTest",
+        "tests": "27",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.posm.RecommendationRewardEvidencePolicyTest",
+        "tests": "72",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.posm.RecommendationRewardFlowIntegrationTest",
+        "tests": "18",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.promo.PromoRewardBudgetConcurrencyIntegrationTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.PendingBonusExpiryRaceIntegrationTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.PendingBonusExpiryTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.RecommendationRewardCreditIntegrationTest",
+        "tests": "10",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.RecommendationRewardCreditPolicyTest",
+        "tests": "10",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      }
+    ]
+  },
+  "portablePosm": {
+    "passed": 598,
+    "failed": 0,
+    "skipped": 0
+  },
+  "wpf": {
+    "crossBuild": "passed",
+    "interactiveRuntime": "not_run"
+  },
+  "candidateJarSha256": "df66ad43918479a9625391a72eb10075ac5380c0430aa6482ad556ea257f7f02",
+  "productionActions": false,
+  "mobileAppTests": false,
+  "frontend": {
+    "targetedTestsPassed": 65,
+    "testFiles": 5,
+    "lint": "passed",
+    "productionBuild": "passed"
+  },
+  "harnessSelfChecks": {
+    "nodePassed": 11,
+    "pythonPassed": 5
+  },
+  "load": {
+    "1000": {
+      "http": "passed",
+      "sqlOracle": "passed",
+      "deadlocks": 0
+    },
+    "1500": {
+      "http": "passed",
+      "sqlOracle": "passed",
+      "deadlocks": 0
+    }
+  }
+}

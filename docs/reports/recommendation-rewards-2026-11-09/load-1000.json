@@ -1,0 +1,149 @@
+{
+  "state": "http_complete_requires_database_oracle",
+  "runId": "cap10001109c",
+  "fixtureDatabase": "epharm_reward_load_cap10001109c",
+  "config": {
+    "origin": "http://127.0.0.1:8080",
+    "concurrency": 50,
+    "spreadSeconds": 60,
+    "paymentDelaySeconds": 125,
+    "timeoutMs": 10000,
+    "requestP95Ms": 2000,
+    "requestP99Ms": 5000,
+    "queueP99Ms": 1000
+  },
+  "elapsedSeconds": 185.00663812699997,
+  "offeredActors": 1000,
+  "completedActors": 1000,
+  "peakActiveActors": 1000,
+  "peakAuthenticatedActors": 1000,
+  "peakHttpInflight": 18,
+  "peakHttpQueue": 0,
+  "expectedTotalBonus": 384000,
+  "errors": {},
+  "errorSamples": [],
+  "requests": {
+    "heartbeat": {
+      "count": 3000,
+      "statuses": {
+        "200": 3000
+      },
+      "p50Ms": 3.427750000002561,
+      "p95Ms": 7.197709000000032,
+      "p99Ms": 12.888667000021087,
+      "maxMs": 405.13025
+    },
+    "playlist": {
+      "count": 3000,
+      "statuses": {
+        "200": 3000
+      },
+      "p50Ms": 2.8236659999820404,
+      "p95Ms": 4.715334000000439,
+      "p99Ms": 8.969665999989957,
+      "maxMs": 83.95587500000005
+    },
+    "recommend": {
+      "count": 1000,
+      "statuses": {
+        "200": 1000
+      },
+      "p50Ms": 6.873042000000169,
+      "p95Ms": 11.926708999999391,
+      "p99Ms": 79.832,
+      "maxMs": 615.249834
+    },
+    "shown_foreign_control": {
+      "count": 10,
+      "statuses": {
+        "200": 10
+      },
+      "p50Ms": 2.5883749999993597,
+      "p95Ms": 87.00595800000008,
+      "p99Ms": 87.00595800000008,
+      "maxMs": 87.00595800000008
+    },
+    "shown": {
+      "count": 990,
+      "statuses": {
+        "200": 990
+      },
+      "p50Ms": 4.267290999996476,
+      "p95Ms": 8.128583999998227,
+      "p99Ms": 111.89804100000003,
+      "maxMs": 195.08387500000003
+    },
+    "sale": {
+      "count": 1000,
+      "statuses": {
+        "200": 1000
+      },
+      "p50Ms": 15.766208999993978,
+      "p95Ms": 33.83733399998164,
+      "p99Ms": 200.64974999999686,
+      "maxMs": 321.1237919999985
+    },
+    "sale_replay": {
+      "count": 1000,
+      "statuses": {
+        "200": 1000
+      },
+      "p50Ms": 6.809333000011975,
+      "p95Ms": 13.637000000016997,
+      "p99Ms": 62.00237500001094,
+      "maxMs": 156.66987499999232
+    },
+    "sale_race": {
+      "count": 10,
+      "statuses": {
+        "200": 10
+      },
+      "p50Ms": 14.88033300000825,
+      "p95Ms": 256.78229199998896,
+      "p99Ms": 256.78229199998896,
+      "maxMs": 256.78229199998896
+    },
+    "sale_physical_alias": {
+      "count": 10,
+      "statuses": {
+        "200": 10
+      },
+      "p50Ms": 3.6654170000110753,
+      "p95Ms": 6.444917000015266,
+      "p99Ms": 6.444917000015266,
+      "maxMs": 6.444917000015266
+    },
+    "sale_offline_replay": {
+      "count": 10,
+      "statuses": {
+        "200": 10
+      },
+      "p50Ms": 3.7621670000080485,
+      "p95Ms": 119.00587500000256,
+      "p99Ms": 119.00587500000256,
+      "maxMs": 119.00587500000256
+    }
+  },
+  "backgroundCycles": 3000,
+  "realPaymentDelaySeconds": 125,
+  "minAddToPayMs": 3999,
+  "maxAddToPayMs": 124993,
+  "resourceSamples": 38,
+  "generator": {
+    "queueP95Ms": 0.006000000023050234,
+    "queueP99Ms": 0.011250000003201421,
+    "startLagP99Ms": 4.036303999997472,
+    "eventLoopP99Ms": 25.149439,
+    "maxRssBytes": 121061376
+  },
+  "violations": [],
+  "limitations": [
+    "Synthetic full_package adapter fixture; real Standard-N unit semantics not validated",
+    "Logical authenticated active actors and concurrent HTTP requests are different metrics",
+    "HTTP acceptance does not prove credit: guarded verify.sql must also pass",
+    "Local laptop throughput is not production capacity proof; no mobile tests executed"
+  ],
+  "databaseOracleExit": 0,
+  "candidateJarSha256": "df66ad43918479a9625391a72eb10075ac5380c0430aa6482ad556ea257f7f02",
+  "sourceCommit": "127a47e60e05e505199e26c0e0b24025fe62c57a"
+}

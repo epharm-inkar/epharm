@@ -20,8 +20,9 @@ rewritten. Money is still written only through existing `pending_bonuses`, `rece
 and `pharmacist_wallet_entries`; no parallel balance or historical credit is created.
 Both sale-bonus flags remain off by default. See [backend monetary contract](02-backend.md).
 
-Current migration range in source: V001-V067. V066 and V067 were applied only to the isolated
-unification candidate. Neither has been deployed by this task. All original business-table
+Current migration range in source: V001-V099. At the historical unification verification,
+V066 and V067 were applied only to the isolated candidate; that verification did not deploy
+them. All original business-table
 column, primary-key and row-count fingerprints survived the upgrade; Flyway history gained
 only the two expected rows. See [candidate-schema-upgrade.json](reports/unification-2026-10-29/candidate-schema-upgrade.json).
 

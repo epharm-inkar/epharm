@@ -1,0 +1,14 @@
+{
+  "sampleCount": 18,
+  "note": "Observed samples, not continuous peaks; Docker CPU 100% represents one core.",
+  "containers": {
+    "backend": {
+      "cpuPercentMax": 56.22,
+      "memoryMiBMax": 856.7
+    },
+    "postgres": {
+      "cpuPercentMax": 20.38,
+      "memoryMiBMax": 149.4
+    }
+  }
+}

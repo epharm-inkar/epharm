@@ -33,8 +33,10 @@ keys. Conflicting source evidence cannot be approved through a checkbox. XLSX re
 the same scopes/filters and rejects more than 10,000 rows instead of truncating.
 
 Rollback: disable both sale-bonus flags before running an older backend that lacks
-the new financial guards; keep V099 and the ledger/evidence. Merely reverting the
-binary while leaving legacy monetary processing enabled is not a verified rollback.
+the new financial guards; keep V099 and the ledger/evidence. Also prevent older
+manual/Excel reconciliation writers from deciding v2 reservations: disabling the
+flags alone does not gate those writers. Merely reverting the binary is not a
+verified monetary rollback.
 The isolated HTTP/SQL workload and acceptance criteria are in
 [`tools/loadtests/recommendation-rewards`](../tools/loadtests/recommendation-rewards/README.md).
 
