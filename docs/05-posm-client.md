@@ -156,13 +156,43 @@ automatic credit additionally requires an explicit `POSM_SALE_BONUS_ELIGIBLE_AFT
 Legacy DTOs, recommendation display, receipts, customer screen, QR, RPS and separate `/learn`
 continue independently.
 
-**Acceptance limits:** the current Firebird adapter reads decimal `QUANT` without a documented
-full-package unit/pack coefficient. Its real lines deliberately remain `unitSemantics=unknown`,
-so their journal is incomplete and they require HQ rather than guessed automatic rewards. A
-supported adapter must prove `full_package`; positive tests use explicit synthetic adapter
-fixtures. Native refund capture is not implemented. Core/contract tests and a Windows-targeted
-WPF build do not constitute a real Windows runtime or pharmacy acceptance test; that runtime
-has not been exercised for this candidate.
+The controlled Standard-N DEMO whole-pack sale confirms `HUMAN_QUANT="1"`, `QUANT=-1`
+and the whole-pack price. Posting preserves `HUMAN_QUANT`; `KOEF` is an inventory participation
+flag, not a pack coefficient. `StandardNQuantityUnits` accepts only a positive integer native
+human quantity agreeing with the absolute raw quantity. Fractions, absent/malformed human
+quantities and mismatches remain `unknown`; quantities/prices are never rounded or converted.
+Older schemas without the optional posted human-quantity column retain ordinary sale capture.
+
+Standard-N allocates a new posted `DOC_DETAIL.ID`. The real posted ID stays unchanged;
+`observedSourceLineId` is an optional, one-to-one link to the original ACTIVE ID, permitted only
+for a unique same-document signature of part, quantity, price, amount, discount and human quantity.
+Ambiguity cannot create money. Durable retry preserves the original link, including after a
+failed finalization and a snapshot already containing posted rows.
+
+`NativeRefundCaptureEnabled` / `EPHARM_NATIVE_REFUND_CAPTURE_ENABLED` defaults to `false`.
+Its separate read-only observer accepts posted cash return type **9**, positive native monetary
+signs, final details and fiscal identity. The UI-proven original sale is `DOCS.PARENT_ID`, never
+the return line's `PARENT_ID`. It emits `standardn-db-refund` / `standardn-posted-refund`, not a
+fabricated sale print cue. Original fiscal identity includes the original device number.
+Missing or conflicting original evidence goes to HQ without reserving an unrelated sale.
+Returns stay in the raw journal but are excluded from paid-sales/GMV/marketing attribution.
+
+The private refund cursor v2 keeps a fixed activation database time and rotating bounded scans:
+generator IDs are not commit order. It retains up to 256 pending and 16,384 completed return IDs;
+enqueue precedes checkpoint, replay is idempotent, and a full bound stops observation with a
+diagnostic before dropping an unretained return. Cash work continues. Historical postings before
+activation are not imported. An unreleased local v1 cursor is preserved/rejected, not silently reset.
+The generic print guard cannot relabel an old held sale as a return or suppress a proven paid
+sale merely because an unrelated return draft remains open.
+
+A server-observed RPS mismatch is a negative-only HQ veto, scoped to the available pharmacy,
+device, raw user, native session and workstation of a grant alive at completion. RPS storage has
+no database namespace; this conservative veto is not positive proof of financial identity.
+Absent/matching/unrelated observations do not replace or create an HQ user mapping.
+
+**Acceptance limits:** core/contract tests and a Windows-targeted WPF build do not constitute a
+complete real Windows/pharmacy acceptance test. The full current-candidate pilot is tracked in
+the root `PLAN.md`; production switches and the main branch remain unchanged.
 
 Merchandising tasks are accepted only while both the task deadline (when present) and QR-token
 expiration remain in the future. An already-open window hides its QR at expiry rather than waiting
