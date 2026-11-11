@@ -182,8 +182,17 @@ generator IDs are not commit order. It retains up to 256 pending and 16,384 comp
 enqueue precedes checkpoint, replay is idempotent, and a full bound stops observation with a
 diagnostic before dropping an unretained return. Cash work continues. Historical postings before
 activation are not imported. An unreleased local v1 cursor is preserved/rejected, not silently reset.
+Deleting the highest unpaid draft may legitimately reduce live `MAX(DOCS.ID)`. This alone does
+not disable the observer or rewind its durable high watermark; cutoff and source-identity
+checks still apply. A maximum-ID decrease is not treated as proof of a database restore.
 The generic print guard cannot relabel an old held sale as a return or suppress a proven paid
 sale merely because an unrelated return draft remains open.
+A per-log bounded BeforeQueue/Destroy-ID/AfterQueue tracker permits a delayed paper dialog only
+for exact IDs from that completed print batch intersected with durable observed, not-yet-queued
+documents. The native classifier also reads unknown batch IDs to retain a mixed-return veto;
+those IDs cannot authorize a sale. Legacy/docless classification keeps its five-second POSTDT
+window, and the bounded five-second probe after the cue plus paid/source/session/fiscal checks
+remain unchanged. Rotation, interruption and overflow cannot enable the exact-ID exception.
 
 A server-observed RPS mismatch is a negative-only HQ veto, scoped to the available pharmacy,
 device, raw user, native session and workstation of a grant alive at completion. RPS storage has
