@@ -190,6 +190,72 @@ public sealed class StandardNReceiptProjectionTests
     }
 
     [Fact]
+    public void NativeHeartbeatDiscardsCrashedOpenSessionsInsteadOfSelectingTheNewestId()
+    {
+        var now = new DateTimeOffset(2026, 11, 11, 17, 0, 53, TimeSpan.FromHours(6));
+        var stale = new StandardNReceiptSessionRow(1716, "-1", 77, "CASH-1", "zkassa") {
+            HeartbeatAt = now.AddDays(-6), DatabaseNow = now,
+        };
+        var live = stale with { SessionId = 1719, WorkstationId = 78, HeartbeatAt = now.AddSeconds(-53) };
+        Assert.Equal(live, StandardNReceiptProjection.ExactLocalSession("CASH-1", [stale, stale with {
+            SessionId = 1717, HeartbeatAt = now.AddDays(-5) }, live], requireHeartbeat: true));
+        Assert.Equal(live, StandardNReceiptProjection.ExactLocalSession("CASH-1", [live, stale with {
+            SessionId = 1720 }], requireHeartbeat: true)); // ID order alone is never proof.
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1", [live, live with { SessionId = 1721 }], true));
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-2", [live], true));
+        Assert.Throws<InvalidDataException>(() => StandardNReceiptProjection.ExactLocalSession("CASH-1",
+            Enumerable.Repeat(live, 101).ToArray(), true));
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(299, true)]
+    [InlineData(300, false)]
+    [InlineData(301, false)]
+    [InlineData(-1, false)]
+    public void HeartbeatUsesTheSameDatabaseClockAndAConfirmedFiveMinuteWindow(int ageSeconds, bool valid)
+    {
+        var databaseNow = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.FromHours(6));
+        var row = new StandardNReceiptSessionRow(1, "cashier", 77, "CASH-1", "zkassa") {
+            HeartbeatAt = databaseNow.AddSeconds(-ageSeconds), DatabaseNow = databaseNow,
+        };
+        Assert.Equal(valid ? row : null, StandardNReceiptProjection.ExactLocalSession("CASH-1", [row], true));
+    }
+
+    [Fact]
+    public void UnsupportedOrMissingHeartbeatSchemaRetainsExactOnlyLegacySelection()
+    {
+        var row = new StandardNReceiptSessionRow(1, "cashier", 77, "CASH-1", "zkassa");
+        Assert.Equal(row, StandardNReceiptProjection.ExactLocalSession("CASH-1", [row], false));
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1", [row], true));
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1", [row with {
+            HeartbeatAt = DateTimeOffset.UtcNow }], true));
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1", [row, row with { SessionId = 2 }], false));
+        var legacy = StandardNReceiptProjection.CurrentSessionSql(false);
+        Assert.DoesNotContain("HEARTBEATS", legacy); Assert.DoesNotContain("DB_NOW", legacy);
+        var current = StandardNReceiptProjection.CurrentSessionSql(true);
+        Assert.Contains("first 101", current); Assert.Contains("s.ENDDT is null", current);
+        Assert.Contains("s.HEARTBEATS>DATEADD(-5 MINUTE TO cast(CURRENT_TIMESTAMP as timestamp))", current);
+        Assert.Contains("s.HEARTBEATS<=cast(CURRENT_TIMESTAMP as timestamp)", current);
+        Assert.DoesNotContain("desc", current); Assert.DoesNotContain("STARTDT", current);
+    }
+
+    [Fact]
+    public void SessionReaderProjectsNativeHeartbeatAndDatabaseNowWithoutAssumingHostTime()
+    {
+        var now = new DateTime(2026, 11, 11, 17, 0, 53, DateTimeKind.Unspecified);
+        using var table = new DataTable();
+        foreach (var column in new[] { "SESSION_ID", "WS_ID" }) table.Columns.Add(column, typeof(long));
+        foreach (var column in new[] { "USER_ID", "COMPNAME", "PROG" }) table.Columns.Add(column, typeof(string));
+        foreach (var column in new[] { "HEARTBEATS", "DB_NOW" }) table.Columns.Add(column, typeof(DateTime));
+        table.Rows.Add(1719L, 78L, "-1", "CASH-1", "zkassa", now.AddSeconds(-53), now);
+        using var reader = table.CreateDataReader(); Assert.True(reader.Read());
+        var row = StandardNReceiptProjection.Session(reader);
+        Assert.Equal(TimeSpan.FromSeconds(53), row.DatabaseNow - row.HeartbeatAt);
+        Assert.Equal(row, StandardNReceiptProjection.ExactLocalSession("CASH-1", [row], true));
+    }
+
+    [Fact]
     public void RequiredColumnsCannotBeSilentlyDefaultedWhenSchemaIsUnrecognized()
     {
         using var table = new DataTable();

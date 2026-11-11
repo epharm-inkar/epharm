@@ -182,13 +182,12 @@ public sealed partial class StandardNDbLookup
     {
         var machine = StaffSessionResolver.CanonicalComputer(_machineName);
         if (machine.Length == 0) return null;
+        var heartbeatTimestamp = ReadStaffSessionTimestampShape(connection, transaction).Heartbeat;
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandTimeout = TimeoutSec();
-        command.CommandText = @"select first 101 s.ID as SESSION_ID,s.USER_ID,s.WS_ID,s.PROG,w.COMPNAME
-            from SESSIONS s join WORKSTATIONS w on w.ID=s.WS_ID
-            where s.ENDDT is null and upper(w.COMPNAME) containing @machine
-              and (s.PROG containing 'zkassa' or s.PROG containing 'kassir') order by s.ID";
+        // Vendor sessions can remain open after a crash; only a supported DB heartbeat proves liveness.
+        command.CommandText = StandardNReceiptProjection.CurrentSessionSql(heartbeatTimestamp);
         command.Parameters.AddWithValue("@machine", machine);
         using var reader = command.ExecuteReader();
         var rows = new List<StandardNReceiptSessionRow>();
@@ -196,7 +195,7 @@ public sealed partial class StandardNDbLookup
         {
             rows.Add(StandardNReceiptProjection.Session(reader));
         }
-        var selected = StandardNReceiptProjection.ExactLocalSession(machine, rows);
+        var selected = StandardNReceiptProjection.ExactLocalSession(machine, rows, heartbeatTimestamp);
         if (selected == null) return null;
         _userNameCache.TryGetValue(selected.UserId, out var name);
         return new(selected.SessionId, selected.UserId, name, selected.WorkstationId, selected.WorkstationName, true);

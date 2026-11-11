@@ -16,7 +16,11 @@ internal sealed record StandardNReceiptHeader(long Id, long SessionId, int Type,
     public DateTimeOffset? CommittedAt { get; init; }
 }
 internal sealed record StandardNReceiptSessionRow(long SessionId, string UserId, long? WorkstationId,
-    string? WorkstationName, string? Program);
+    string? WorkstationName, string? Program)
+{
+    public DateTimeOffset? HeartbeatAt { get; init; }
+    public DateTimeOffset? DatabaseNow { get; init; }
+}
 
 /// <summary>Strict, shared projection of the actual Firebird query rows; never selects a newest cart.</summary>
 internal static class StandardNReceiptProjection
@@ -31,18 +35,33 @@ internal static class StandardNReceiptProjection
 
     public static StandardNReceiptSessionRow Session(IDataRecord row) => new(
         RequiredLong(row, "SESSION_ID"), Text(row, "USER_ID") ?? "", OptionalLong(row, "WS_ID"),
-        Text(row, "COMPNAME"), Text(row, "PROG"));
+        Text(row, "COMPNAME"), Text(row, "PROG")) {
+            HeartbeatAt = Timestamp(Value(row, "HEARTBEATS")), DatabaseNow = Timestamp(Value(row, "DB_NOW")),
+        };
 
-    public static StandardNReceiptSessionRow? ExactLocalSession(string machine, IReadOnlyList<StandardNReceiptSessionRow> rows)
+    public static StandardNReceiptSessionRow? ExactLocalSession(string machine, IReadOnlyList<StandardNReceiptSessionRow> rows,
+        bool requireHeartbeat = false)
     {
         if (rows.Count > 100) throw new InvalidDataException("Cashier session observation bound exceeded.");
         var canonical = StaffSessionResolver.CanonicalComputer(machine);
         if (canonical.Length == 0) return null;
         var exact = rows.Where(row => StaffSessionResolver.CanonicalComputer(row.WorkstationName) == canonical &&
             row.Program is { } program && (program.Contains("zkassa", StringComparison.OrdinalIgnoreCase) ||
-                program.Contains("kassir", StringComparison.OrdinalIgnoreCase))).ToArray();
+                program.Contains("kassir", StringComparison.OrdinalIgnoreCase)) &&
+            (!requireHeartbeat || row.HeartbeatAt is { } heartbeat && row.DatabaseNow is { } now &&
+                now >= heartbeat && now - heartbeat < TimeSpan.FromMinutes(5))).ToArray();
         return exact.Length == 1 && exact[0].SessionId > 0 && !string.IsNullOrWhiteSpace(exact[0].UserId) ? exact[0] : null;
     }
+
+    public static string CurrentSessionSql(bool heartbeatTimestamp) =>
+        "select first 101 s.ID as SESSION_ID,s.USER_ID,s.WS_ID,s.PROG,w.COMPNAME" +
+        (heartbeatTimestamp ? ",s.HEARTBEATS,cast(CURRENT_TIMESTAMP as timestamp) as DB_NOW" : "") +
+        @" from SESSIONS s join WORKSTATIONS w on w.ID=s.WS_ID
+            where s.ENDDT is null and upper(w.COMPNAME) containing @machine
+              and (s.PROG containing 'zkassa' or s.PROG containing 'kassir')" +
+        (heartbeatTimestamp ? @" and s.HEARTBEATS is not null
+              and s.HEARTBEATS>DATEADD(-5 MINUTE TO cast(CURRENT_TIMESTAMP as timestamp))
+              and s.HEARTBEATS<=cast(CURRENT_TIMESTAMP as timestamp)" : "") + " order by s.ID";
 
     public static string ActiveLinesSql(int documents)
     {
