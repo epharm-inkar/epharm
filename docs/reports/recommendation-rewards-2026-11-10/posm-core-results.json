@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-11",
+  "scope": "Exact current Release POSM core suite on macOS, canonical private temp directory",
+  "sourceCommit": "a755c074791fdc6195044d16bb17f9cad4f0bd5f",
+  "counts": {
+    "total": "765",
+    "executed": "750",
+    "passed": "750",
+    "failed": "0",
+    "error": "0",
+    "timeout": "0",
+    "aborted": "0",
+    "inconclusive": "0",
+    "passedButRunAborted": "0",
+    "notRunnable": "0",
+    "notExecuted": "0",
+    "disconnected": "0",
+    "warning": "0",
+    "completed": "0",
+    "inProgress": "0",
+    "pending": "0"
+  },
+  "targetedWithinFull": {
+    "total": 152,
+    "outcomes": ["Passed"]
+  },
+  "trxSha256": "7dc6622f41abf6cee6e8418e634da4b6e3c01cdb475c3c7f04426bb4e3177377",
+  "testAssemblySha256": "e3bb525e8f93ff29613a7eeb8a11852fc3c358cf2965a3089f5df2925764de88",
+  "limitations": [
+    "15 Windows-only cases skipped here; separate actual Windows update runner covers them in windows-core-results.json",
+    "Earlier default Debug/no-build invocation used a stale 746-test assembly and system symlink temp path: 63 FAIL. It is retained as failed evidence, not candidate acceptance.",
+    "Windows financial positive/return gate remains pending."
+  ],
+  "resultOutcomes": {
+    "Passed": 750,
+    "NotExecuted": 15
+  }
+}
