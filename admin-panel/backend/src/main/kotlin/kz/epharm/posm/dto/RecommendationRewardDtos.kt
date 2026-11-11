@@ -1,5 +1,6 @@
 package kz.epharm.posm.dto
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Size
 import java.math.BigDecimal
@@ -61,6 +62,9 @@ data class RewardPaidLine(
     val signedPrice: BigDecimal = BigDecimal.ZERO,
     val signedAmount: BigDecimal = BigDecimal.ZERO,
     val unitSemantics: String = "unknown",
+    /** The posted ID remains real; only a unique native same-document tuple can link its observed predecessor. */
+    @field:JsonInclude(JsonInclude.Include.NON_NULL) val observedSourceLineId: Long? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL) val lineLinkSource: String? = null,
 )
 
 data class RewardCompletionEvidence(
@@ -80,6 +84,8 @@ data class RewardCompletionEvidence(
     val originalSourceDocumentId: Long? = null,
     val originalFiscalNumber: Long? = null,
     val originalFiscalShift: Long? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL) @field:Size(max = 128) val originalDeviceNumber: String? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL) val documentType: Int? = null,
 )
 
 data class RewardSaleEvidence(

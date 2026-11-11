@@ -29,6 +29,9 @@ import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.posm.dto.*
+import kz.epharm.posm.repository.PosSaleRepository
+import kz.epharm.posm.repository.RecommendationEventRepository
+import kz.epharm.reporting.CampaignReportRepository
 import kz.epharm.posm.service.RewardReviewDecision
 import kz.epharm.promo.entity.PromoEntity
 import kz.epharm.promo.entity.PromoStatus
@@ -89,6 +92,9 @@ class RecommendationRewardFlowIntegrationTest {
     @Autowired lateinit var products: ProductRepository
     @Autowired lateinit var promos: PromoRepository
     @Autowired lateinit var rules: RuleRepository
+    @Autowired lateinit var sales: PosSaleRepository
+    @Autowired lateinit var recommendationEvents: RecommendationEventRepository
+    @Autowired lateinit var campaignReports: CampaignReportRepository
     private var bearer: String? = null
 
     @Test fun `actual recommend shown and paid two package sale credit the shared wallet without fake Excel`() {
@@ -397,6 +403,309 @@ class RecommendationRewardFlowIntegrationTest {
         assertThat(balance(f.employee)).isEqualTo(400)
     }
 
+    @Test fun `refund replay and physical transport alias cannot reopen the credited HQ decision or duplicate its effects`() {
+        val f = flow()
+        acknowledge(f)
+        deliver(f, payment(f))
+        val returned = refund(f, f.employee)
+        deliver(f, returned)
+        val id = cases(f).single()["id"].toString()
+        decide(id, reviewer(setOf(f.employee.pharmacy)), RewardReviewDecision("acknowledge_refund", "Original credit retained after verified return"))
+        val auditBefore = number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=?", f.employee.pharmacy)
+        val alias = returned.copy(saleId = "refund_alias_${token()}")
+        deliver(f, returned)
+        deliver(f, alias)
+        assertThat(cases(f).single()["state"]).isEqualTo("credited")
+        assertThat(cases(f).single()["reason_code"]).isEqualTo("refund_reviewed")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(auditBefore)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(2)
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(3)
+        assertCredit(f, 400)
+        assertThat(balance(f.employee)).isEqualTo(400)
+        assertThat(spent(f.world.offers.single())).isEqualTo(400)
+    }
+
+    @Test fun `known RPS source mismatch vetoes reward while absent matched or different source contexts are neutral`() {
+        for (mode in listOf("mismatch", "match", "absent", "other-user", "other-session", "other-workstation", "other-device", "other-pharmacy", "expired", "revoked", "future")) {
+            val f = flow()
+            acknowledge(f)
+            val paid = payment(f)
+            if (mode != "absent") {
+                val person = people.findById(f.employee.person).orElseThrow()
+                val created = if (mode == "future") paid.printedAt.plusSeconds(1) else f.shownAt.minusSeconds(3600)
+                val expires = if (mode == "expired") paid.printedAt.minusSeconds(1) else paid.printedAt.plusSeconds(3600)
+                val revoked = if (mode == "revoked") java.sql.Timestamp.from(paid.printedAt.minusSeconds(1)) else null
+                jdbc.update("""INSERT INTO posm_device_staff_sessions(token_hash,pharmacist_id,device_id,pharmacy_id,password_fingerprint,
+                    process_instance_id,standard_n_user_id,standard_n_session_id,workstation_id,standard_n_iin,standard_n_iin_status,
+                    expires_at,created_at,revoked_at) VALUES (?,?,?,?,?,?,?,?,?,?,'available',?,?,?)""",
+                    sha("grant:${token()}"),person.id,if(mode=="other-device") "different-cash" else f.employee.device,
+                    if(mode=="other-pharmacy") "different-pharmacy" else f.employee.pharmacy,sha("unused-test-password"),"process-test",
+                    if(mode=="other-user") "different-user" else f.identity.rawUserId,
+                    if(mode=="other-session") (f.identity.nativeSessionId+1).toString() else f.identity.nativeSessionId.toString(),
+                    if(mode=="other-workstation") "different-workstation" else f.identity.workstationId,
+                    if(mode=="match") person.iin else "111111111111",java.sql.Timestamp.from(expires),java.sql.Timestamp.from(created),revoked)
+            }
+            deliver(f, paid)
+            val expected = if (mode == "mismatch") 0L else 400L
+            assertCredit(f, expected)
+            assertThat(balance(f.employee)).isEqualTo(expected)
+            assertThat(spent(f.world.offers.single())).isEqualTo(expected)
+            if (mode == "mismatch") {
+                assertThat(cases(f).single()["state"]).isEqualTo("review_required")
+                assertThat(cases(f).single()["reason_code"]).isEqualTo("rps_identity_mismatch")
+            }
+        }
+    }
+
+    @Test fun `RPS observations compare against the financial recipient rather than the account owning the grant`() {
+        for (source in listOf("grant-profile", "recipient-profile", "unknown")) {
+            val f = flow()
+            val other = employee(base = f.employee, mapped = false)
+            val recipient = people.findById(f.employee.person).orElseThrow()
+            val grantOwner = people.findById(other.person).orElseThrow()
+            acknowledge(f)
+            val paid = payment(f)
+            jdbc.update("""INSERT INTO posm_device_staff_sessions(token_hash,pharmacist_id,device_id,pharmacy_id,password_fingerprint,
+                process_instance_id,standard_n_user_id,standard_n_session_id,workstation_id,standard_n_iin,standard_n_iin_status,
+                expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                sha("grant:${token()}"),grantOwner.id,f.employee.device,f.employee.pharmacy,sha("unused-test-password"),"process-test",
+                f.identity.rawUserId,f.identity.nativeSessionId.toString(),f.identity.workstationId,
+                when(source) { "grant-profile" -> grantOwner.iin; "recipient-profile" -> recipient.iin; else -> null },
+                if(source=="unknown") "missing" else "available",
+                java.sql.Timestamp.from(paid.printedAt.plusSeconds(3600)),java.sql.Timestamp.from(f.shownAt.minusSeconds(3600)))
+            deliver(f, paid)
+            val expected = if(source=="grant-profile") 0L else 400L
+            assertCredit(f, expected)
+            assertThat(balance(f.employee)).isEqualTo(expected)
+            assertThat(balance(other)).isZero()
+            assertThat(spent(f.world.offers.single())).isEqualTo(expected)
+            if(source=="grant-profile") {
+                assertThat(cases(f).single()["state"]).isEqualTo("review_required")
+                assertThat(cases(f).single()["reason_code"]).isEqualTo("rps_identity_mismatch")
+            }
+        }
+    }
+
+    @Test fun `conflicting known physical and fiscal originals create only unlinked HQ review without freezing either receipt`() {
+        val first = flow()
+        val second = flow(world = first.world, employee = first.employee)
+        acknowledge(first); acknowledge(second)
+        deliver(first, payment(first)); deliver(second, payment(second))
+        val returned = refund(first, first.employee)
+        val evidence = returned.rewardEvidence!!
+        deliver(first, returned.copy(rewardEvidence = evidence.copy(completion = evidence.completion.copy(originalFiscalNumber = second.doc))))
+        assertThat(cases(first).single()["state"]).isEqualTo("credited")
+        assertThat(cases(second).single()["state"]).isEqualTo("credited")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", first.employee.pharmacy)).isZero()
+        val review = rows("""SELECT r.physical_key,r.fiscal_key,w.reason_code FROM recommendation_reward_receipts r
+            JOIN recommendation_sale_rewards w ON w.canonical_receipt_id=r.id WHERE r.source_sale_id=?""", returned.saleId).single()
+        assertThat(review["physical_key"]).isNull(); assertThat(review["fiscal_key"]).isNull()
+        assertThat(review["reason_code"]).isEqualTo("refund_original_reference_conflict")
+        assertThat(balance(first.employee)).isEqualTo(800)
+        assertThat(spent(first.world.offers.single())).isEqualTo(800)
+    }
+
+    @Test fun `same fiscal return across source namespace document and transport aliases cannot reopen an acknowledged case`() {
+        val f = flow()
+        acknowledge(f)
+        deliver(f, payment(f))
+        val returned = refund(f, f.employee)
+        deliver(f, returned)
+        val id = cases(f).single()["id"].toString()
+        decide(id, reviewer(setOf(f.employee.pharmacy)), RewardReviewDecision("acknowledge_refund", "Credit retained after verified return"))
+        val before = number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=?", f.employee.pharmacy)
+        val aliasDoc = documents.incrementAndGet()
+        val aliasSession = "refund_alias_${token()}"
+        val evidence = returned.rewardEvidence!!
+        val alias = returned.copy(saleId = "refund_fiscal_alias_${token()}", sessionId = aliasSession, sourceDocumentId = aliasDoc,
+            rewardEvidence = evidence.copy(checkoutSessionId = aliasSession, completion = evidence.completion.copy(
+                sourceDocumentId = aliasDoc, identity = evidence.completion.identity.copy(sourceNamespace = "b".repeat(64)),
+                lines = evidence.completion.lines.map { it.copy(sourceDocumentId = aliasDoc) })))
+        deliver(f, alias)
+        assertThat(cases(f).single()["state"]).isEqualTo("credited")
+        assertThat(cases(f).single()["reason_code"]).isEqualTo("refund_reviewed")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(before)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(2)
+        assertCredit(f, 400)
+        assertThat(balance(f.employee)).isEqualTo(400)
+    }
+
+    @Test fun `paid and return counters may overlap without sharing a canonical fiscal operation`() {
+        val f = flow()
+        acknowledge(f)
+        deliver(f, payment(f))
+        val returned = refund(f, f.employee)
+        val evidence = returned.rewardEvidence!!
+        deliver(f, returned.copy(rewardEvidence = evidence.copy(completion = evidence.completion.copy(fiscalNumber = f.doc))))
+        assertThat(cases(f).single()["reason_code"]).isEqualTo("refund_reported")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(2)
+        assertThat(number("SELECT count(DISTINCT fiscal_key) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(2)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=? AND action='receipt_conflict'", f.employee.pharmacy)).isZero()
+        assertThat(balance(f.employee)).isEqualTo(400)
+    }
+
+    @Test fun `same physical return with changed original reference is a conflict and creates no second hold`() {
+        val f = flow()
+        acknowledge(f)
+        val returned = refund(f, f.employee)
+        deliver(f, returned)
+        val alias = returned.copy(saleId = "refund_changed_${token()}", rewardEvidence = returned.rewardEvidence!!.let {
+            it.copy(completion = it.completion.copy(originalSourceDocumentId = f.doc + 5000))
+        })
+        deliver(f, alias)
+        val review = rows("SELECT state,reason_code FROM recommendation_sale_rewards WHERE source_sale_id=?", returned.saleId).single()
+        assertThat(review["state"]).isEqualTo("review_required")
+        assertThat(review["reason_code"]).isEqualTo("receipt_payload_conflict")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=? AND action='receipt_conflict'", f.employee.pharmacy)).isEqualTo(1)
+        assertThat(balance(f.employee)).isZero()
+        assertThat(spent(f.world.offers.single())).isZero()
+    }
+
+    @Test fun `acknowledged unlinked refund stays closed on replay and alias while its later original remains fenced`() {
+        val f = flow()
+        acknowledge(f)
+        val returned = refund(f, f.employee)
+        deliver(f, returned)
+        val unlinked = rows("SELECT * FROM recommendation_sale_rewards WHERE source_sale_id=?", returned.saleId).single()
+        val id = unlinked["id"].toString()
+        decide(id, reviewer(setOf(f.employee.pharmacy)), RewardReviewDecision("acknowledge_refund", "Verified return before delayed original delivery"))
+        val auditBefore = number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=?", f.employee.pharmacy)
+        deliver(f, returned)
+        deliver(f, returned.copy(saleId = "refund_alias_${token()}"))
+        val closed = rows("SELECT state,reason_code FROM recommendation_sale_rewards WHERE id=?", id).single()
+        assertThat(closed["state"]).isEqualTo("rejected")
+        assertThat(closed["reason_code"]).isEqualTo("refund_reviewed")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(auditBefore)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+        deliver(f, payment(f))
+        assertCredit(f, 0)
+        assertThat(cases(f).single()["state"]).isEqualTo("refund_review")
+        assertThat(balance(f.employee)).isZero()
+        assertThat(spent(f.world.offers.single())).isZero()
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(3)
+    }
+
+    @Test fun `native same document final line alias credits only the observed item and keeps the actual posted ID`() {
+        val f = flow()
+        acknowledge(f)
+        val paid = payment(f)
+        val evidence = paid.rewardEvidence!!
+        val posted = evidence.completion.lines.single().copy(sourceLineId = 801, observedSourceLineId = 10,
+            lineLinkSource = "standardn-unique-final-line")
+        deliver(f, paid.copy(rewardEvidence = evidence.copy(completion = evidence.completion.copy(lines = listOf(posted)))))
+        assertCredit(f, 400)
+        assertThat(balance(f.employee)).isEqualTo(400)
+        assertThat(spent(f.world.offers.single())).isEqualTo(400)
+        assertThat(number("SELECT (reward_evidence #>> '{completion,lines,0,sourceLineId}')::bigint FROM pos_sales WHERE id=?", f.sale)).isEqualTo(801)
+        assertThat(number("SELECT (reward_evidence #>> '{completion,lines,0,observedSourceLineId}')::bigint FROM pos_sales WHERE id=?", f.sale)).isEqualTo(10)
+    }
+
+    @Test fun `duplicate observed aliases across two posted SKUs require review and cannot issue money`() {
+        val f = flow(world = world(offerCount = 2), quantities = listOf(1, 1))
+        acknowledge(f)
+        val paid = payment(f)
+        val evidence = paid.rewardEvidence!!
+        deliver(f, paid.copy(rewardEvidence = evidence.copy(completion = evidence.completion.copy(lines =
+            evidence.completion.lines.mapIndexed { i, line -> line.copy(sourceLineId = 801L + i,
+                observedSourceLineId = 10, lineLinkSource = "standardn-unique-final-line") }))))
+        assertCredit(f, 0)
+        assertThat(cases(f).map { it["reason_code"] }).containsOnly("paid_line_link_inconsistent")
+        assertThat(balance(f.employee)).isZero()
+        f.world.offers.forEach { assertThat(spent(it)).isZero() }
+    }
+
+    @Test fun `unknown or unposted refund cannot poison a paid canonical receipt and remains in the raw journal`() {
+        for (malformed in listOf("source", "unposted", "missing-type")) {
+            val f = flow()
+            acknowledge(f)
+            val returned = refund(f, f.employee)
+            val evidence = returned.rewardEvidence!!
+            val complete = evidence.completion.let { when (malformed) {
+                "source" -> it.copy(source = "standardn-posted-print")
+                "unposted" -> it.copy(documentStatus = 0)
+                else -> it.copy(documentType = null)
+            } }.copy(sourceDocumentId = f.doc, fiscalNumber = f.doc)
+            // An unverified claim may even reuse the paid document IDs: it still owns no physical/fiscal fence.
+            val invalid = returned.copy(sourceDocumentId = f.doc, rewardEvidence = evidence.copy(completion = complete))
+            deliver(f, invalid)
+            assertThat(number("SELECT count(*) FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", f.employee.pharmacy)).isZero()
+            val unlinked = rows("SELECT r.physical_key,r.fiscal_key,w.state FROM recommendation_reward_receipts r JOIN recommendation_sale_rewards w ON w.canonical_receipt_id=r.id WHERE r.source_sale_id=?", invalid.saleId).single()
+            assertThat(unlinked["physical_key"]).isNull(); assertThat(unlinked["fiscal_key"]).isNull()
+            assertThat(unlinked["state"]).isEqualTo("refund_review")
+            assertThat(number("SELECT count(*) FROM pos_sales WHERE id=?", invalid.saleId)).isEqualTo(1)
+            deliver(f, payment(f))
+            assertCredit(f, 400)
+            assertThat(balance(f.employee)).isEqualTo(400)
+            assertThat(spent(f.world.offers.single())).isEqualTo(400)
+        }
+    }
+
+    @Test fun `proven original physical document alone fences the reward without any invented original fiscal fields`() {
+        val f = flow()
+        acknowledge(f)
+        val returned = refund(f, f.employee)
+        val evidence = returned.rewardEvidence!!
+        deliver(f, returned.copy(rewardEvidence = evidence.copy(completion = evidence.completion.copy(
+            originalDeviceNumber = null, originalFiscalNumber = null, originalFiscalShift = null))))
+        deliver(f, payment(f))
+        assertCredit(f, 0)
+        assertThat(cases(f).single()["state"]).isEqualTo("refund_review")
+        val hold = rows("SELECT physical_key,fiscal_key FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", f.employee.pharmacy).single()
+        assertThat(hold["physical_key"]).isNotNull(); assertThat(hold["fiscal_key"]).isNull()
+        assertThat(balance(f.employee)).isZero()
+        assertThat(spent(f.world.offers.single())).isZero()
+    }
+
+    @Test fun `cross register fiscal refund uses its original register and never guesses it from the return register`() {
+        for (hasOriginalRegister in listOf(true, false)) {
+            val f = flow()
+            acknowledge(f)
+            deliver(f, payment(f))
+            val returned = refund(f, f.employee)
+            val evidence = returned.rewardEvidence!!
+            val completion = evidence.completion.copy(originalSourceDocumentId = null, deviceNumber = "other-register",
+                originalDeviceNumber = if (hasOriginalRegister) f.employee.device else null)
+            deliver(f, returned.copy(rewardEvidence = evidence.copy(completion = completion)))
+            assertThat(cases(f).single()["state"]).isEqualTo(if (hasOriginalRegister) "refund_review" else "credited")
+            assertThat(number("SELECT count(*) FROM recommendation_reward_refund_holds WHERE pharmacy_id=?", f.employee.pharmacy))
+                .isEqualTo(if (hasOriginalRegister) 1L else 0L)
+            assertThat(balance(f.employee)).isEqualTo(400)
+            assertThat(spent(f.world.offers.single())).isEqualTo(400)
+        }
+    }
+
+    @Test fun `refund does not masquerade as a sale in attribution campaign totals or receipt lift and remains visible`() {
+        val f = flow()
+        acknowledge(f)
+        val returned = refund(f, f.employee).let { r ->
+            r.copy(sessionId = f.session, rewardEvidence = r.rewardEvidence!!.copy(checkoutSessionId = f.session))
+        }
+        deliver(f, returned)
+        assertThat(number("SELECT count(*) FROM recommendation_events WHERE session_id=? AND sold_at IS NOT NULL", f.session)).isZero()
+        val since = f.shownAt.minusSeconds(1)
+        assertThat(sales.countByPharmacySince(since).filter { it.pharmacyId == f.employee.pharmacy }).isEmpty()
+        assertThat(sales.amountByPharmacySince(since).filter { it.pharmacyId == f.employee.pharmacy }).isEmpty()
+        assertThat(sales.countByPharmaciesSince(listOf(f.employee.pharmacy), since)).isZero()
+        val journal = recommendationEvents.findJournalRowsSince(since, 1000, 0)
+            .filter { it.saleId == returned.saleId }
+        assertThat(journal).hasSize(1)
+        assertThat(journal.single().eventType).isEqualTo("sale")
+        assertThat(journal.single().title).startsWith("Возврат: ")
+        // Defend historical/stale recommendation links too, without inventing another paid sale.
+        jdbc.update("UPDATE recommendation_events SET sale_id=?,sold_at=? WHERE session_id=?", returned.saleId,
+            java.sql.Timestamp.from(returned.printedAt), f.session)
+        val counts = campaignReports.aggregate(f.world.offers.single().promo, since, Instant.now().plusSeconds(1))
+            .map { it.counts }
+        assertThat(counts.sumOf { it.attributedSales }).isZero()
+        assertThat(counts.sumOf { it.recommendationSalesUnder2m }).isZero()
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE id=?", returned.saleId)).isEqualTo(1)
+        assertThat(balance(f.employee)).isZero()
+    }
+
     private data class Employee(val pharmacy: String, val person: String, val rawUser: String, val device: String, val key: String)
     private data class Offer(val id: String, val barcode: String, val promo: String)
     private data class World(val trigger: String, val triggerBarcode: String, val offers: List<Offer>)
@@ -524,13 +833,14 @@ class RecommendationRewardFlowIntegrationTest {
         val at = f.shownAt.plusSeconds(200)
         val identity = f.identity.copy(rawUserId = cashier.rawUser, nativeSessionId = doc, workstationId = cashier.device)
         val completion = original.rewardEvidence!!.completion.let {
-            it.copy(status = "refund", completedAt = at, identity = identity, sourceDocumentId = doc,
+            it.copy(status = "refund", source = "standardn-posted-refund", documentType = 9,
+                completedAt = at, identity = identity, sourceDocumentId = doc, deviceNumber = cashier.device,
                 signedTotal = it.signedTotal.abs(), fiscalNumber = doc,
                 lines = it.lines.map { line -> line.copy(sourceDocumentId = doc, signedQuantity = line.signedQuantity.abs(), signedAmount = line.signedAmount.abs()) },
-                originalSourceDocumentId = f.doc, originalFiscalNumber = f.doc, originalFiscalShift = 1)
+                originalSourceDocumentId = f.doc, originalDeviceNumber = f.employee.device, originalFiscalNumber = f.doc, originalFiscalShift = 1)
         }
         return original.copy(saleId = "refund_${token()}", pharmacistId = cashier.rawUser, sessionId = session,
-            sourceDocumentId = doc, fiscalId = "F-$doc", printedAt = at,
+            sourceDocumentId = doc, captureSource = "standardn-db-refund", fiscalId = "F-$doc", printedAt = at,
             rewardEvidence = RewardSaleEvidence(checkoutSessionId = session, journalComplete = true, completion = completion))
     }
 

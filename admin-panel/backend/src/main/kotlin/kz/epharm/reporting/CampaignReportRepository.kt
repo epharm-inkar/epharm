@@ -43,6 +43,7 @@ class CampaignReportRepository(private val jdbc: NamedParameterJdbcTemplate) {
             LEFT JOIN pos_sales s ON s.id=e.sale_id
                 AND s.pharmacy_id=e.pharmacy_id AND s.session_id=e.session_id
                 AND s.printed_at=e.sold_at
+                AND COALESCE(s.reward_evidence #>> '{completion,status}', '') <> 'refund'
             WHERE e.kind IN ('substitution','crosssell')
               AND ((${cohort("e.shown_at")}) OR (${cohort("e.displayed_at")}))
         ), displayed AS (

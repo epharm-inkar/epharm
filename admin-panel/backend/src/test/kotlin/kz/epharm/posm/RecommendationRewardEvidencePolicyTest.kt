@@ -258,6 +258,111 @@ class RecommendationRewardEvidencePolicyTest {
         assertFalse(decide(body, input.copy(completion = paid)).eligible)
     }
 
+    @Test fun `only a missing legacy or explicit sale document type may claim payment`() {
+        val input = evidence()
+        assertTrue(decide(evidence = input.copy(completion = input.completion.copy(documentType = null))).eligible)
+        assertTrue(decide(evidence = input.copy(completion = input.completion.copy(documentType = 3))).eligible)
+        for (type in listOf(0, 9, -1)) assertFalse(decide(evidence = input.copy(completion = input.completion.copy(documentType = type))).eligible)
+    }
+
+    @Test fun `recognized same document posted line link retains the real ID and matches the observed lifecycle`() {
+        val input = evidence()
+        val line = input.completion.lines.single().copy(sourceLineId = 801, observedSourceLineId = 501,
+            lineLinkSource = "standardn-unique-final-line")
+        val result = decide(evidence = input.copy(completion = input.completion.copy(lines = listOf(line))))
+        assertTrue(result.eligible); assertEquals(1L, result.packages)
+        assertEquals(801L, line.sourceLineId)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["unknown-source", "missing-id", "zero-id", "negative-id", "cross-document"])
+    fun `unproved or invalid posted line aliases need review`(problem: String) {
+        val input = evidence()
+        val valid = input.completion.lines.single().copy(sourceLineId = 801, observedSourceLineId = 501,
+            lineLinkSource = "standardn-unique-final-line")
+        val changed = when (problem) {
+            "unknown-source" -> valid.copy(lineLinkSource = "best-guess")
+            "missing-id" -> valid.copy(observedSourceLineId = null)
+            "zero-id" -> valid.copy(observedSourceLineId = 0)
+            "negative-id" -> valid.copy(observedSourceLineId = -1)
+            else -> valid.copy(sourceDocumentId = 101)
+        }
+        assertFalse(decide(evidence = input.copy(completion = input.completion.copy(lines = listOf(changed)))).eligible)
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `aliased observed IDs must be unique including collisions with a direct line`(direct: Boolean) {
+        val body = sale(2).also { it.items = List(2) { sale().items.single() } }
+        val input = evidence(2, changes = listOf(change(), change(sequence = 2, line = 502)))
+        val line = evidence().completion.lines.single()
+        val first = if (direct) line else line.copy(sourceLineId = 801, observedSourceLineId = 501, lineLinkSource = "standardn-unique-final-line")
+        val second = line.copy(sourceLineId = 802, observedSourceLineId = 501, lineLinkSource = "standardn-unique-final-line")
+        assertEquals("paid_line_link_inconsistent", decide(body, input.copy(completion = input.completion.copy(lines = listOf(first, second)))).reason)
+    }
+
+    @Test fun `overlap between posted and observed ID domains is a valid one to one mapping`() {
+        val body = sale(3).also { it.items = listOf(sale().items.single(), sale(2).items.single()) }
+        val input = evidence(3, changes = listOf(change(line = 10), change(sequence = 2, line = 20, after = 2)))
+        val one = evidence().completion.lines.single().copy(sourceLineId = 20, observedSourceLineId = 10, lineLinkSource = "standardn-unique-final-line")
+        val two = evidence(2).completion.lines.single().copy(sourceLineId = 30, observedSourceLineId = 20, lineLinkSource = "standardn-unique-final-line")
+        val result = decide(body, input.copy(completion = input.completion.copy(lines = listOf(one, two))))
+        assertTrue(result.eligible); assertEquals(3L, result.packages)
+    }
+
+    private fun refundInput(): Pair<PosSaleEntity, RewardSaleEvidence> {
+        val body = sale().also { it.captureSource = "standardn-db-refund"; it.reportedPharmacistId = identity.rawUserId }
+        val input = evidence()
+        val complete = input.completion.copy(status = "refund", source = "standardn-posted-refund", documentType = 9,
+            signedTotal = bd(100), originalSourceDocumentId = 99,
+            lines = input.completion.lines.map { it.copy(signedQuantity = bd(1), signedAmount = bd(100)) })
+        return body to input.copy(journalComplete = false, changes = emptyList(), completion = complete)
+    }
+
+    @Test fun `posted positive type nine return is independent of recommendation journal and supports proven original register`() {
+        val (body, input) = refundInput()
+        assertNull(policy.refundProblem(body, input))
+        val fiscalOnly = input.copy(completion = input.completion.copy(originalSourceDocumentId = null,
+            originalDeviceNumber = "original-register", originalFiscalNumber = 700, originalFiscalShift = 3))
+        assertNull(policy.refundProblem(body, fiscalOnly))
+        assertFalse(decide(body, input).eligible)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["version", "checkout", "identity", "actor", "mismatch", "source", "capture", "type-missing", "type", "posted", "details",
+        "document", "signed-total", "quantity", "price", "amount", "fiscal", "sum", "future", "zero-original", "self-original", "fiscal-no-register", "no-original"])
+    fun `malformed unknown and unposted return cannot establish an original receipt hold`(problem: String) {
+        val (body, input) = refundInput()
+        val c = input.completion
+        var changed = input
+        when (problem) {
+            "version" -> changed = input.copy(version = 2)
+            "checkout" -> changed = input.copy(checkoutSessionId = "another-checkout")
+            "identity" -> changed = input.copy(completion = c.copy(identity = identity.copy(sourceNamespace = "")))
+            "actor" -> body.reportedPharmacistId = "another-source-user"
+            "mismatch" -> changed = input.copy(completion = c.copy(identity = identity.copy(identityStatus = "mismatch")))
+            "source" -> changed = input.copy(completion = c.copy(source = "standardn-posted-print"))
+            "capture" -> body.captureSource = "standardn-print-log"
+            "type-missing" -> changed = input.copy(completion = c.copy(documentType = null))
+            "type" -> changed = input.copy(completion = c.copy(documentType = 3))
+            "posted" -> changed = input.copy(completion = c.copy(documentStatus = 0))
+            "details" -> changed = input.copy(completion = c.copy(finalDetailsRead = false))
+            "document" -> changed = input.copy(completion = c.copy(sourceDocumentId = 101))
+            "signed-total" -> changed = input.copy(completion = c.copy(signedTotal = bd(-100)))
+            "quantity" -> changed = input.copy(completion = c.copy(lines = c.lines.map { it.copy(signedQuantity = bd(-1)) }))
+            "price" -> changed = input.copy(completion = c.copy(lines = c.lines.map { it.copy(signedPrice = bd(-100)) }))
+            "amount" -> changed = input.copy(completion = c.copy(lines = c.lines.map { it.copy(signedAmount = bd(-100)) }))
+            "fiscal" -> changed = input.copy(completion = c.copy(fiscalNumber = 0))
+            "sum" -> { body.totalAmount = 200; changed = input.copy(completion = c.copy(signedTotal = bd(200))) }
+            "future" -> { val at = Instant.now().plusSeconds(400); body.printedAt = at; changed = input.copy(completion = c.copy(completedAt = at)) }
+            "zero-original" -> changed = input.copy(completion = c.copy(originalSourceDocumentId = 0))
+            "self-original" -> changed = input.copy(completion = c.copy(originalSourceDocumentId = c.sourceDocumentId))
+            "fiscal-no-register" -> changed = input.copy(completion = c.copy(originalFiscalNumber = 700, originalFiscalShift = 3))
+            else -> changed = input.copy(completion = c.copy(originalSourceDocumentId = null))
+        }
+        assertNotNull(policy.refundProblem(body, changed))
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ["complete-flag", "first-sequence", "gap", "duplicate-sequence", "reverse-time", "future-change", "unknown-generation", "missing-identity", "oversized", "broken-before"])
     fun `partial or inconsistent journal never claims automatic money`(problem: String) {

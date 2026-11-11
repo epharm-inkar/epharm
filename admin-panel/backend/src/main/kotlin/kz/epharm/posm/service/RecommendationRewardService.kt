@@ -13,6 +13,8 @@ import kz.epharm.posm.dto.*
 import kz.epharm.posm.entity.PosSaleEntity
 import kz.epharm.posm.repository.PosSaleRepository
 import kz.epharm.posm.repository.RecommendationEventRepository
+import kz.epharm.posm.staff.StaffContext
+import kz.epharm.posm.staff.StaffIdentityObservation
 import kz.epharm.receipts.entity.PendingBonusStatus
 import kz.epharm.receipts.repository.PendingBonusRepository
 import kz.epharm.receipts.service.PendingBonusService
@@ -98,10 +100,21 @@ class RecommendationRewardService(
     fun sale(sale: PosSaleEntity) {
         val evidence = sale.rewardEvidence ?: return
         if (!enabled) return
-        lockSession(sale.sessionId ?: return)
+        if (sale.sessionId.isNullOrBlank()) {
+            if (evidence.completion.status == "refund") {
+                em.flush()
+                unverifiedRefund(sale, evidence, "refund_context_mismatch")
+            }
+            return
+        }
+        lockSession(sale.sessionId!!)
         if (sale.pharmacistId.isNotBlank()) jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "reward-pharmacist:${sale.pharmacistId}")
         em.flush()
-        if (evidence.completion.status == "refund") { refund(sale, evidence); return }
+        if (evidence.completion.status == "refund") {
+            val problem = policy.refundProblem(sale, evidence)
+            if (problem == null) refund(sale, evidence) else unverifiedRefund(sale, evidence, problem)
+            return
+        }
         val canonical = canonical(sale, evidence) ?: return
         val returned = rows("""SELECT h.refund_sale_id FROM recommendation_reward_refund_holds h
             JOIN recommendation_reward_receipts r ON r.id=? AND r.pharmacy_id=h.pharmacy_id
@@ -122,6 +135,7 @@ class RecommendationRewardService(
             jdbc.queryForList("SELECT id FROM promos WHERE id=? FOR NO KEY UPDATE", it)
         }
         val decisions = policy.evaluate(sale, evidence, snapshots, products::resolveStrongProductIds)
+        val staffMismatch = decisions.any { it.eligible } && knownStaffMismatch(sale, evidence.completion)
         val bodyProducts = products.resolveStrongProductIds(sale.items.map { CartItemDto(it.sku, it.barcode, it.name, it.qty) })
         for (decision in decisions.filter { it.productId in candidates }) {
             val caseId = "rw_${hash(listOf(canonical, decision.productId)).take(56)}"
@@ -135,11 +149,12 @@ class RecommendationRewardService(
                 } == true
             val reason = when {
                 returned -> "refund_reported"
+                decision.eligible && staffMismatch -> "rps_identity_mismatch"
                 decision.eligible && !actorValid -> "employee_unverified"
                 decision.eligible && !autoCredit -> "automatic_credit_disabled"
                 else -> decision.reason
             }
-            val ready = decision.eligible && actorValid && autoCredit && !returned
+            val ready = decision.eligible && actorValid && autoCredit && !returned && !staffMismatch
             val state = when {
                 returned -> "refund_review"
                 ready -> "ready"
@@ -192,12 +207,17 @@ class RecommendationRewardService(
         val namespace = complete.identity.sourceNamespace
         val physical = if (namespace.matches(Regex("[a-f0-9]{64}")) && sale.sourceDocumentId != null)
             hash(listOf("physical", sale.pharmacyId, namespace, sale.sourceDocumentId)) else null
-        val fiscal = if (complete.status == "paid" && complete.deviceNumber.isNotBlank() && complete.fiscalNumber > 0 && complete.fiscalShift > 0)
-            hash(listOf("fiscal", sale.pharmacyId, complete.deviceNumber.trim().uppercase(), complete.fiscalShift, complete.fiscalNumber)) else null
+        val fiscal = currentFiscalKey(sale, complete)
         receiptKeys(sale, evidence).sorted().forEach(::lockReceipt)
-        val fingerprint = hash(listOf(sale.pharmacyId, sale.sourceDocumentId, sale.sessionId, sale.reportedPharmacistId,
+        val claims = listOf(sale.pharmacyId, sale.sourceDocumentId, sale.sessionId, sale.reportedPharmacistId,
             complete.completedAt.toString(), sale.totalAmount, sale.items.map { listOf(it.sku, it.barcode, it.qty, it.price, it.total) },
-            complete.status, complete.deviceNumber, complete.fiscalShift, complete.fiscalNumber))
+            complete.status, complete.deviceNumber, complete.fiscalShift, complete.fiscalNumber)
+        // Paid fingerprints stay byte-compatible. A return's proven fiscal identity survives transport
+        // namespace/document aliases, while monetary and original-receipt claims remain immutable.
+        val fingerprint = hash(if (complete.status == "refund") listOf(sale.pharmacyId, sale.reportedPharmacistId,
+            complete.completedAt.toString(), sale.totalAmount, sale.items.map { listOf(it.sku, it.barcode, it.qty, it.price, it.total) },
+            complete.status, complete.deviceNumber, complete.fiscalShift, complete.fiscalNumber,
+            complete.originalSourceDocumentId, complete.originalDeviceNumber, complete.originalFiscalShift, complete.originalFiscalNumber) else claims)
         val found = rows("""SELECT * FROM recommendation_reward_receipts WHERE source_sale_id=?
             OR physical_key=? OR fiscal_key=? ORDER BY id""", sale.id, physical, fiscal)
         if (found.isNotEmpty()) {
@@ -228,18 +248,26 @@ class RecommendationRewardService(
         val physical = complete.originalSourceDocumentId?.let {
             hash(listOf("physical", sale.pharmacyId, complete.identity.sourceNamespace, it))
         }
-        val fiscal = if (complete.originalFiscalNumber != null && complete.originalFiscalShift != null)
-            hash(listOf("fiscal", sale.pharmacyId, complete.deviceNumber.trim().uppercase(), complete.originalFiscalShift, complete.originalFiscalNumber)) else null
-        // Serialize refund-first against the original receipt, including different cashiers.
+        val fiscal = originalFiscalKey(sale, complete)
         receiptKeys(sale, evidence).sorted().forEach(::lockReceipt)
-        jdbc.update("""INSERT INTO recommendation_reward_refund_holds(refund_sale_id,pharmacy_id,physical_key,fiscal_key)
+        // Two individually known but different originals cannot both be frozen by one inconsistent claim.
+        val originals = rows("""SELECT id FROM recommendation_reward_receipts WHERE pharmacy_id=?
+            AND (physical_key=? OR fiscal_key=?)""", sale.pharmacyId, physical, fiscal)
+        if (originals.size > 1) {
+            unverifiedRefund(sale, evidence, "refund_original_reference_conflict")
+            return
+        }
+        // The current physical/fiscal return owns one effect; aliases cannot reopen an HQ decision.
+        val canonical = canonical(sale, evidence) ?: return
+        // canonical() holds the current and original receipt advisory locks.
+        val inserted = jdbc.update("""INSERT INTO recommendation_reward_refund_holds(refund_sale_id,pharmacy_id,physical_key,fiscal_key)
             VALUES (?,?,?,?) ON CONFLICT (refund_sale_id) DO NOTHING""", sale.id, sale.pharmacyId, physical, fiscal)
+        if (inserted == 0) return
         val targets = rows("""SELECT w.id FROM recommendation_sale_rewards w JOIN recommendation_reward_receipts r
             ON r.id=w.canonical_receipt_id WHERE w.pharmacy_id=? AND (r.physical_key=? OR r.fiscal_key=?)""", sale.pharmacyId, physical, fiscal)
         if (targets.isEmpty()) {
             audit(null, sale.pharmacyId, "device:${sale.deviceId}", "unlinked_refund", "Refund needs an original verified receipt", "refund:${sale.id}")
-            val canonical = canonical(sale, evidence)
-            if (canonical != null) jdbc.update("""INSERT INTO recommendation_sale_rewards
+            jdbc.update("""INSERT INTO recommendation_sale_rewards
                 (id,canonical_receipt_id,pharmacy_id,device_id,source_sale_id,product_id,state,reason_code)
                 VALUES (?,?,?,?,?,'__refund__','refund_review','original_receipt_pending')
                 ON CONFLICT (canonical_receipt_id,product_id) DO NOTHING""",
@@ -249,6 +277,47 @@ class RecommendationRewardService(
             jdbc.update("UPDATE recommendation_sale_rewards SET state='refund_review',reason_code='refund_reported',updated_at=now() WHERE id=?", id)
             audit(id, sale.pharmacyId, "device:${sale.deviceId}", "refund_reported", "HQ review; original credit is retained", "refund:${hash(listOf(sale.id, id))}")
         }
+    }
+
+    /** Untrusted return metadata must not reserve a paid receipt's physical/fiscal identity. */
+    private fun unverifiedRefund(sale: PosSaleEntity, evidence: RewardSaleEvidence, reason: String) {
+        val canonical = hash(listOf("unverified-refund", sale.pharmacyId, sale.id))
+        jdbc.update("""INSERT INTO recommendation_reward_receipts(id,pharmacy_id,source_sale_id,payload_hash,device_id,session_id)
+            VALUES (?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING""", canonical, sale.pharmacyId, sale.id, hash(evidence), sale.deviceId, sale.sessionId)
+        val id = "rw_${hash(listOf(canonical, "__refund__")).take(56)}"
+        jdbc.update("""INSERT INTO recommendation_sale_rewards(id,canonical_receipt_id,pharmacy_id,device_id,source_sale_id,product_id,state,reason_code)
+            VALUES (?,?,?,?,?,'__refund__','refund_review',?) ON CONFLICT (canonical_receipt_id,product_id) DO NOTHING""",
+            id, canonical, sale.pharmacyId, sale.deviceId, sale.id, reason)
+        audit(id, sale.pharmacyId, "device:${sale.deviceId}", "unverified_refund", reason, "unverified-refund:${hash(sale.id)}")
+    }
+
+    private fun currentFiscalKey(sale: PosSaleEntity, c: RewardCompletionEvidence): String? =
+        if (c.status in setOf("paid", "refund") && c.deviceNumber.isNotBlank() && c.fiscalNumber > 0 && c.fiscalShift > 0)
+            hash(listOf(if (c.status == "refund") "fiscal-refund" else "fiscal", sale.pharmacyId,
+                c.deviceNumber.trim().uppercase(), c.fiscalShift, c.fiscalNumber)) else null
+
+    private fun originalFiscalKey(sale: PosSaleEntity, c: RewardCompletionEvidence): String? =
+        if (!c.originalDeviceNumber.isNullOrBlank() && (c.originalFiscalNumber ?: 0) > 0 && (c.originalFiscalShift ?: 0) > 0)
+            hash(listOf("fiscal", sale.pharmacyId, c.originalDeviceNumber.trim().uppercase(), c.originalFiscalShift, c.originalFiscalNumber)) else null
+
+    /** Negative-only safeguard. RPS has no namespace field and is never positive seller/payment proof. */
+    private fun knownStaffMismatch(sale: PosSaleEntity, complete: RewardCompletionEvidence): Boolean {
+        val source = complete.identity
+        if (!source.sourceNamespace.matches(Regex("[a-f0-9]{64}")) || source.nativeSessionId <= 0 ||
+            source.rawUserId.isBlank() || source.rawUserId.length > 128 || source.workstationId.isBlank() || source.workstationId.length > 128 ||
+            sale.deviceId.isNullOrBlank()) return false
+        val at = java.sql.Timestamp.from(complete.completedAt)
+        // A grant supplies observations, not the money recipient; a different logged-in profile cannot make a stale mapping match.
+        return jdbc.query("""SELECT s.*,p.iin AS profile_iin,p.name AS profile_name FROM posm_device_staff_sessions s
+            JOIN pharmacists p ON p.id=? WHERE s.pharmacy_id=? AND s.device_id=?
+            AND s.standard_n_user_id=? AND s.standard_n_session_id=? AND s.workstation_id=?
+            AND s.created_at<=? AND s.expires_at>? AND (s.revoked_at IS NULL OR s.revoked_at>?)
+            ORDER BY s.created_at DESC,s.token_hash DESC LIMIT 1""", { rs, _ ->
+                val context = StaffContext(rs.getString("standard_n_user_id"),rs.getString("standard_n_session_id"),
+                    rs.getString("workstation_id"),rs.getString("process_instance_id"),rs.getString("standard_n_iin"),
+                    rs.getString("standard_n_iin_status"),rs.getString("standard_n_full_name"),rs.getString("standard_n_full_name_status"))
+                StaffIdentityObservation.match(rs.getString("profile_iin").orEmpty(),rs.getString("profile_name"),context).status == "MISMATCH"
+            }, sale.pharmacistId,sale.pharmacyId,sale.deviceId,source.rawUserId,source.nativeSessionId.toString(),source.workstationId,at,at,at).singleOrNull() == true
     }
 
     private fun flagEventCases(eventId: String, reason: String) {
@@ -265,10 +334,8 @@ class RecommendationRewardService(
                 keys += hash(listOf("physical", sale.pharmacyId, c.identity.sourceNamespace, it))
             }
         }
-        if (c.status == "paid" && c.deviceNumber.isNotBlank() && c.fiscalNumber > 0 && c.fiscalShift > 0)
-            keys += hash(listOf("fiscal", sale.pharmacyId, c.deviceNumber.trim().uppercase(), c.fiscalShift, c.fiscalNumber))
-        if (c.status == "refund" && c.originalFiscalNumber != null && c.originalFiscalShift != null)
-            keys += hash(listOf("fiscal", sale.pharmacyId, c.deviceNumber.trim().uppercase(), c.originalFiscalShift, c.originalFiscalNumber))
+        currentFiscalKey(sale, c)?.let(keys::add)
+        if (c.status == "refund") originalFiscalKey(sale, c)?.let(keys::add)
         return keys
     }
     private fun lockReceipt(key: String) { jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "reward-receipt:$key") }
