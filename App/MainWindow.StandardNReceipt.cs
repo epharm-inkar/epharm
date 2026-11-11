@@ -404,10 +404,10 @@ namespace CustomerDisplay
             Log("Граница чека Standard-N не подтверждает оплату: незавершённый черновик сохранён без продажи.");
         }
 
-        private void HandleStandardNReceiptPrinted()
+        private void HandleStandardNReceiptPrinted(IReadOnlySet<long>? exactDocuments = null)
         {
             _receiptObservations.LogChanged();
-            if (_posmConfig?.NativeRefundCaptureEnabled == true) GuardNativePrintCue(_receiptProofClock());
+            if (_posmConfig?.NativeRefundCaptureEnabled == true) GuardNativePrintCue(_receiptProofClock(), exactDocuments);
             else RecordPhysicalReceiptPrint();
         }
 

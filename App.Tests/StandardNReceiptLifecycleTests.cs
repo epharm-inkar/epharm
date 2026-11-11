@@ -13,6 +13,60 @@ namespace CustomerDisplay.Core.Tests
     public sealed class StandardNReceiptLifecycleTests
     {
         [Fact]
+        public async Task DelayedExactPrintBatchUsesOnlyRetainedDocumentAndDoesNotReplay()
+        {
+            using var window = new MainWindow(); var old = Receipt(100, 10); var current = Receipt(200, 20);
+            window.Observe(old); window.Observe(current);
+            window.EnableNativeRefundGuard(null);
+            window.SetExactNativePrintObservation(new(false, [200, 999]));
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(30)); // Human paper dialog after DOCS posting.
+            window.PrintExactWithStates(new HashSet<long> { 200, 999 }, Posted(old, 100), Posted(current, 200));
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Equal(new long[] { 200, 999 }, window.LastExactPrintDocuments!.Order());
+            Assert.Equal(200, Assert.Single(window.Reports).SourceDocumentId);
+            window.PrintExactWithStates(new HashSet<long> { 200 }, Posted(old, 100), Posted(current, 200));
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Single(window.Reports);
+        }
+
+        [Fact]
+        public async Task UnknownOrRefundExactPrintBatchCannotFinalizeAnOldSale()
+        {
+            using var window = new MainWindow(); var receipt = Receipt(100, 10); window.Observe(receipt);
+            window.EnableNativeRefundGuard(null); window.SetExactNativePrintObservation(new(false, [100]));
+            window.PrintExactWithStates(new HashSet<long> { 999 }, Posted(receipt, 100));
+            await window.WaitForNativePrintGuardAsync(); Assert.Empty(window.Reports);
+            window.SetExactNativePrintObservation(new(true, [100]));
+            window.PrintExactWithStates(new HashSet<long> { 100 }, Posted(receipt, 100));
+            await window.WaitForNativePrintGuardAsync(); Assert.Empty(window.Reports);
+        }
+
+        [Fact]
+        public async Task UnobservedReturnInExactBatchRemainsAVetoInsteadOfCreditingAnOldSale()
+        {
+            using var window = new MainWindow(); var receipt = Receipt(100, 10); window.Observe(receipt);
+            window.EnableNativeRefundGuard(null); window.SetExactNativePrintObservation(new(true, [100]));
+            window.PrintExactWithStates(new HashSet<long> { 100, 200 }, Posted(receipt, 100));
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Equal(new long[] { 100, 200 }, window.LastExactPrintDocuments!.Order()); Assert.Empty(window.Reports);
+        }
+
+        [Fact]
+        public async Task InvalidBatchNeverEnablesTheExactDocumentAgeException()
+        {
+            using var window = new MainWindow(); var receipt = Receipt(100, 10); window.Observe(receipt);
+            window.EnableNativeRefundGuard(null); window.SetExactNativePrintObservation(new(false, [100]));
+            var batch = new StandardNPrintLogBatch();
+            batch.Observe("RunScriptByIndex: Перед печатью очереди чеков");
+            batch.Observe("Destroy Cheque ID=100"); batch.Observe("Destroy Cheque ID=-2");
+            var documents = batch.Observe("RunScriptByIndex: После печати очереди чеков");
+            Assert.Null(documents);
+            window.PrintExactWithStates(documents, Posted(receipt, 100));
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Null(window.LastExactPrintDocuments); Assert.Empty(window.Reports);
+        }
+
+        [Fact]
         public async Task RefundPrintCueCannotFinalizeAnOldHeldSale()
         {
             using var window = new MainWindow(); var old = Receipt(100, 10); var current = Receipt(200, 20);
@@ -1254,6 +1308,10 @@ namespace CustomerDisplay
         }
         internal void PrintWithoutWaiting(params StandardNReceiptSnapshot[] states) =>
             Dispatcher.Invoke(() => { _standardNDb.States = states; HandleStandardNReceiptPrinted(); });
+        internal void PrintExactWithStates(IReadOnlySet<long>? documents, params StandardNReceiptSnapshot[] states) =>
+            Dispatcher.Invoke(() => { _standardNDb.States = states; HandleStandardNReceiptPrinted(documents); });
+        internal void SetExactNativePrintObservation(NativeCashPrintObservation observation) => _standardNDb.ExactPrintObservation = observation;
+        internal IReadOnlySet<long>? LastExactPrintDocuments => _standardNDb.LastExactPrintDocuments;
         internal void RetryPrintWithStates(params StandardNReceiptSnapshot[] states)
         {
             WaitForReceiptProbeAsync().GetAwaiter().GetResult();
@@ -1358,8 +1416,14 @@ namespace CustomerDisplay
         private sealed class UnavailableReceiptDatabase : INativeRefundSource
         {
             public NativeCashPrintObservation? PrintObservation;
+            public NativeCashPrintObservation? ExactPrintObservation;
+            public IReadOnlySet<long>? LastExactPrintDocuments;
             public bool RebindFinalLines;
-            public bool TryObserveNativeCashPrint(out NativeCashPrintObservation? observation) { observation = PrintObservation; return observation != null; }
+            public bool TryObserveNativeCashPrint(out NativeCashPrintObservation? observation, IReadOnlySet<long>? exactDocuments = null) {
+                LastExactPrintDocuments = exactDocuments;
+                observation = exactDocuments == null ? PrintObservation : ExactPrintObservation;
+                return observation != null;
+            }
             public bool TryGetRefundBaseline(out string sourceNamespace, out long maximumDocumentId, out DateTimeOffset databaseTime) { sourceNamespace = ""; maximumDocumentId = 0; databaseTime = default; return false; }
             public bool TryReadNativeRefunds(string sourceNamespace, NativeRefundScan scan, out NativeRefundBatch? batch) { batch = null; return false; }
             public string? RewardSourceNamespace => new('a', 64);

@@ -87,10 +87,21 @@ public sealed partial class StandardNDbLookup : INativeRefundSource
         } catch { LogErrorRateLimited("Native refunds not confirmed; pending observations and cashier data are preserved."); return false; }
     }
 
-    public bool TryObserveNativeCashPrint(out NativeCashPrintObservation? observation)
+    internal static string NativeCashPrintSql(int exactDocumentCount = 0)
+    {
+        if (exactDocumentCount is < 0 or > StandardNReceiptProjection.MaxDocuments)
+            throw new ArgumentOutOfRangeException(nameof(exactDocumentCount));
+        var scope = exactDocumentCount == 0
+            ? "(STATUS=0 or (STATUS=1 and POSTDT>=DATEADD(-5 SECOND TO CURRENT_TIMESTAMP)))"
+            : "STATUS in (0,1) and ID in (" + string.Join(",", Enumerable.Range(0, exactDocumentCount).Select(i => "@doc" + i)) + ")";
+        return "select first 501 ID,DOC_TYPE,STATUS from DOCS where AUDIT_ID=@session and DOC_TYPE in (3,9) and " + scope + " order by ID";
+    }
+
+    public bool TryObserveNativeCashPrint(out NativeCashPrintObservation? observation, IReadOnlySet<long>? exactDocuments = null)
     {
         observation = null;
-        if (!_cfg.StandardNDbEnabled) return false;
+        if (!_cfg.StandardNDbEnabled || exactDocuments != null &&
+            (exactDocuments.Count is < 1 or > StandardNReceiptProjection.MaxDocuments || exactDocuments.Any(id => id <= 0))) return false;
         try {
             using var connection = OpenConnection();
             using var transaction = connection.BeginTransaction(new FbTransactionOptions {
@@ -98,9 +109,13 @@ public sealed partial class StandardNDbLookup : INativeRefundSource
             var session = QueryExactReceiptSession(connection, transaction);
             if (session == null) return false;
             using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandTimeout = TimeoutSec();
-            command.CommandText = @"select first 501 ID,DOC_TYPE,STATUS from DOCS where AUDIT_ID=@session
-                and DOC_TYPE in (3,9) and (STATUS=0 or (STATUS=1 and POSTDT>=DATEADD(-5 SECOND TO CURRENT_TIMESTAMP))) order by ID";
+            // Only IDs from a completed, retained print batch can outlive a human paper dialog.
+            command.CommandText = NativeCashPrintSql(exactDocuments?.Count ?? 0);
             command.Parameters.AddWithValue("@session", session.SessionId);
+            if (exactDocuments != null) {
+                var ids = exactDocuments.Order().ToArray();
+                for (var i = 0; i < ids.Length; i++) command.Parameters.AddWithValue("@doc" + i, ids[i]);
+            }
             using var reader = command.ExecuteReader(); var rows = new List<(long Id, int Type, int Status)>();
             while (reader.Read()) {
                 if (rows.Count >= 500) return false;

@@ -501,6 +501,7 @@ private async Task TailLogLoop(string path, CancellationToken token)
             var openedCreationTimeUtc = File.GetCreationTimeUtc(path);
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             using var reader = new StreamReader(fs, Encoding.GetEncoding(1251));
+            var printBatch = new StandardNPrintLogBatch(); // Reopening/rotation cannot reuse an unfinished queue.
             cashLogConfirmed = StandardNLogLocator.IsConfirmedCashLog(path);
             if (cashLogConfirmed)
             {
@@ -535,7 +536,7 @@ private async Task TailLogLoop(string path, CancellationToken token)
                     Log($"POSM готов принимать сканы: открыт {path}");
                     StandardNLogLocator.RememberConfirmed(path);
                 }
-                ProcessLogLine(line!);
+                ProcessLogLine(line!, printBatch);
             }
         }
         catch (OperationCanceledException)
@@ -558,8 +559,9 @@ private async Task TailLogLoop(string path, CancellationToken token)
     }
 }
 
-private void ProcessLogLine(string line)
+private void ProcessLogLine(string line, StandardNPrintLogBatch? printBatch = null)
 {
+    var exactPrintDocuments = printBatch?.Observe(line);
     // Тут будет твоя реальная логика триггеров.
     // Пока даю универсальные заглушки:
 
@@ -627,7 +629,7 @@ if (line.Contains("RunScriptByIndex", StringComparison.OrdinalIgnoreCase) &&
 
     Dispatcher.Invoke(() =>
     {
-        HandleStandardNReceiptPrinted();
+        HandleStandardNReceiptPrinted(exactPrintDocuments);
     });
 
     return;
