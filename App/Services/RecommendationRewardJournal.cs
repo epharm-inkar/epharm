@@ -111,15 +111,19 @@ public sealed class RecommendationRewardJournal
                 Status = paid ? "paid" : "unknown", Source = paid ? "standardn-posted-print" : "",
                 CompletedAt = completedAt, Identity = identity, SourceDocumentId = document.DocumentId,
                 DocumentStatus = document.Status, FinalDetailsRead = document.FinalDetailsRead, SignedTotal = document.SignedTotal,
+                DocumentType = document.DocumentType,
                 DeviceNumber = document.DeviceNumber ?? "", FiscalNumber = document.FiscalNumber ?? 0, FiscalShift = document.FiscalShift ?? 0,
                 Lines = document.Lines.Take(MaximumLines).Select(line => new RewardPaidLine {
                     SourceDocumentId = line.SourceDocumentId ?? 0, SourceLineId = line.LineId, Sku = line.PartId.ToString(CultureInfo.InvariantCulture),
+                    ObservedSourceLineId = line.ObservedSourceLineId, LineLinkSource = line.LineLinkSource,
                     Barcode = Clean(line.Barcode), Qty = line.Qty, SignedQuantity = line.SignedQuantity ?? 0,
                     SignedPrice = line.SignedPrice ?? -1, SignedAmount = line.SignedAmount ?? 1, UnitSemantics = line.UnitSemantics,
                 }).ToList(),
             };
             var exact = state != null && document.Lines.Count <= MaximumLines && document.Lines.All(line =>
-                state.Lines.Any(previous => previous.Line.SourceDocumentId == document.DocumentId && previous.Line.SourceLineId == line.LineId &&
+                (!document.FinalLineLinkRequired || line.ObservedSourceLineId is > 0 && line.LineLinkSource == StandardNFinalLineLinker.Source) &&
+                state.Lines.Any(previous => previous.Line.SourceDocumentId == document.DocumentId &&
+                    previous.Line.SourceLineId == (line.ObservedSourceLineId ?? line.LineId) &&
                     previous.Line.Qty == line.Qty && previous.Line.Barcode == Clean(line.Barcode) &&
                     previous.Line.Sku == line.PartId.ToString(CultureInfo.InvariantCulture) && previous.Line.UnitSemantics == line.UnitSemantics));
             return new RewardSaleEvidence { CheckoutSessionId = checkout, JournalComplete = state?.Complete == true &&

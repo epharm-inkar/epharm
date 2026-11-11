@@ -54,6 +54,10 @@ public sealed record RewardPaidLine
 {
     public long SourceDocumentId { get; init; }
     public long SourceLineId { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public long? ObservedSourceLineId { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? LineLinkSource { get; init; }
     public string? Sku { get; init; }
     public string? Barcode { get; init; }
     public decimal Qty { get; init; }
@@ -71,6 +75,8 @@ public sealed record RewardCompletionEvidence
     public RewardSourceIdentity Identity { get; init; } = new();
     public long SourceDocumentId { get; init; }
     public int DocumentStatus { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? DocumentType { get; init; }
     public bool FinalDetailsRead { get; init; }
     public decimal SignedTotal { get; init; }
     public string DeviceNumber { get; init; } = "";
@@ -80,6 +86,8 @@ public sealed record RewardCompletionEvidence
     public long? OriginalSourceDocumentId { get; init; }
     public long? OriginalFiscalNumber { get; init; }
     public long? OriginalFiscalShift { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? OriginalDeviceNumber { get; init; }
 }
 
 public sealed record RewardSaleEvidence

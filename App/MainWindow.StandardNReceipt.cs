@@ -26,6 +26,7 @@ namespace CustomerDisplay
             var pollMs = Math.Clamp(_posmConfig.StandardNReceiptPollMs, 200, 5000);
             Log($"Монитор активного чека Standard-N запущен: DOCS/DOC_DETAIL_ACTIVE каждые {pollMs}мс");
             _ = Task.Run(() => StandardNReceiptPollingLoop(pollMs, token), token);
+            StartNativeRefundPolling(token);
         }
 
         private async Task StandardNReceiptPollingLoop(int pollMs, CancellationToken token)
@@ -406,7 +407,8 @@ namespace CustomerDisplay
         private void HandleStandardNReceiptPrinted()
         {
             _receiptObservations.LogChanged();
-            RecordPhysicalReceiptPrint();
+            if (_posmConfig?.NativeRefundCaptureEnabled == true) GuardNativePrintCue(_receiptProofClock());
+            else RecordPhysicalReceiptPrint();
         }
 
         private void ApplyStandardNPharmacist(StandardNActivePharmacist pharmacist)

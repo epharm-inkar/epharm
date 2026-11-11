@@ -8,6 +8,31 @@ namespace CustomerDisplay.Services;
 
 public sealed partial class StandardNDbLookup
 {
+    private string? _postedUnitShapeSource;
+    private bool _postedHumanQuantityAvailable;
+
+    private bool HasPostedHumanQuantity(FbConnection connection, FbTransaction transaction)
+    {
+        var source = RewardSourceNamespace;
+        if (source != null && source == _postedUnitShapeSource) return _postedHumanQuantityAvailable;
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandTimeout = TimeoutSec();
+            command.CommandText = @"select f.RDB$FIELD_TYPE from RDB$RELATION_FIELDS rf
+                join RDB$FIELDS f on f.RDB$FIELD_NAME=rf.RDB$FIELD_SOURCE
+                where rf.RDB$RELATION_NAME='DOC_DETAIL' and rf.RDB$FIELD_NAME='HUMAN_QUANT'";
+            using var reader = command.ExecuteReader();
+            var available = reader.Read() && !reader.IsDBNull(0) && Convert.ToInt32(reader.GetValue(0)) is 14 or 37;
+            if (reader.Read()) available = false;
+            _postedHumanQuantityAvailable = available;
+            _postedUnitShapeSource = source;
+            return available;
+        }
+        catch { return false; } // An optional unit field must never break legacy sale capture.
+    }
+
     public bool TryGetPhysicalReceiptStates(IReadOnlyList<StandardNObservedReceiptGroup> groups,
         out IReadOnlyList<StandardNReceiptSnapshot> states)
     {
@@ -19,6 +44,7 @@ public sealed partial class StandardNDbLookup
             using var connection = OpenConnection();
             using var transaction = connection.BeginTransaction(new FbTransactionOptions
             { TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.Wait });
+            var humanQuantityAvailable = HasPostedHumanQuantity(connection, transaction);
             var result = new List<StandardNReceiptSnapshot>();
             foreach (var group in groups)
             {
@@ -53,7 +79,7 @@ public sealed partial class StandardNDbLookup
                 {
                     command.Transaction = transaction;
                     command.CommandTimeout = TimeoutSec();
-                    command.CommandText = StandardNReceiptProjection.PostedLinesSql(members.Count);
+                    command.CommandText = StandardNReceiptProjection.PostedLinesSql(members.Count, humanQuantityAvailable);
                     command.Parameters.AddWithValue("@sessionId", observed.SessionId);
                     for (var index = 0; index < members.Count; index++) command.Parameters.AddWithValue("@doc" + index, members[index].Id);
                     using var reader = command.ExecuteReader();
@@ -62,19 +88,24 @@ public sealed partial class StandardNDbLookup
                 if (lines.Count > StandardNReceiptProjection.MaxLines ||
                     lines.Any(line => members.All(header => header.Id != line.SourceDocumentId || header.Status != 1)))
                     throw new InvalidDataException("Posted physical detail membership is not proven.");
-                var documents = members.Select(header => StandardNReceiptProjection.Document(header,
-                    lines.Where(line => line.SourceDocumentId == header.Id).Select(line =>
+                var documents = members.Select(header => {
+                    var observedLines = observed.Documents.SingleOrDefault(document => document.DocumentId == header.Id)?.Lines
+                        ?? Array.Empty<StandardNReceiptLine>();
+                    var enriched = lines.Where(line => line.SourceDocumentId == header.Id).Select(line =>
                     {
                         // Metadata enrichment is exact local product identity only. Final prices,
                         // quantities and totals always come from DOC_DETAIL, never this observation.
-                        var old = observed.Documents.Where(document => document.DocumentId == header.Id)
-                            .SelectMany(document => document.Lines).Where(previous => previous.PartId == line.PartId).ToArray();
+                        var old = observedLines.Where(previous => previous.PartId == line.PartId).ToArray();
                         var barcodes = old.Select(previous => previous.Barcode).Where(value => !string.IsNullOrWhiteSpace(value))
                             .Distinct(StringComparer.Ordinal).ToArray();
                         var names = old.Select(previous => previous.Name).Where(value => !string.IsNullOrWhiteSpace(value))
                             .Distinct(StringComparer.Ordinal).ToArray();
                         return line with { Barcode = barcodes.Length == 1 ? barcodes[0] : null, Name = names.Length == 1 ? names[0] : "" };
-                    }).ToArray()) with { FinalDetailsRead = header.Status == 1 }).ToArray();
+                    }).ToArray();
+                    return StandardNReceiptProjection.Document(header, StandardNFinalLineLinker.Link(header.Id, enriched, observedLines)) with {
+                        FinalDetailsRead = header.Status == 1, FinalLineLinkRequired = humanQuantityAvailable,
+                    };
+                }).ToArray();
                 var counters = documents.Where(document => StandardNReceiptProjection.IsPostedPhysicalSale(document) ||
                     StandardNReceiptProjection.IsPostedEmptyDocument(document)).Select(document =>
                     (document.DeviceNumber!.ToUpperInvariant(), document.FiscalShift, document.FiscalNumber)).ToArray();
@@ -127,7 +158,7 @@ public sealed partial class StandardNDbLookup
                 using var command = connection.CreateCommand();
                 command.Transaction = transaction;
                 command.CommandTimeout = TimeoutSec();
-                command.CommandText = StandardNReceiptProjection.PostedLinesSql(posted.Length);
+                command.CommandText = StandardNReceiptProjection.PostedLinesSql(posted.Length, HasPostedHumanQuantity(connection, transaction));
                 command.Parameters.AddWithValue("@sessionId", session.SessionId);
                 for (var index = 0; index < posted.Length; index++) command.Parameters.AddWithValue("@doc" + index, posted[index].Id);
                 using var reader = command.ExecuteReader();

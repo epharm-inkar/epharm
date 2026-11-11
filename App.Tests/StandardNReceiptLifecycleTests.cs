@@ -13,6 +13,40 @@ namespace CustomerDisplay.Core.Tests
     public sealed class StandardNReceiptLifecycleTests
     {
         [Fact]
+        public async Task RefundPrintCueCannotFinalizeAnOldHeldSale()
+        {
+            using var window = new MainWindow(); var old = Receipt(100, 10); var current = Receipt(200, 20);
+            window.Observe(old); window.Observe(current);
+            window.EnableNativeRefundGuard(new(true, []));
+            window.PrintWithStates(Posted(old, 100), current);
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Empty(window.Reports);
+            Assert.All(window.Artifacts.ReadObservedGroups(), group => Assert.Null(group.PendingPrint));
+            Assert.Equal(200, window.DocumentId);
+        }
+
+        [Fact]
+        public async Task FreshNativeSaleClassificationRestrictsCueToItsRealDocument()
+        {
+            using var window = new MainWindow(); var old = Receipt(100, 10); var current = Receipt(200, 20);
+            window.Observe(old); window.Observe(current);
+            window.EnableNativeRefundGuard(new(false, [200]));
+            window.PrintWithStates(Posted(old, 100), Posted(current, 200));
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Equal(200, Assert.Single(window.Reports).SourceDocumentId);
+        }
+
+        [Fact]
+        public async Task UnavailableNativePrintClassificationCannotInventPayment()
+        {
+            using var window = new MainWindow(); var receipt = Receipt(100, 10); window.Observe(receipt);
+            window.EnableNativeRefundGuard(null);
+            window.PrintWithStates(Posted(receipt, 100));
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Empty(window.Reports);
+        }
+
+        [Fact]
         public void RewardOptInCapturesRealSnapshotShowIncreaseAndLaterVerifiedPhysicalSale()
         {
             using var window = new MainWindow();
@@ -249,6 +283,41 @@ namespace CustomerDisplay.Core.Tests
             Assert.Equal(marker, report.PrintedAt);
             Assert.Equal(200, restarted.DocumentId);
             Assert.Equal(20, Assert.Single(restarted.ReceiptItems).PartId);
+        }
+
+        [Fact]
+        public void QueueFailureAndFinalReadRetryPreserveGeneratedPostedIdAndOriginalActiveAlias()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence(); window.EnableFinalLineRebinding();
+            window.Observe(Receipt(100) with { WorkstationId = "9" });
+            Assert.True(window.ShowReward("event-synthetic", "4601164003157")!.CartComplete);
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(10));
+            var source = RewardReceipt(100, 1);
+            var active = source.Lines.Single() with { LineId = 61043, HumanQuantity = "1" };
+            source = source with { Lines = [active], Documents = [source.Documents!.Single() with { Lines = [active] }] };
+            window.Observe(source);
+            var paid = Posted(source, 100);
+            var posted = paid.Documents!.Single().Lines.Single() with { LineId = 42375 };
+            paid = paid with { Lines = [posted], Documents = [paid.Documents!.Single() with { Lines = [posted] }] };
+            using (var connection = new SqliteConnection("Data Source=" + Path.Combine(window.StorageRoot, "outbox.db"))) {
+                connection.Open(); using var command = connection.CreateCommand();
+                command.CommandText = "CREATE TRIGGER synthetic_queue_failure BEFORE INSERT ON outbox BEGIN SELECT RAISE(FAIL,'synthetic queue unavailable'); END;";
+                command.ExecuteNonQuery();
+            }
+            window.PrintWithStates(paid); Assert.Empty(window.Reports);
+            var retained = Assert.Single(window.Artifacts.ReadObservedGroups()).Snapshot.Documents!.Single().Lines.Single();
+            Assert.Equal(42375, retained.LineId); Assert.Equal(61043, retained.ObservedSourceLineId);
+            using (var connection = new SqliteConnection("Data Source=" + Path.Combine(window.StorageRoot, "outbox.db"))) {
+                connection.Open(); using var command = connection.CreateCommand(); command.CommandText = "DROP TRIGGER synthetic_queue_failure";
+                command.ExecuteNonQuery();
+            }
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(31)); window.RetryPrintWithStates(paid);
+            var evidence = Assert.Single(window.Reports).RewardEvidence!;
+            Assert.True(evidence.JournalComplete);
+            Assert.Equal(61043, Assert.Single(evidence.Changes).SourceLineId);
+            Assert.Equal(42375, Assert.Single(evidence.Completion.Lines).SourceLineId);
+            Assert.Equal(61043, evidence.Completion.Lines[0].ObservedSourceLineId);
+            Assert.Empty(window.Artifacts.ReadObservedGroups());
         }
 
         [Fact]
@@ -1211,6 +1280,15 @@ namespace CustomerDisplay
             _posmConfig.RecommendationRewardsEnabled = true;
             _posmConfig.ReceiptCaptureDir = Path.Combine(_storageRoot, "receipts");
         }
+        internal void EnableFinalLineRebinding() => _standardNDb.RebindFinalLines = true;
+        internal void EnableNativeRefundGuard(NativeCashPrintObservation? observation) {
+            _posmConfig.NativeRefundCaptureEnabled = true;
+            _standardNDb.PrintObservation = observation;
+        }
+        internal async Task WaitForNativePrintGuardAsync() {
+            await _nativePrintGuardTask.WaitAsync(TimeSpan.FromSeconds(5));
+            await WaitForReceiptProbeAsync();
+        }
         internal RewardShownEvidence? ShowReward(string eventId, string barcode) => CaptureRewardShown(new Recommendation {
             EventId = eventId, RecommendBarcode = barcode, RecommendSku = "catalogue-synthetic",
         }, _testReceiptNow);
@@ -1277,8 +1355,13 @@ namespace CustomerDisplay
             internal void Release() => _release.Set();
             public void Dispose() => Release();
         }
-        private sealed class UnavailableReceiptDatabase
+        private sealed class UnavailableReceiptDatabase : INativeRefundSource
         {
+            public NativeCashPrintObservation? PrintObservation;
+            public bool RebindFinalLines;
+            public bool TryObserveNativeCashPrint(out NativeCashPrintObservation? observation) { observation = PrintObservation; return observation != null; }
+            public bool TryGetRefundBaseline(out string sourceNamespace, out long maximumDocumentId, out DateTimeOffset databaseTime) { sourceNamespace = ""; maximumDocumentId = 0; databaseTime = default; return false; }
+            public bool TryReadNativeRefunds(string sourceNamespace, NativeRefundScan scan, out NativeRefundBatch? batch) { batch = null; return false; }
             public string? RewardSourceNamespace => new('a', 64);
             public IReadOnlyList<StandardNReceiptSnapshot>? States { get; set; }
             private ReceiptProbeBlock? _block;
@@ -1295,7 +1378,15 @@ namespace CustomerDisplay
                 block?.Wait();
                 _active = null;
                 // Emulate only the real DB adapter's requested-group response boundary.
-                states = response?.Where(state => groups.Any(group => ObservedGroupKey(group.Snapshot) == ObservedGroupKey(state))).ToArray() ?? [];
+                states = response?.Where(state => groups.Any(group => ObservedGroupKey(group.Snapshot) == ObservedGroupKey(state))).Select(state => {
+                    if (!RebindFinalLines) return state;
+                    var observed = groups.Single(group => ObservedGroupKey(group.Snapshot) == ObservedGroupKey(state)).Snapshot;
+                    var documents = state.Documents!.Select(document => document with { FinalLineLinkRequired = true,
+                        Lines = StandardNFinalLineLinker.Link(document.DocumentId, document.Lines,
+                            observed.Documents!.Single(before => before.DocumentId == document.DocumentId).Lines),
+                    }).ToArray();
+                    return state with { Documents = documents, Lines = documents.SelectMany(document => document.Lines).ToArray() };
+                }).ToArray() ?? [];
                 return response != null;
             }
         }

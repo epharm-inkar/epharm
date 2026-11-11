@@ -28,6 +28,9 @@ public sealed record StandardNReceiptLine(
     public decimal? SignedPrice { get; init; }
     // Only an adapter with a proven native unit contract may set full_package.
     public string UnitSemantics { get; init; } = "unknown";
+    public string? HumanQuantity { get; init; }
+    public long? ObservedSourceLineId { get; init; }
+    public string? LineLinkSource { get; init; }
 }
 
 public sealed record StandardNReceiptDocument(
@@ -42,7 +45,16 @@ public sealed record StandardNReceiptDocument(
     IReadOnlyList<StandardNReceiptLine> Lines)
 {
     public bool FinalDetailsRead { get; init; }
+    public int DocumentType { get; init; } = 3;
+    public long? ParentDocumentId { get; init; }
+    public DateTimeOffset? PostedAt { get; init; }
+    public DateTimeOffset? CommittedAt { get; init; }
+    public StandardNOriginalReceipt? OriginalReceipt { get; init; }
+    public bool FinalLineLinkRequired { get; init; }
 }
+
+public sealed record StandardNOriginalReceipt(long DocumentId, int DocumentType, int Status,
+    string? DeviceNumber, long? FiscalNumber, long? FiscalShift);
 
 public sealed record StandardNReceiptSnapshot(
     long DocumentId,

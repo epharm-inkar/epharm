@@ -9,7 +9,12 @@ namespace CustomerDisplay.Services;
 
 internal sealed record StandardNReceiptHeader(long Id, long SessionId, int Type, int Status,
     long? LinkId, bool HasLinkColumn, decimal SignedTotal, string? Device, long? FiscalNumber,
-    long? FiscalShift, DateTimeOffset? OpenedAt);
+    long? FiscalShift, DateTimeOffset? OpenedAt)
+{
+    public long? ParentDocumentId { get; init; }
+    public DateTimeOffset? PostedAt { get; init; }
+    public DateTimeOffset? CommittedAt { get; init; }
+}
 internal sealed record StandardNReceiptSessionRow(long SessionId, string UserId, long? WorkstationId,
     string? WorkstationName, string? Program);
 
@@ -47,14 +52,16 @@ internal static class StandardNReceiptProjection
                string.Join(",", Enumerable.Range(0, documents).Select(index => "@doc" + index)) + ") order by l.DOC_ID,l.ID";
     }
 
-    public static string PostedLinesSql(int documents)
+    public static string PostedLinesSql(int documents, bool humanQuantityAvailable = false, int documentType = 3)
     {
         if (documents is < 1 or > MaxDocuments) throw new InvalidDataException("Receipt document bound exceeded.");
+        if (documentType is not (3 or 9)) throw new InvalidDataException("Unsupported native cash document type.");
         // Proven Standard-N lifecycle: posted rows move to DOC_DETAIL; ACTIVE is empty after posting.
         // Read only monetary/product columns, never patient/doctor FIO references from this table.
-        return "select first 5001 l.ID,l.DOC_ID,l.PART_ID,l.PRICE,l.QUANT,l.SUMMA,l.DISCOUNT " +
+        return "select first 5001 l.ID,l.DOC_ID,l.PART_ID,l.PRICE,l.QUANT,l.SUMMA,l.DISCOUNT" +
+               (humanQuantityAvailable ? ",l.HUMAN_QUANT " : " ") +
                "from DOC_DETAIL l join DOCS d on d.ID=l.DOC_ID where d.AUDIT_ID=@sessionId " +
-               "and d.DOC_TYPE=3 and d.STATUS=1 and l.DOC_ID in (" +
+               "and d.DOC_TYPE=" + documentType.ToString(CultureInfo.InvariantCulture) + " and d.STATUS=1 and l.DOC_ID in (" +
                string.Join(",", Enumerable.Range(0, documents).Select(index => "@doc" + index)) + ") order by l.DOC_ID,l.ID";
     }
 
@@ -62,7 +69,10 @@ internal static class StandardNReceiptProjection
         RequiredLong(row, "ID"), RequiredLong(row, "AUDIT_ID"), checked((int)RequiredLong(row, "DOC_TYPE")),
         checked((int)RequiredLong(row, "STATUS")), OptionalLong(row, "LINK_ID"), Has(row, "LINK_ID"),
         RequiredDecimal(row, "SUMMA"), Text(row, "DEVICE_NUM"), OptionalLong(row, "VNUM"),
-        OptionalLong(row, "VSHIFT"), Timestamp(Value(row, "INSERTDT")));
+        OptionalLong(row, "VSHIFT"), Timestamp(Value(row, "INSERTDT"))) {
+            ParentDocumentId = OptionalLong(row, "PARENT_ID"), PostedAt = Timestamp(Value(row, "POSTDT")),
+            CommittedAt = Timestamp(Value(row, "COMMITDATE")),
+        };
 
     public static StandardNReceiptLine Line(IDataRecord row)
     {
@@ -73,6 +83,7 @@ internal static class StandardNReceiptProjection
         var signedPrice = RequiredDecimal(row, "PRICE");
         var price = Math.Abs(signedPrice);
         var signedAmount = RequiredDecimal(row, "SUMMA");
+        var humanQuantity = Value(row, "HUMAN_QUANT") is string human ? human.Trim() : null;
         if (id <= 0 || document <= 0 || part <= 0 || signedQty == 0)
             throw new InvalidDataException("Receipt detail has an invalid physical identity or quantity.");
         var qty = Math.Abs(signedQty);
@@ -85,6 +96,7 @@ internal static class StandardNReceiptProjection
         {
             SourceDocumentId = document, SourceTotal = amount,
             SignedQuantity = signedQty, SignedAmount = signedAmount, SignedPrice = signedPrice,
+            HumanQuantity = humanQuantity, UnitSemantics = StandardNQuantityUnits.Classify(signedQty, humanQuantity),
         };
     }
 
@@ -137,10 +149,13 @@ internal static class StandardNReceiptProjection
 
     public static StandardNReceiptDocument Document(StandardNReceiptHeader header, IReadOnlyList<StandardNReceiptLine> lines) =>
         new(header.Id, header.SessionId, header.LinkId, header.Status, header.SignedTotal,
-            header.Device, header.FiscalNumber, header.FiscalShift, lines);
+            header.Device, header.FiscalNumber, header.FiscalShift, lines) {
+                DocumentType = header.Type, ParentDocumentId = header.ParentDocumentId,
+                PostedAt = header.PostedAt, CommittedAt = header.CommittedAt,
+            };
 
     public static bool IsPostedPhysicalSale(StandardNReceiptDocument document) =>
-        document.FinalDetailsRead && document.DocumentId > 0 && document.SessionId > 0 && document.Status == 1 && document.SignedTotal <= 0 &&
+        document.DocumentType == 3 && document.FinalDetailsRead && document.DocumentId > 0 && document.SessionId > 0 && document.Status == 1 && document.SignedTotal <= 0 &&
         !string.IsNullOrWhiteSpace(document.DeviceNumber) && document.FiscalNumber is > 0 && document.FiscalShift is > 0 &&
         document.Lines.Count is > 0 and <= MaxLines &&
         document.Lines.Select(line => line.LineId).Distinct().Count() == document.Lines.Count &&
@@ -149,6 +164,16 @@ internal static class StandardNReceiptProjection
             line.SourceTotal.HasValue && line.SourceTotal == Math.Abs(line.SignedAmount.Value) &&
             line.Qty == Math.Abs(line.SignedQuantity.Value)) &&
         document.Lines.Sum(line => line.SourceTotal!.Value) == Math.Abs(document.SignedTotal);
+
+    public static bool IsPostedPhysicalRefund(StandardNReceiptDocument document) =>
+        document.DocumentType == 9 && document.FinalDetailsRead && document.DocumentId > 0 && document.SessionId > 0 &&
+        document.Status == 1 && document.SignedTotal > 0 && !string.IsNullOrWhiteSpace(document.DeviceNumber) &&
+        document.FiscalNumber is > 0 && document.FiscalShift is > 0 && document.Lines.Count is > 0 and <= MaxLines &&
+        document.Lines.Select(line => line.LineId).Distinct().Count() == document.Lines.Count &&
+        document.Lines.All(line => line.SourceDocumentId == document.DocumentId && line.LineId > 0 && line.PartId > 0 &&
+            line.Qty > 0 && line.SignedQuantity == line.Qty && line.SignedPrice is >= 0 && line.Price == line.SignedPrice &&
+            line.SignedAmount is >= 0 && line.SourceTotal == line.SignedAmount) &&
+        document.Lines.Sum(line => line.SourceTotal!.Value) == document.SignedTotal;
 
     public static bool HasPostedFiscalHeader(StandardNReceiptDocument document) => document.Status == 1 &&
         document.SignedTotal <= 0 && !string.IsNullOrWhiteSpace(document.DeviceNumber) &&
