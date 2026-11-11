@@ -145,16 +145,68 @@ public sealed class NativeRefundCaptureTests : IDisposable
         Assert.Equal("damaged", File.ReadAllText(path)); Assert.Empty(reports);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DeletedHighestDraftDoesNotStopCurrentOrRestartedObserver(bool restart)
+    {
+        var source = new Source(); var reports = new List<SaleReport>(); var capture = Capture();
+        capture.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        source.Maximum = 103; source.Rows[101] = Refund(101, posted: false); source.Rows[102] = Refund(102);
+        // 103 is an unrelated unpaid draft; 101 remains an unresolved native transaction.
+        capture.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        source.Maximum = 102; // Standard-N normally deletes a cancelled draft.
+        var observer = restart ? Capture() : capture;
+        observer.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        var state = ReadState();
+        Assert.Equal(100, state.Baseline); Assert.Equal(103, state.MaximumSeen);
+        Assert.Equal(source.DatabaseTime, state.ActivatedAt);
+        Assert.Equal(new long[] { 102 }, state.Completed); Assert.Equal(new long[] { 101 }, state.Pending);
+        source.Maximum = 104; source.Rows[101] = Refund(101); source.Rows[104] = Refund(104);
+        observer.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        Capture().Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        Assert.Equal(new long?[] { 102, 101, 104 }, reports.Select(report => report.SourceDocumentId));
+    }
+
+    [Fact]
+    public void DeletingTheActivationDraftPreservesCutoffAndDoesNotBackfillHistory()
+    {
+        var source = new Source { Maximum = 102 }; var reports = new List<SaleReport>();
+        source.Rows[90] = Refund(90);
+        Capture().Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        source.Maximum = 100;
+        var observer = Capture(); observer.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        var state = ReadState();
+        Assert.Equal(102, state.Baseline); Assert.Equal(102, state.MaximumSeen);
+        Assert.Equal(source.DatabaseTime, state.ActivatedAt); Assert.Empty(reports);
+        source.Maximum = 103; source.Rows[103] = Refund(103);
+        observer.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        Assert.Equal(103, Assert.Single(reports).SourceDocumentId);
+    }
+
     [Fact]
     public void SourceRestoreOrSourceChangeNeverReplaysOldHistory()
     {
         var source = new Source(); var capture = Capture(); var reports = new List<SaleReport>(); capture.Poll(source, reports.Add, TestContext.Current.CancellationToken);
-        source.Maximum = 99;
-        Assert.Throws<InvalidDataException>(() => capture.Poll(source, reports.Add, TestContext.Current.CancellationToken)); Assert.Empty(reports);
+        source.Maximum = 99; source.Rows[90] = Refund(90);
+        capture.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        Capture().Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        Assert.Empty(reports); Assert.Equal(100, ReadState().Baseline); Assert.Equal(100, ReadState().MaximumSeen);
         source.Maximum = 200; source.Namespace = new string('b', 64); source.Rows[101] = Refund(101);
         capture.Poll(source, reports.Add, TestContext.Current.CancellationToken); // Notice different source, drop only in-memory binding.
         capture.Poll(source, reports.Add, TestContext.Current.CancellationToken); // New durable source cutoff is 200, not zero.
         Assert.Empty(reports); Assert.Equal(2, Directory.GetFiles(_root, "*.json").Length);
+    }
+
+    [Fact]
+    public void InvalidCurrentMaximumDoesNotMutateTheDurableCursor()
+    {
+        var source = new Source(); var reports = new List<SaleReport>(); var capture = Capture();
+        capture.Poll(source, reports.Add, TestContext.Current.CancellationToken);
+        var path = Assert.Single(Directory.GetFiles(_root, "*.json")); var before = File.ReadAllBytes(path);
+        source.Maximum = -1;
+        Assert.Throws<InvalidDataException>(() => capture.Poll(source, reports.Add, TestContext.Current.CancellationToken));
+        Assert.Equal(before, File.ReadAllBytes(path)); Assert.Empty(reports);
     }
 
     [Fact]
@@ -262,6 +314,13 @@ public sealed class NativeRefundCaptureTests : IDisposable
         Assert.True(ambiguous.Refund);
         var returnOnly = NativeCashPrintObservation.Classify([(100, 9, 0), (200, 3, 2)]);
         Assert.True(returnOnly.Refund); Assert.Empty(returnOnly.SaleDocumentIds);
+    }
+
+    private NativeRefundCapture.State ReadState()
+    {
+        var envelope = System.Text.Json.JsonSerializer.Deserialize<NativeRefundCapture.Envelope>(
+            File.ReadAllText(Assert.Single(Directory.GetFiles(_root, "*.json"))), EpharmJson.Options)!;
+        return System.Text.Json.JsonSerializer.Deserialize<NativeRefundCapture.State>(envelope.Payload, EpharmJson.Options)!;
     }
 
     private sealed class Source : INativeRefundSource

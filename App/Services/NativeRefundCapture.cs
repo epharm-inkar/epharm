@@ -79,14 +79,13 @@ public sealed class NativeRefundCapture
                     !Namespace(ns) || maximum < 0 || databaseTime == default) return;
                 var initial = Read(ns) ?? new State { SourceNamespace = ns, Scope = Scope(ns), Baseline = maximum,
                     MaximumSeen = maximum, ActivatedAt = databaseTime };
-                if (maximum < initial.MaximumSeen) throw new InvalidDataException("Native refund source moved behind its durable cutoff.");
                 Write(initial); _state = initial;
             }
             var scan = new NativeRefundScan(_state.Baseline, _state.ActivatedAt, _state.PageAfter,
                 _state.Pending.ToArray(), _state.Completed.ToHashSet());
             if (!source.TryReadNativeRefunds(_state.SourceNamespace, scan, out var batch) || batch == null) return;
             if (batch.SourceNamespace != _state.SourceNamespace) { _state = null; return; }
-            if (batch.MaximumDocumentId < _state.MaximumSeen || batch.NewDocuments.Count > 64 || batch.PendingDocuments.Count > MaximumPending ||
+            if (batch.MaximumDocumentId < 0 || batch.NewDocuments.Count > 64 || batch.PendingDocuments.Count > MaximumPending ||
                 batch.PendingDocuments.Select(row => row.DocumentId).Distinct().Count() != batch.PendingDocuments.Count ||
                 batch.PendingDocuments.Any(row => !_state.Pending.Contains(row.DocumentId)) ||
                 batch.NewDocuments.Any(row => row.DocumentId <= _state.PageAfter || row.DocumentId > batch.MaximumDocumentId) ||
@@ -122,7 +121,8 @@ public sealed class NativeRefundCapture
             }
             // Never assume generator order is commit order. Every finished pass starts again.
             if (allRetained && batch.CompletedPass) next.PageAfter = 0;
-            next.MaximumSeen = batch.MaximumDocumentId;
+            // Cancelling the highest unpaid draft can lower MAX(DOCS.ID); never lower the durable cutoff.
+            next.MaximumSeen = Math.Max(next.MaximumSeen, batch.MaximumDocumentId);
             cancellation.ThrowIfCancellationRequested(); Write(next); _state = next;
             if (!allRetained) throw new InvalidDataException("Native refund evidence bound reached; observations preserved for review.");
         }
