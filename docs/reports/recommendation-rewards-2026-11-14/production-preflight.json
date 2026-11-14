@@ -1,0 +1,127 @@
+{
+  "observedWindowUtc": {
+    "from": "2026-11-14T13:55:21Z",
+    "to": "2026-11-14T13:59:25Z"
+  },
+  "mode": "Read-only metadata and aggregate SQL; no production mutations or load generated",
+  "application": {
+    "domain": "epharm.inkar.kz",
+    "backendRelease": "v0.2.17",
+    "frontendRelease": "v0.2.17",
+    "commit": "d5555d448f596f5e2a197450916c5613caf19cd2",
+    "backendImageId": "sha256:916bc2a0fe3cd9b2a9a07a57e5d41c95bbe62586676e10962a94d1d3e736144b",
+    "frontendImageId": "sha256:f93c2ffbe3687df8df9460c4b994ae63760b65b7b4318d4cd27942a0413dd28b",
+    "bothContainersRunning": true,
+    "latestSuccessfulFlywayVersion": "099",
+    "recommendationRewardSchemaPresent": false
+  },
+  "financialFlags": {
+    "POSM_SALE_BONUS_ENABLED": false,
+    "POSM_SALE_BONUS_AUTO_CREDIT_ENABLED": "unset; application default false",
+    "POSM_SALE_BONUS_ELIGIBLE_AFTER": "empty",
+    "deviceAllowlistMode": "none",
+    "deviceAllowlistCount": 0
+  },
+  "recipientMapping": {
+    "pharmacistsTotal": 609,
+    "pharmacistsActive": 596,
+    "explicitMappingsActive": 0,
+    "activePharmacistsWithValidExplicitMapping": 0,
+    "invalidActiveMappings": 0,
+    "conclusion": "No explicit cashier-to-employee financial mapping currently exists; registration alone is not financial recipient evidence"
+  },
+  "campaignReadiness": {
+    "activeStatusPromos": 0,
+    "activePromosInCurrentAlmatyDateWindow": 0,
+    "activeCurrentPromosWithActivePositiveBonus": 0,
+    "activePositiveBonusRules": 0,
+    "promosByStatus": {
+      "draft": { "total": 7, "positiveBudget": 0, "zeroBudget": 7 },
+      "paused": { "total": 12, "positiveBudget": 1, "zeroBudget": 11 },
+      "archived": { "total": 1, "positiveBudget": 0, "zeroBudget": 1 }
+    },
+    "rulesByStatus": {
+      "draft": { "total": 36, "positiveUnitBonus": 20, "withoutPromo": 0 }
+    },
+    "positiveBonusPromosAnyStatus": 11,
+    "positiveBonusPromosWithPositiveBudgetAnyStatus": 0,
+    "positiveBonusRulesAnyStatus": {
+      "total": 20,
+      "missingLocalProduct": 0,
+      "nonpositiveLocalPrice": 1,
+      "missingExactLocalIdentifiers": 0
+    },
+    "method": "Read-only aggregate SQL over promos, rules and products. Current campaign date window uses Asia/Almaty with inclusive endpoints. Product checks use preserved local rows only; no PIM/catalogue API requests",
+    "conclusion": "All rules are drafts and no campaign is active. None of the eleven campaigns with a positive rule bonus has a positive budget. A selected funded campaign must be explicitly reviewed and activated for the real pilot; historical test data was not activated"
+  },
+  "storage": {
+    "rootSizeHuman": "236G",
+    "rootUsedHuman": "199G",
+    "rootAvailableHuman": "27G",
+    "rootUsedPercent": 89,
+    "conclusion": "Preflight observation only; image-build and rollback-bundle headroom must be rechecked before promotion"
+  },
+  "backup": {
+    "effectiveSystemdOverridesReviewed": true,
+    "offsiteRequired": true,
+    "offsiteTarget": "independent .81 server",
+    "nativePrivateFilesRequired": true,
+    "localKeepCount": 7,
+    "offsiteRetention": { "daily": 30, "weekly": 8, "monthly": 12 },
+    "lastBackupService": {
+      "startedAtUtc": "2026-11-14T03:22:54Z",
+      "finishedAtUtc": "2026-11-14T03:34:42Z",
+      "result": "success",
+      "exitStatus": 0
+    },
+    "lastRestoreTestService": {
+      "startedAtUtc": "2026-11-13T15:13:23Z",
+      "finishedAtUtc": "2026-11-13T15:24:02Z",
+      "result": "success",
+      "exitStatus": 0
+    },
+    "latestArtifacts": {
+      "postgres": {
+        "createdAtUtc": "2026-11-14T03:22:54Z",
+        "bytes": 316207538,
+        "localCount": 7,
+        "checksumSidecarPresent": true
+      },
+      "minio": {
+        "createdAtUtc": "2026-11-14T03:25:06Z",
+        "bytes": 306957117,
+        "localCount": 7,
+        "checksumSidecarPresent": true
+      },
+      "nativeFiles": {
+        "createdAtUtc": "2026-11-14T03:29:00Z",
+        "bytes": 15295128,
+        "localCount": 7,
+        "checksumSidecarPresent": true
+      },
+      "credentialKeys": {
+        "createdAtUtc": "2026-11-14T03:29:01Z",
+        "bytes": 469,
+        "localCount": 32,
+        "checksumSidecarPresent": true
+      }
+    },
+    "credentialKeyArchivesNotPruned": "Existing key-custody policy deliberately retains these small recovery archives",
+    "scope": "Read-only effective configuration, timer/service result, success metrics and artifact metadata. This inspection did not independently restore or hash archive bodies and does not replace the fresh pre-deploy rollback bundle or forward-schema recovery rehearsal"
+  },
+  "remainingReleaseGates": [
+    "Complete the positive Windows shown-add-paid-wallet-refund scenario on the final merged candidate",
+    "Verify a real pilot employee, exact individual device and explicit native cashier mapping without guessing identities",
+    "Review and explicitly activate a funded pilot campaign; existing campaign statuses and budgets remain unchanged",
+    "Rehearse reward-capable forward recovery on V100; a generic wallet-capable predecessor cannot safely approve reward-held receipts",
+    "Run current required CI and verify exact release provenance, signed POSM update and fresh rollback bundle before switching",
+    "Observe pilot and subsequent fleet evidence and wallet outcomes; publishing an update alone is not coverage proof"
+  ],
+  "limitations": [
+    "Separate short read-only observations, not one cross-service atomic snapshot",
+    "No pharmacist names, IIN, phone numbers, passwords, tokens, credentials or private host paths are included",
+    "No production recommendation, sale, reward, account, budget or configuration was created or changed",
+    "Live catalogue stock, individual employee login and physical cash-desk display were not exercised by this preflight",
+    "Mobile application builds and tests remain paused"
+  ]
+}

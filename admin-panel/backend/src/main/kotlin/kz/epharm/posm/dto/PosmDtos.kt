@@ -85,6 +85,8 @@ data class RecommendationDto(
     val source: String = "epharm",
     /** Null means that no authoritative inventory snapshot exists; it never means zero stock. */
     val balance: ProductBalanceDto? = null,
+    /** Exact aliases of this same catalogue product; legacy clients retain recommendBarcode. */
+    val recommendBarcodes: List<String> = emptyList(),
 )
 
 /**
@@ -212,4 +214,4 @@ data class PosSaleRequest(
 data class PosSaleResponse(val saleId: String, val accepted: Boolean)
 
 /** Пульс кассы (T4): подтверждение, что устройство учтено как онлайн. */
-data class HeartbeatResponse(val ok: Boolean, val deviceId: String)
+data class HeartbeatResponse(val ok: Boolean, val deviceId: String, val rewardEvidenceProtocol: Int? = null)

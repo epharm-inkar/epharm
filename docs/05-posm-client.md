@@ -5,6 +5,29 @@ Path: `App/` and `Models/`.
 Current client is C#/WPF/.NET 10. Older Electron references are historical and no longer describe the
 implementation.
 
+## Reward evidence activation candidate — 2026-11-14
+
+A signed runtime update preserves pharmacy configuration and outbox. Missing local
+`RecommendationRewardsEnabled` / `NativeRefundCaptureEnabled` fields are server-managed;
+explicit `false` remains an opt-out. Explicit `true` never bypasses the server.
+Only a successful authenticated heartbeat with known `rewardEvidenceProtocol=1`
+admits capture. An old, disabled, malformed or unknown capability cannot enable it.
+Loss of capability invalidates the current reward baseline; later new checkouts
+start from fresh observations. Ordinary checkout, recommendations, RPS, QR and the
+customer screen continue. Once strict native print classification was admitted,
+it stays strict for ordinary queued receipts even while financial capture is off.
+
+The server independently limits the pilot by individual device ID and checks the
+same scope before money. Global auto-credit and activation cutoff remain separate.
+Refund observation resumes its durable cursor, without historical import or debit.
+Exact alternate EANs supplied for the same recommended product may link additions;
+an unknown EAN is never rescued by guessing a product from its name or local SKU.
+The first shown baseline and alias set remain immutable. Whole-package semantics
+are required for the rewarded product; an unrelated exact fractional line does not
+itself invalidate the cart. Uncertain rewarded units remain a case for HQ.
+
+This is candidate behavior, not evidence of completed Windows or fleet acceptance.
+
 ## Registration recovery candidate — 2026-11-14
 
 New-employee registration remains permanently SMS-free. Existing-profile activation

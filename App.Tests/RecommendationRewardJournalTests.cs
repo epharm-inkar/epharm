@@ -93,15 +93,123 @@ public sealed class RecommendationRewardJournalTests : IDisposable
         Assert.Equal("4600000000029", change.Barcode);
     }
 
+    [Fact]
+    public void ConfirmedSecondaryBarcodeLinksTheActualNativeAdditionWithoutChangingItsCode()
+    {
+        var journal = Journal();
+        const string secondary = "4600000000029";
+        journal.RecordShown("checkout", "event-1", "4600000000012", "remote-catalogue-id", _identity, [], _at, true,
+            ["4600000000012", secondary]);
+        var added = Line() with { Barcode = secondary };
+        journal.Observe("checkout", _identity, [added], _at.AddSeconds(40));
+        var sale = journal.BuildSale("checkout", Paid(added), _identity, _at.AddMinutes(5));
+        Assert.True(sale.JournalComplete);
+        var change = Assert.Single(sale.Changes);
+        Assert.Equal("event-1", change.EventId);
+        Assert.Equal(secondary, change.Barcode);
+        Assert.Equal("10", change.Sku); // The native PART_ID never becomes a remote catalogue ID.
+    }
+
+    [Fact]
+    public void UndeclaredBarcodeDoesNotMatchEvenWhenSkuMatchesTheOffer()
+    {
+        var journal = Journal();
+        journal.RecordShown("checkout", "event-1", "4600000000012", "10", _identity, [], _at, true,
+            ["4600000000029"]);
+        var other = Line() with { Barcode = "4600000000036" };
+        journal.Observe("checkout", _identity, [other], _at.AddSeconds(10));
+        Assert.Empty(Assert.Single(journal.BuildSale("checkout", Paid(other), _identity, _at.AddMinutes(5)).Changes).EventId);
+    }
+
+    [Fact]
+    public void AliasSetIsCopiedAndRepeatShowCannotChangeItOrRefreshTheTimer()
+    {
+        var journal = Journal();
+        var aliases = new List<string> { "4600000000029" };
+        var first = journal.RecordShown("checkout", "event-1", "4600000000012", "product", _identity, [], _at, true, aliases)!;
+        aliases[0] = "4600000000036";
+        var repeat = journal.RecordShown("checkout", "event-1", "4600000000012", "product", _identity, [], _at.AddSeconds(100), true,
+            ["4600000000029", "4600000000012", "4600000000029"]);
+        Assert.Equal(first.ObservationId, repeat!.ObservationId);
+        var added = Line() with { Barcode = "4600000000029" };
+        journal.Observe("checkout", _identity, [added], _at.AddSeconds(121));
+        var sale = journal.BuildSale("checkout", Paid(added), _identity, _at.AddMinutes(5));
+        Assert.True(sale.JournalComplete);
+        Assert.Equal("event-1", Assert.Single(sale.Changes).EventId);
+        journal.RecordShown("checkout", "event-1", "4600000000012", "product", _identity, [added], _at.AddSeconds(122), true,
+            ["4600000000036"]);
+        Assert.False(journal.BuildSale("checkout", Paid(added), _identity, _at.AddMinutes(5)).JournalComplete);
+    }
+
+    [Theory]
+    [InlineData("overflow")]
+    [InlineData("long")]
+    [InlineData("control")]
+    [InlineData("empty")]
+    public void InvalidAliasMetadataFailsClosedWithoutInventingACompleteJournal(string mode)
+    {
+        var journal = Journal();
+        var aliases = mode switch {
+            "overflow" => Enumerable.Range(0, RecommendationRewardJournal.MaximumOfferBarcodes + 1).Select(i => i.ToString()).ToArray(),
+            "long" => new[] { new string('1', 33) }, "control" => new[] { "123\n456" }, _ => new[] { " " },
+        };
+        Assert.Null(journal.RecordShown("checkout", "event", "4600000000012", "product", _identity, [], _at, true, aliases));
+        journal.Observe("checkout", _identity, [Line()], _at.AddSeconds(10));
+        Assert.False(journal.BuildSale("checkout", Paid(Line()), _identity, _at.AddMinutes(5)).JournalComplete);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"recommendBarcodes\":null}")]
+    public void OldAndNullAliasResponsesRetainPrimaryBarcodeMatching(string json)
+    {
+        var recommendation = JsonSerializer.Deserialize<Recommendation>(json, EpharmJson.Options)!;
+        var journal = Journal();
+        journal.RecordShown("checkout", "event", "4600000000012", "product", _identity, [], _at, true,
+            recommendation.RecommendBarcodes);
+        journal.Observe("checkout", _identity, [Line()], _at.AddSeconds(10));
+        Assert.Equal("event", Assert.Single(journal.BuildSale("checkout", Paid(Line()), _identity, _at.AddMinutes(5)).Changes).EventId);
+    }
+
     [Theory]
     [InlineData("unknown", 1)]
     [InlineData("full_package", 1.5)]
-    public void UnknownUnitsAndFractionalAmountsCanNeverClaimCompleteJournal(string unit, double qty)
+    public void ExactUnknownUnitsAndFractionalAmountsArePreservedForServerQualification(string unit, double qty)
     {
         var journal = Journal(); var line = Line((decimal)qty, unit: unit); var shown = Show(journal, line);
         var sale = journal.BuildSale("checkout", Paid(line), _identity, _at.AddMinutes(5));
-        Assert.False(shown.CartComplete); Assert.False(sale.JournalComplete);
+        Assert.True(shown.CartComplete); Assert.True(sale.JournalComplete);
         Assert.Equal((decimal)qty, Assert.Single(sale.Completion.Lines).Qty);
+        Assert.Equal(unit, Assert.Single(sale.Completion.Lines).UnitSemantics); // A complete observation does not prove whole packages.
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UnrelatedFractionDoesNotInvalidateExactEvidenceForAnOfferedWholePackage(bool inBaseline)
+    {
+        var journal = Journal();
+        var unrelated = Line(.3m, line: 502, unit: "unknown") with { Sku = "20", Barcode = "4600000000029" };
+        var shown = journal.RecordShown("checkout", "event-1", "4600000000012", "product", _identity,
+            inBaseline ? [unrelated] : [], _at, true)!;
+        journal.Observe("checkout", _identity, [Line(), unrelated], _at.AddSeconds(40));
+
+        var sale = journal.BuildSale("checkout", Paid(Line(), unrelated), _identity, _at.AddMinutes(5));
+
+        Assert.True(shown.CartComplete);
+        Assert.True(sale.JournalComplete);
+        Assert.Equal("event-1", sale.Changes.Single(change => change.SourceLineId == 501).EventId);
+        Assert.Equal(.3m, sale.Completion.Lines.Single(line => line.SourceLineId == 502).Qty);
+        Assert.Equal("unknown", sale.Completion.Lines.Single(line => line.SourceLineId == 502).UnitSemantics);
+    }
+
+    [Fact]
+    public void QuantityOutsideTheServerEvidenceBoundStillFailsCompleteness()
+    {
+        var journal = Journal();
+        var line = Line(1_000_001m);
+        Assert.False(Show(journal, line).CartComplete);
+        Assert.False(journal.BuildSale("checkout", Paid(line), _identity, _at.AddMinutes(5)).JournalComplete);
     }
 
     [Theory]
@@ -256,7 +364,7 @@ public sealed class RecommendationRewardJournalTests : IDisposable
     [Fact]
     public void LegacyWireOmitsNewFieldsAndOfflineReplayFreezesExactEvidence()
     {
-        Assert.False(new EpharmConfig().RecommendationRewardsEnabled);
+        Assert.Null(new EpharmConfig().RecommendationRewardsEnabled);
         Assert.DoesNotContain("rewardEvidence", JsonSerializer.Serialize(new MarkShownRequest(), EpharmJson.Options));
         Assert.DoesNotContain("rewardEvidence", JsonSerializer.Serialize(new SaleReport(), EpharmJson.Options));
         var journal = Journal(); var shown = Show(journal, Line());

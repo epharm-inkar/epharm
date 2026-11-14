@@ -3,6 +3,12 @@ using System.Collections.Generic;
 
 namespace CustomerDisplay.Models.Posm
 {
+    public sealed class HeartbeatResponse
+    {
+        public bool Ok { get; set; }
+        public int? RewardEvidenceProtocol { get; set; }
+    }
+
     // DTO для обмена с backend POSM Rules Engine (/api/posm/*).
     // Имена полей зеркалят kz.epharm.posm.dto.* (Kotlin). Сериализация — camelCase
     // (настроена в EpharmApiClient через JsonSerializerOptions).
@@ -74,6 +80,8 @@ namespace CustomerDisplay.Models.Posm
         public string RecommendSku { get; set; } = "";
         public string RecommendName { get; set; } = "";
         public string? RecommendBarcode { get; set; }      // EAN-13 рекомендованного (лог + позиция чека)
+        /// <summary>Exact catalogue aliases of this product; null/absent retains the legacy primary barcode.</summary>
+        public List<string>? RecommendBarcodes { get; set; }
         public string? RecommendVendor { get; set; }       // «Jadran Galenski»
         public string? RecommendVolume { get; set; }       // «150 мл»
         public string? RecommendStock { get; set; }        // «в наличии 14 уп.»

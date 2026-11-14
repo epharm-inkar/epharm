@@ -21,6 +21,7 @@ public sealed class RecommendationRewardJournal
     public const int MaximumCheckouts = 32;
     public const int MaximumChanges = 2048;
     public const int MaximumLines = 512;
+    public const int MaximumOfferBarcodes = 100;
     private const int MaximumOffers = 128;
     private const long MaximumBytes = 8 * 1024 * 1024;
     private const long MaximumFileBytes = 2 * 1024 * 1024;
@@ -75,24 +76,27 @@ public sealed class RecommendationRewardJournal
     }
 
     public RewardShownEvidence? RecordShown(string checkout, string eventId, string? barcode, string? sku,
-        RewardSourceIdentity identity, IReadOnlyList<RewardCartLine> cart, DateTimeOffset shownAt, bool cartComplete)
+        RewardSourceIdentity identity, IReadOnlyList<RewardCartLine> cart, DateTimeOffset shownAt, bool cartComplete,
+        IReadOnlyList<string>? barcodes = null)
     {
         lock (_gate)
         {
             RewardShownEvidence? result = null;
             TryChange(checkout, state =>
             {
+                var codes = OfferBarcodes(barcode, barcodes);
                 Observe(state, identity, cart, shownAt, cartComplete);
                 var previous = state.Offers.SingleOrDefault(offer => offer.EventId == eventId);
                 if (previous != null) {
-                    if (previous.Barcode != Clean(barcode) || previous.Sku != Clean(sku)) state.Complete = false;
+                    if (previous.Barcode != Clean(barcode) || previous.Sku != Clean(sku) ||
+                        !OfferBarcodes(previous.Barcode, previous.Barcodes).SequenceEqual(codes, StringComparer.Ordinal)) state.Complete = false;
                     result = previous.Evidence; return;
                 } // Never reset a timer/baseline on a repeat show.
                 if (state.Offers.Count >= MaximumOffers || string.IsNullOrWhiteSpace(eventId))
                     throw new InvalidDataException("Reward show bound/identity is invalid.");
                 result = new RewardShownEvidence { CheckoutSessionId = checkout, ObservationId = Id(), Identity = identity,
                     CartComplete = cartComplete && ValidIdentity(identity) && ValidLines(cart), Lines = cart.Take(MaximumLines).ToList() };
-                state.Offers.Add(new Offer { EventId = eventId, Barcode = Clean(barcode), Sku = Clean(sku),
+                state.Offers.Add(new Offer { EventId = eventId, Barcode = Clean(barcode), Barcodes = codes, Sku = Clean(sku),
                     ShownAt = shownAt, Evidence = result });
             });
             return _unavailable || _failed.Contains(checkout) ? null : result;
@@ -128,7 +132,7 @@ public sealed class RecommendationRewardJournal
                     previous.Line.Sku == line.PartId.ToString(CultureInfo.InvariantCulture) && previous.Line.UnitSemantics == line.UnitSemantics));
             return new RewardSaleEvidence { CheckoutSessionId = checkout, JournalComplete = state?.Complete == true &&
                 !_unavailable && !_failed.Contains(checkout) && paid && exact && ValidIdentity(identity) && state.LastIdentity == identity &&
-                document.SessionId == identity.NativeSessionId && document.Lines.All(line => line.UnitSemantics == "full_package" && decimal.Truncate(line.Qty) == line.Qty),
+                document.SessionId == identity.NativeSessionId,
                 Changes = state?.Changes.ToList() ?? new(), Completion = completion };
         }
     }
@@ -182,7 +186,7 @@ public sealed class RecommendationRewardJournal
     {
         if (state.Changes.Count >= MaximumChanges) { state.Complete = false; return; }
         var offer = state.Offers.Where(offer => offer.ShownAt <= at &&
-            (!string.IsNullOrWhiteSpace(line.Barcode) ? offer.Barcode == line.Barcode :
+            (!string.IsNullOrWhiteSpace(line.Barcode) ? offer.Barcode == line.Barcode || offer.Barcodes?.Contains(line.Barcode, StringComparer.Ordinal) == true :
                 !string.IsNullOrWhiteSpace(line.Sku) && offer.Sku == line.Sku))
             .OrderByDescending(offer => offer.ShownAt).FirstOrDefault();
         state.Changes.Add(new RewardLineChange { ObservationId = Id(), EventId = offer?.EventId ?? "", GenerationId = generation,
@@ -196,9 +200,20 @@ public sealed class RecommendationRewardJournal
         identity.IdentityStatus is "match" or "unknown";
     private static bool ValidLines(IReadOnlyList<RewardCartLine> lines) => lines.Count <= MaximumLines &&
         lines.Select(Key).Distinct().Count() == lines.Count && lines.All(line => line.SourceDocumentId > 0 && line.SourceLineId > 0 &&
-            line.Qty > 0 && decimal.Truncate(line.Qty) == line.Qty && line.UnitSemantics == "full_package" && !string.IsNullOrWhiteSpace(line.Barcode));
+            line.Qty is > 0 and <= 1_000_000m && !string.IsNullOrWhiteSpace(line.Barcode));
     private static string Key(RewardCartLine line) => line.SourceDocumentId.ToString(CultureInfo.InvariantCulture) + ":" + line.SourceLineId.ToString(CultureInfo.InvariantCulture);
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static List<string> OfferBarcodes(string? primary, IReadOnlyList<string>? aliases)
+    {
+        if (aliases?.Count > MaximumOfferBarcodes) throw new InvalidDataException("Reward offer barcode bound exceeded.");
+        var codes = new HashSet<string>(StringComparer.Ordinal);
+        if (Clean(primary) is { } code) codes.Add(code);
+        foreach (var raw in aliases ?? Array.Empty<string>())
+            codes.Add(Clean(raw) ?? throw new InvalidDataException("Empty reward offer barcode."));
+        if (codes.Count > MaximumOfferBarcodes || codes.Any(code => code.Length > 32 || code.Any(char.IsControl)))
+            throw new InvalidDataException("Invalid reward offer barcode.");
+        return codes.OrderBy(code => code, StringComparer.Ordinal).ToList();
+    }
     private static string Id() => Guid.NewGuid().ToString("N");
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private string PathFor(string checkout) => Path.Combine(_root, Hash(Encoding.UTF8.GetBytes(checkout)) + ".json");
@@ -234,6 +249,7 @@ public sealed class RecommendationRewardJournal
         var state = JsonSerializer.Deserialize<State>(envelope.Payload, EpharmJson.Options) ?? throw new InvalidDataException("Missing reward journal.");
         if (state.Checkout != checkout || state.Lines.Count > MaximumLines || state.Changes.Count > MaximumChanges || state.Offers.Count > MaximumOffers)
             throw new InvalidDataException("Invalid reward journal identity/bounds.");
+        foreach (var offer in state.Offers) OfferBarcodes(offer.Barcode, offer.Barcodes);
         // The unobserved crash/restart interval is UNKNOWN; preserve evidence but never invent additions.
         if (state.ObserverInstance != _instance) { state.Complete = false; state.ObserverInstance = _instance; }
         return state;
@@ -268,6 +284,7 @@ public sealed class RecommendationRewardJournal
     public sealed class ObservedLine { public RewardCartLine Line { get; set; } = new(); public string Generation { get; set; } = ""; }
     public sealed class Offer {
         public string EventId { get; set; } = ""; public string? Barcode { get; set; } public string? Sku { get; set; }
+        public List<string>? Barcodes { get; set; }
         public DateTimeOffset ShownAt { get; set; } public RewardShownEvidence Evidence { get; set; } = new();
     }
     public sealed class State {

@@ -68,7 +68,12 @@ class PosmPharmacistMappingService(
                MAX(s.printed_at) AS last_seen_at
         FROM pos_sales s
         LEFT JOIN pharmacies p ON p.id = s.pharmacy_id
-        WHERE s.pharmacist_source = 'standardn_unmapped'
+        WHERE (s.pharmacist_source = 'standardn_unmapped'
+          OR (s.pharmacist_source IN ('standardn_name_match', 'posm_internal')
+              AND s.capture_source = 'standardn-print-log'
+              AND s.source_document_id > 0
+              AND NULLIF(BTRIM(s.device_id), '') IS NOT NULL
+              AND s.reported_pharmacist_id ~ '^-?[0-9]+$'))
           AND NULLIF(s.reported_pharmacist_id, '') IS NOT NULL
           AND NOT EXISTS (
               SELECT 1 FROM posm_pharmacist_mappings m

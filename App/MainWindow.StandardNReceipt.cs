@@ -407,7 +407,7 @@ namespace CustomerDisplay
         private void HandleStandardNReceiptPrinted(IReadOnlySet<long>? exactDocuments = null)
         {
             _receiptObservations.LogChanged();
-            if (_posmConfig?.NativeRefundCaptureEnabled == true) GuardNativePrintCue(_receiptProofClock(), exactDocuments);
+            if (_nativePrintGuardAdmitted) GuardNativePrintCue(_receiptProofClock(), exactDocuments);
             else RecordPhysicalReceiptPrint();
         }
 

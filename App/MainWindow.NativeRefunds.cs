@@ -32,7 +32,7 @@ public partial class MainWindow
             if (retained != null) permitted.IntersectWith(retained);
             if (permitted.Count == 0) return;
             try { Dispatcher.Invoke(() => {
-                if (!_receiptObserversClosed && _posmConfig?.NativeRefundCaptureEnabled == true)
+                if (!_receiptObserversClosed && _nativePrintGuardAdmitted)
                     RecordPhysicalReceiptPrint(permitted, markerAt);
             }); } catch { }
         });
@@ -40,15 +40,20 @@ public partial class MainWindow
 
     private void StartNativeRefundPolling(CancellationToken cancellation)
     {
-        if (_posmConfig?.NativeRefundCaptureEnabled != true || _standardNDb == null || _saleReporter == null) return;
+        if (_standardNDb == null || _saleReporter == null || _posmConfig is not { } config) return;
         _nativeRefundTask = Task.Run(async () => {
             NativeRefundCapture? capture = null;
             var lastError = DateTimeOffset.MinValue;
             while (!cancellation.IsCancellationRequested && !_receiptObserversClosed) {
                 try {
-                    capture ??= new NativeRefundCapture(Path.Combine(_posmConfig.ReceiptCaptureDir, "native-refunds"),
-                        _posmConfig.PharmacyId, Environment.MachineName);
-                    capture.Poll(_standardNDb, _saleReporter.Enqueue, cancellation);
+                    if (NativeRefundObservationEnabled) {
+                        capture ??= new NativeRefundCapture(Path.Combine(config.ReceiptCaptureDir, "native-refunds"),
+                            config.PharmacyId, Environment.MachineName);
+                        capture.Poll(_standardNDb, report => {
+                            if (!NativeRefundObservationEnabled) throw new InvalidOperationException("Refund capability changed during capture.");
+                            _saleReporter.Enqueue(report);
+                        }, cancellation);
+                    }
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return; }
                 catch {

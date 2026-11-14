@@ -43,6 +43,7 @@ services:
       POSM_STAFF_AUTH_ENABLED: 'false'
       POSM_SALE_BONUS_ENABLED: 'true'
       POSM_SALE_BONUS_AUTO_CREDIT_ENABLED: 'true'
+      POSM_SALE_BONUS_DEVICE_ALLOWLIST: '*'
       POSM_SALE_BONUS_ELIGIBLE_AFTER: ${ELIGIBLE_AFTER:?Explicit UTC cutoff immediately before run required}
       STOREFRONT_CATALOG_ENABLED: 'false'
       MEDUSA_ENABLED: 'false'

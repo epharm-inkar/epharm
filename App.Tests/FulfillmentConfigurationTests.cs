@@ -9,6 +9,17 @@ namespace CustomerDisplay.Core.Tests;
 public sealed class FulfillmentConfigurationTests
 {
     [Fact]
+    public void ExistingRewardSettingsRemainServerManagedAndExplicitOptOutIsRetained()
+    {
+        var existing = JsonSerializer.Deserialize<EpharmConfig>("{\"PharmacyId\":\"test-pharmacy\"}")!;
+        Assert.Null(existing.RecommendationRewardsEnabled);
+        Assert.Null(existing.NativeRefundCaptureEnabled);
+        var optedOut = JsonSerializer.Deserialize<EpharmConfig>("{\"RecommendationRewardsEnabled\":false,\"NativeRefundCaptureEnabled\":false}")!;
+        Assert.False(optedOut.RecommendationRewardsEnabled);
+        Assert.False(optedOut.NativeRefundCaptureEnabled);
+    }
+
+    [Fact]
     public void ExistingConfigurationWithoutFulfillmentFlagNowDefaultsToDisabled()
     {
         Assert.False(new EpharmConfig().FulfillmentEnabled);

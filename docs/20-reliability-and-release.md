@@ -225,6 +225,22 @@ available. Prefer a tested roll-forward; any exceptional rollback requires freez
 writers and reconciling projection/ledger before reopening them. Disabling CRM rewards alone is
 not sufficient. Never drop migrations or rewrite entries to make an old binary appear compatible.
 
+V100 adds another durable monetary boundary: recommendation reward holds, canonical receipt
+identity and finite-budget decisions. Install the reviewed `verify-financial-transition.py`
+before the first migration. Its read-only probe checks table/column existence even when all
+reward tables are empty and every reward flag is off. Every admitted recovery artifact must
+retain the actual `ReconcileService` calls into `RecommendationRewardCreditPolicy`, that
+policy's state/recipient/budget checks, and the native payment/refund validation and holds.
+A generic wallet marker, healthy startup or disabled auto-credit flag cannot authorize an
+older binary: its ordinary receipt-approval writer can bypass the new hold or exhausted budget.
+The exact pre-V100 predecessor is therefore ineligible after V100. Rehearse a pinned
+reward-capable roll-forward image against an isolated copy of the forward-migrated database,
+including an exhausted-budget receipt, refund hold, repeated sale/alias and unchanged ledger/
+balance/budget assertions. Also retain coverage of existing training, receipt and payout writers.
+The normal transaction cannot substitute an unpromoted development build as its saved
+predecessor; review the archive forward-recovery procedure and exact recovery pins before
+the first switch. Never restore a pre-release database over newly received cash-desk sales.
+
 The actual v0.1.47 artifact is wallet-capable; its isolated forward-schema financial rehearsal is
 not an authorization recovery approval. Once the V066 managed-access schema exists, a recovery
 artifact must also contain the reviewed scope and fresh-revocation implementation.

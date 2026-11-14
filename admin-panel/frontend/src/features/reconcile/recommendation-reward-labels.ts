@@ -39,6 +39,10 @@ const reasons: Record<string, string> = {
   reward_budget_invalid: 'Бюджет акции требует проверки',
   reward_budget_exhausted: 'Бюджет акции исчерпан',
   employee_unverified: 'Нет подтверждённого сопоставления сотрудника с этой аптекой',
+  device_not_enabled: 'На этой кассе автоматические начисления ещё не включены',
+  rps_identity_mismatch: 'Подтверждённый сотрудник ePharm не совпадает с получателем бонуса',
+  paid_line_link_inconsistent:
+    'Не удалось однозначно связать строку оплаченного чека с добавлением',
   automatic_credit_disabled: 'Автоматические начисления отключены',
   reservation_conflict: 'Для этой продажи уже есть другое основание начисления',
   receipt_payload_conflict: 'Повторная доставка содержит другие данные чека',

@@ -10,14 +10,31 @@ namespace CustomerDisplay;
 
 public partial class MainWindow
 {
+    private volatile int _rewardEvidenceProtocol;
+    private bool _nativePrintGuardAdmitted;
+    private bool RewardEvidenceEnabled => _rewardEvidenceProtocol == 1 && _posmConfig?.RecommendationRewardsEnabled != false;
+    private bool NativeRefundObservationEnabled => _rewardEvidenceProtocol == 1 && _posmConfig?.NativeRefundCaptureEnabled != false;
+
+    private void ApplyRewardCapability(int? protocol)
+    {
+        var next = protocol == 1 ? 1 : 0;
+        // Print classification is ordinary sale safety, not permission to collect/credit rewards.
+        if (next == 1 && (_posmConfig?.RecommendationRewardsEnabled != false || _posmConfig?.NativeRefundCaptureEnabled != false))
+            _nativePrintGuardAdmitted = true;
+        if (_rewardEvidenceProtocol == next) return;
+        _rewardEvidenceProtocol = next;
+        // Never revive a checkout with an observation gap; later checkouts use fresh authoritative carts.
+        InvalidateRewardObservation();
+    }
+
     private RecommendationRewardJournal? _rewardJournal;
     private StandardNReceiptSnapshot? _rewardSnapshot;
     private DateTimeOffset _rewardSnapshotAt;
 
     private RecommendationRewardJournal? RewardJournal()
     {
-        if (_posmConfig?.RecommendationRewardsEnabled != true) return null;
-        try { return _rewardJournal ??= new RecommendationRewardJournal(Path.Combine(_posmConfig.ReceiptCaptureDir, "reward-evidence")); }
+        if (!RewardEvidenceEnabled || _posmConfig is not { } config) return null;
+        try { return _rewardJournal ??= new RecommendationRewardJournal(Path.Combine(config.ReceiptCaptureDir, "reward-evidence")); }
         catch { return null; } // Display, checkout, login and the ordinary sale queue are independent.
     }
 
@@ -36,7 +53,7 @@ public partial class MainWindow
 
     private void ObserveRewardSnapshot(StandardNReceiptSnapshot source)
     {
-        if (_posmConfig?.RecommendationRewardsEnabled != true) return;
+        if (!RewardEvidenceEnabled) return;
         _rewardSnapshot = source;
         _rewardSnapshotAt = _receiptProofClock();
         RewardJournal()?.Observe(_session.SessionId, RewardIdentity(source), RewardLines(source), _rewardSnapshotAt);
@@ -59,7 +76,8 @@ public partial class MainWindow
                 item.SourceDocumentId == line.SourceDocumentId && item.SourceLineId == line.LineId &&
                 item.PartId == line.PartId && item.Qty == line.Qty && string.Equals(item.Barcode?.Trim(), line.Barcode?.Trim(), StringComparison.Ordinal)));
         return journal.RecordShown(_session.SessionId, recommendation.EventId, recommendation.RecommendBarcode,
-            recommendation.RecommendSku, RewardIdentity(source), source == null ? new() : RewardLines(source), shownAt, complete);
+            recommendation.RecommendSku, RewardIdentity(source), source == null ? new() : RewardLines(source), shownAt, complete,
+            recommendation.RecommendBarcodes);
     }
 
     private void AttachRewardSale(SaleReport sale, CheckoutSession session, StandardNReceiptDocument document,

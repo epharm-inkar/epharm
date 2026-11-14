@@ -68,14 +68,14 @@ class PosmController(
         @RequestHeader(name = "X-Posm-Key", required = false) key: String?,
         @Valid @RequestBody req: RecommendRequest,
     ): RecommendResponse {
-        deviceAuthentication.authenticate(key, claimedPharmacyId = req.pharmacyId)
+        val device = deviceAuthentication.authenticate(key, claimedPharmacyId = req.pharmacyId)
         val identity = pharmacistIdentityService.resolve(
             pharmacyId = req.pharmacyId,
             reportedPharmacistId = req.pharmacistId,
             reportedPharmacistName = req.pharmacistName,
         )
         return recommendationService.recommend(req.copy(pharmacistId = identity.pharmacistId))
-            .copy(rewardEvidenceProtocol = rewards.protocol())
+            .copy(rewardEvidenceProtocol = rewards.protocol(device))
     }
 
     @PostMapping("/recommendations/{eventId}/outcome")
@@ -189,7 +189,7 @@ class PosmController(
                 ?.takeIf { it.matches(Regex("[0-9A-Za-z.+-]{1,32}")) },
             staffAuthStatus = staffAuthStatus,
         )
-        return HeartbeatResponse(ok = true, deviceId = id)
+        return HeartbeatResponse(ok = true, deviceId = id, rewardEvidenceProtocol = rewards.protocol(device))
     }
 
     /** Active merchandising task for the authenticated device's pharmacy. */

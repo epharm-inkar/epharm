@@ -64,6 +64,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
  * reward cases, pending bonuses, receipts and wallet entries are produced by application endpoints. */
 @SpringBootTest(properties = [
     "app.posm.sale-bonus.enabled=true", "app.posm.sale-bonus.auto-credit-enabled=true",
+    "app.posm.sale-bonus.device-allowlist=*",
     "app.posm.sale-bonus.eligible-after=2026-01-01T00:00:00Z", "app.posm.legacy-device-key-enabled=false",
 ])
 @AutoConfigureMockMvc
@@ -94,6 +95,7 @@ class RecommendationRewardFlowIntegrationTest {
     @Autowired lateinit var rules: RuleRepository
     @Autowired lateinit var sales: PosSaleRepository
     @Autowired lateinit var recommendationEvents: RecommendationEventRepository
+    @Autowired lateinit var rewardService: kz.epharm.posm.service.RecommendationRewardService
     @Autowired lateinit var campaignReports: CampaignReportRepository
     private var bearer: String? = null
 
@@ -125,6 +127,110 @@ class RecommendationRewardFlowIntegrationTest {
             .andExpect(status().isOk).andReturn().response.contentAsByteArray
         assertThat(mapper.readTree(portalBalance)["balanceKzt"].asLong()).isEqualTo(400)
         assertThat(mapper.readTree(portalBalance)["currency"].asText()).isEqualTo("KZT")
+    }
+
+    @Test fun `a confirmed secondary barcode credits its own offer but a foreign product cannot reuse the event`() {
+        for (sameProduct in listOf(true, false)) {
+            val w = world()
+            val offer = w.offers.single()
+            val scanned = barcode()
+            if (sameProduct) {
+                products.findById(offer.id).orElseThrow().also {
+                    it.barcodes = listOf(scanned)
+                    products.saveAndFlush(it)
+                }
+            } else {
+                products.saveAndFlush(ProductEntity(id = "foreign_${token()}", name = "Synthetic other product",
+                    barcode = scanned, price = 1000))
+            }
+            val f = flow(w.copy(offers = listOf(offer.copy(barcode = scanned))))
+            acknowledge(f)
+            deliver(f, payment(f))
+
+            val expected = if (sameProduct) 400L else 0L
+            assertThat(balance(f.employee)).isEqualTo(expected)
+            assertThat(spent(offer)).isEqualTo(expected)
+            if (sameProduct) assertCredit(f, expected)
+            else {
+                assertThat(cases(f)).isEmpty()
+                assertThat(number("SELECT count(*) FROM pharmacist_wallet_entries WHERE pharmacist_id=?", f.employee.person)).isZero()
+            }
+        }
+    }
+
+    @Test fun `only the admitted pilot receives capability and money and removal before payment stops auto credit`() {
+        val original = org.springframework.test.util.ReflectionTestUtils.getField(rewardService, "deviceScope")!!
+        fun admit(device: String) = org.springframework.test.util.ReflectionTestUtils.setField(rewardService,
+            "deviceScope", kz.epharm.posm.service.RecommendationRewardDeviceScope(device))
+        fun capability(f: Flow) = mapper.readTree(mvc.perform(post("/api/posm/heartbeat")
+            .header("X-Posm-Key", f.employee.key).param("deviceId", f.employee.device)
+            .param("pharmacyId", f.employee.pharmacy)).andExpect(status().isOk)
+            .andReturn().response.contentAsByteArray).path("rewardEvidenceProtocol")
+        try {
+            val admitted = flow(); val foreign = flow(); val removed = flow()
+            admit(admitted.employee.device)
+            assertThat(capability(admitted).asInt()).isEqualTo(1)
+            acknowledge(admitted); deliver(admitted, payment(admitted))
+            assertCredit(admitted, 400)
+            assertThat(balance(admitted.employee)).isEqualTo(400)
+
+            assertThat(capability(foreign).asInt(0)).isZero()
+            acknowledge(foreign); deliver(foreign, payment(foreign))
+            assertThat(balance(foreign.employee)).isZero()
+            assertThat(spent(foreign.world.offers.single())).isZero()
+
+            admit(removed.employee.device)
+            acknowledge(removed)
+            admit("a-different-synthetic-device")
+            deliver(removed, payment(removed))
+            assertThat(balance(removed.employee)).isZero()
+            assertThat(spent(removed.world.offers.single())).isZero()
+            assertThat(cases(removed).single()["reason_code"]).isEqualTo("device_not_enabled")
+        } finally {
+            org.springframework.test.util.ReflectionTestUtils.setField(rewardService, "deviceScope", original)
+        }
+    }
+
+    @Test fun `an unrelated fractional package does not deny a whole offered product but an offered fraction never credits`() {
+        for (offeredFraction in listOf(false, true)) {
+            val f = flow()
+            val otherCode = barcode()
+            products.saveAndFlush(ProductEntity(id = "fraction_${token()}", name = "Synthetic unrelated fractional product",
+                barcode = otherCode, price = 1000))
+            val baseline = listOf(
+                RewardCartLine(f.doc, 1, barcode = f.world.triggerBarcode, qty = BigDecimal.ONE, unitSemantics = "full_package"),
+                RewardCartLine(f.doc, 999, barcode = otherCode, qty = BigDecimal("0.3"), unitSemantics = "unknown"))
+            postDevice("/api/posm/recommendations/${f.eventIds.values.single()}/shown", f.employee,
+                MarkShownRequest(f.shownAt, RewardShownEvidence(checkoutSessionId = f.session, observationId = "fraction_baseline",
+                    identity = f.identity, cartComplete = true, lines = baseline)))
+            val paid = payment(f)
+            val evidence = paid.rewardEvidence!!
+            val count = if (offeredFraction) BigDecimal("0.5") else BigDecimal("2")
+            val amount = count.multiply(BigDecimal("1000")).longValueExact()
+            val total = amount + 300
+            val otherChange = RewardLineChange("unrelated_fraction", "", "unrelated_generation", 1,
+                f.shownAt.minusSeconds(10), f.identity, f.doc, 999, barcode = otherCode,
+                beforeQty = BigDecimal.ZERO, afterQty = BigDecimal("0.3"), unitSemantics = "unknown")
+            val changes = (evidence.changes.map { change ->
+                if (change.eventId == f.eventIds.values.single()) change.copy(afterQty = count) else change
+            } + otherChange).sortedBy { it.observedAt }.mapIndexed { index, change -> change.copy(sequence = index + 1L) }
+            val lines = listOf(evidence.completion.lines.single().copy(qty = count, signedQuantity = count.negate(),
+                signedAmount = BigDecimal.valueOf(-amount)),
+                RewardPaidLine(f.doc, 999, barcode = otherCode, qty = BigDecimal("0.3"), signedQuantity = BigDecimal("-0.3"),
+                    signedPrice = BigDecimal("1000"), signedAmount = BigDecimal("-300"), unitSemantics = "unknown"))
+            val request = paid.copy(totalAmount = total,
+                items = listOf(paid.items.single().copy(qty = count.toDouble(), total = amount),
+                    PosSaleItemDto(barcode = otherCode, name = "Synthetic unrelated fractional product", qty = .3, price = 1000, total = 300)),
+                rewardEvidence = evidence.copy(changes = changes, completion = evidence.completion.copy(
+                    signedTotal = BigDecimal.valueOf(-total), lines = lines)))
+
+            deliver(f, request)
+
+            val expected = if (offeredFraction) 0L else 400L
+            assertCredit(f, expected)
+            assertThat(balance(f.employee)).isEqualTo(expected)
+            assertThat(spent(f.world.offers.single())).isEqualTo(expected)
+        }
     }
 
     @Test fun `the exact two minute addition boundary qualifies but one nanosecond later does not`() {
@@ -170,10 +276,48 @@ class RecommendationRewardFlowIntegrationTest {
         deliver(f, request)
         assertThat(balance(f.employee)).isZero()
         assertThat(cases(f).single()["state"]).isEqualTo("waiting_evidence")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
         acknowledge(f)
         acknowledge(f)
         deliver(f, request)
         assertCredit(f, 400)
+        assertThat(balance(f.employee)).isEqualTo(400)
+        assertThat(spent(f.world.offers.single())).isEqualTo(400)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+    }
+
+    @Test fun `ordinary paid checkout retains raw v2 sale without allocating financial cases or invoking legacy bonuses`() {
+        val f = flow()
+        val session = "ordinary_${token()}"
+        val paid = payment(f).let { it.copy(sessionId = session,
+            rewardEvidence = it.rewardEvidence!!.copy(checkoutSessionId = session)) }
+        deliver(f, paid)
+        deliver(f, paid)
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE id=? AND reward_evidence IS NOT NULL", paid.saleId)).isEqualTo(1)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isZero()
+        assertThat(number("SELECT count(*) FROM recommendation_sale_rewards WHERE pharmacy_id=?", f.employee.pharmacy)).isZero()
+        assertThat(number("SELECT count(*) FROM pending_bonuses WHERE pharmacy_id=?", f.employee.pharmacy)).isZero()
+        assertThat(balance(f.employee)).isZero()
+        assertThat(spent(f.world.offers.single())).isZero()
+    }
+
+    @Test fun `a changed physical alias without recommendation events still fences the original credited receipt`() {
+        val f = flow()
+        acknowledge(f)
+        val paid = payment(f)
+        deliver(f, paid)
+        assertCredit(f, 400)
+        val session = "alias_without_events_${token()}"
+        val alias = paid.copy(saleId = "alias_${token()}", sessionId = session,
+            rewardEvidence = paid.rewardEvidence!!.copy(checkoutSessionId = session))
+        deliver(f, alias)
+        deliver(f, alias)
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE id IN (?,?) AND reward_evidence IS NOT NULL", f.sale, alias.saleId)).isEqualTo(2)
+        assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+        assertThat(cases(f).single()["state"]).isEqualTo("refund_review")
+        assertThat(cases(f).single()["reason_code"]).isEqualTo("receipt_payload_conflict")
+        assertThat(number("SELECT count(*) FROM recommendation_reward_audit WHERE pharmacy_id=? AND action='receipt_conflict'", f.employee.pharmacy)).isEqualTo(1)
+        assertThat(number("SELECT count(*) FROM pharmacist_wallet_entries WHERE pharmacist_id=?", f.employee.person)).isEqualTo(1)
         assertThat(balance(f.employee)).isEqualTo(400)
         assertThat(spent(f.world.offers.single())).isEqualTo(400)
     }

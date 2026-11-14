@@ -107,6 +107,71 @@ namespace CustomerDisplay.Core.Tests
         }
 
         [Fact]
+        public void MissingLocalSettingsRemainClosedUntilServerAdmissionAndFreshCart()
+        {
+            using var window = new MainWindow();
+            var receipt = RewardReceipt(100, 1); window.Observe(receipt);
+            Assert.Null(window.ShowReward("disabled", "4601164003157"));
+            window.SetRewardCapability(1);
+            Assert.False(window.ShowReward("before-fresh-poll", "4601164003157")!.CartComplete);
+            window.Observe(receipt);
+            Assert.True(window.ShowReward("fresh-poll", "4601164003157")!.CartComplete);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData(0)]
+        [InlineData(2)]
+        public void MissingOrUnknownCapabilityClosesEvidenceAndInvalidatesOldBaseline(int? protocol)
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.Observe(RewardReceipt(100, 1));
+            Assert.True(window.ShowReward("first", "4601164003157")!.CartComplete);
+            window.SetRewardCapability(protocol);
+            Assert.Null(window.ShowReward("off", "4601164003157"));
+            Assert.False(window.NativeRefundObservationActive);
+            window.SetRewardCapability(1);
+            Assert.Null(window.ShowReward("resumed-no-poll", "4601164003157")); // Never revive this checkout after an observation gap.
+        }
+
+        [Fact]
+        public void ExplicitLocalOptOutWinsOverServerAndTrueDoesNotBypassServer()
+        {
+            using var window = new MainWindow();
+            window.SetRewardOptions(true, true);
+            window.Observe(RewardReceipt(100, 1));
+            Assert.Null(window.ShowReward("no-server", "4601164003157"));
+            window.SetRewardOptions(false, false); window.SetRewardCapability(1);
+            window.Observe(RewardReceipt(100, 1));
+            Assert.Null(window.ShowReward("opt-out", "4601164003157"));
+            Assert.False(window.NativeRefundObservationActive);
+        }
+
+        [Fact]
+        public void LocalRefundPollingOptOutCannotWeakenReturnBatchVetoForRewards()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.SetRewardOptions(true, false);
+            var receipt = Receipt(100, 10); window.Observe(receipt);
+            window.SetNativePrintObservation(new(true, []));
+            window.PrintWithStates(Posted(receipt, 100));
+            Assert.Empty(window.Reports);
+            Assert.False(window.NativeRefundObservationActive);
+        }
+
+        [Fact]
+        public async Task LostRewardCapabilityKeepsOrdinaryNativePaymentAndItsStricterPrintGuard()
+        {
+            using var window = new MainWindow(); var receipt = Receipt(100, 10); window.Observe(receipt);
+            window.EnableNativeRefundGuard(new(false, [100]));
+            window.SetRewardCapability(null);
+            window.PrintWithStates(Posted(receipt, 100));
+            await window.WaitForNativePrintGuardAsync();
+            Assert.Equal(100, Assert.Single(window.Reports).SourceDocumentId);
+            Assert.Null(Assert.Single(window.Reports).RewardEvidence);
+        }
+
+        [Fact]
         public void RewardOptInCapturesRealSnapshotShowIncreaseAndLaterVerifiedPhysicalSale()
         {
             using var window = new MainWindow();
@@ -163,16 +228,20 @@ namespace CustomerDisplay.Core.Tests
         }
 
         [Fact]
-        public void RewardEvidenceIsOptInAndUnknownNativeUnitsRemainReviewOnly()
+        public void RewardEvidenceRequiresAdmissionAndRetainsUnknownUnitsWithoutInventingPackages()
         {
             using var disabled = new MainWindow(); var receipt = Receipt(100, 10);
             disabled.Observe(receipt); disabled.PrintWithStates(Posted(receipt, 100));
             Assert.Null(Assert.Single(disabled.Reports).RewardEvidence);
             using var enabled = new MainWindow(); enabled.EnableRewardEvidence();
             enabled.Observe(receipt with { WorkstationId = "9" });
-            Assert.False(enabled.ShowReward("event-synthetic", "4601164003157")!.CartComplete);
+            var shown = enabled.ShowReward("event-synthetic", "4601164003157")!;
+            Assert.True(shown.CartComplete);
+            Assert.All(shown.Lines, line => Assert.Equal("unknown", line.UnitSemantics));
             enabled.PrintWithStates(Posted(receipt with { WorkstationId = "9" }, 100));
-            Assert.False(Assert.Single(enabled.Reports).RewardEvidence!.JournalComplete);
+            var evidence = Assert.Single(enabled.Reports).RewardEvidence!;
+            Assert.True(evidence.JournalComplete);
+            Assert.All(evidence.Completion.Lines, line => Assert.Equal("unknown", line.UnitSemantics));
         }
 
         private static StandardNReceiptSnapshot RewardReceipt(long document, decimal qty)
@@ -1225,7 +1294,7 @@ namespace CustomerDisplay
     // Compile the real reconciliation partial without WPF. Only its UI/IO boundaries are fakes.
     public partial class MainWindow : IDisposable
     {
-        private readonly EpharmConfig _posmConfig = new() { PharmacyId = "synthetic-pharmacy", PharmacistId = "synthetic-person" };
+        private readonly EpharmConfig _posmConfig = new() { PharmacyId = "synthetic-pharmacy", PharmacistId = "synthetic-person", NativeRefundCaptureEnabled = false };
         private readonly UnavailableReceiptDatabase _standardNDb = new();
         private readonly ImmediateDispatcher Dispatcher = new();
         private readonly string _storageRoot;
@@ -1310,12 +1379,13 @@ namespace CustomerDisplay
         internal void PrintWithStates(params StandardNReceiptSnapshot[] states)
         {
             PrintWithoutWaiting(states);
-            WaitForReceiptProbeAsync().GetAwaiter().GetResult();
+            WaitForNativePrintGuardAsync().GetAwaiter().GetResult();
         }
         internal void PrintWithoutWaiting(params StandardNReceiptSnapshot[] states) =>
             Dispatcher.Invoke(() => { _standardNDb.States = states; HandleStandardNReceiptPrinted(); });
         internal void PrintExactWithStates(IReadOnlySet<long>? documents, params StandardNReceiptSnapshot[] states) =>
             Dispatcher.Invoke(() => { _standardNDb.States = states; HandleStandardNReceiptPrinted(documents); });
+        internal void SetNativePrintObservation(NativeCashPrintObservation observation) { _standardNDb.ClassifyRewardStates = false; _standardNDb.PrintObservation = observation; }
         internal void SetExactNativePrintObservation(NativeCashPrintObservation observation) => _standardNDb.ExactPrintObservation = observation;
         internal IReadOnlySet<long>? LastExactPrintDocuments => _standardNDb.LastExactPrintDocuments;
         internal void RetryPrintWithStates(params StandardNReceiptSnapshot[] states)
@@ -1342,11 +1412,21 @@ namespace CustomerDisplay
         internal void DatabaseFailed() { _receiptObservations.ReadFailed(); InvalidateRewardObservation(); }
         internal void EnableRewardEvidence() {
             _posmConfig.RecommendationRewardsEnabled = true;
+            _standardNDb.ClassifyRewardStates = true;
+            ApplyRewardCapability(1);
             _posmConfig.ReceiptCaptureDir = Path.Combine(_storageRoot, "receipts");
         }
+        internal void SetRewardCapability(int? protocol) => ApplyRewardCapability(protocol);
+        internal void SetRewardOptions(bool? rewards, bool? refunds) {
+            _posmConfig.RecommendationRewardsEnabled = rewards; _posmConfig.NativeRefundCaptureEnabled = refunds;
+            _posmConfig.ReceiptCaptureDir = Path.Combine(_storageRoot, "receipts");
+        }
+        internal bool NativeRefundObservationActive => NativeRefundObservationEnabled;
         internal void EnableFinalLineRebinding() => _standardNDb.RebindFinalLines = true;
         internal void EnableNativeRefundGuard(NativeCashPrintObservation? observation) {
             _posmConfig.NativeRefundCaptureEnabled = true;
+            _standardNDb.ClassifyRewardStates = false;
+            ApplyRewardCapability(1);
             _standardNDb.PrintObservation = observation;
         }
         internal async Task WaitForNativePrintGuardAsync() {
@@ -1425,9 +1505,13 @@ namespace CustomerDisplay
             public NativeCashPrintObservation? ExactPrintObservation;
             public IReadOnlySet<long>? LastExactPrintDocuments;
             public bool RebindFinalLines;
+            public bool ClassifyRewardStates;
             public bool TryObserveNativeCashPrint(out NativeCashPrintObservation? observation, IReadOnlySet<long>? exactDocuments = null) {
                 LastExactPrintDocuments = exactDocuments;
                 observation = exactDocuments == null ? PrintObservation : ExactPrintObservation;
+                if (observation == null && ClassifyRewardStates && States != null)
+                    observation = NativeCashPrintObservation.Classify(States.SelectMany(state => state.Documents ?? [])
+                        .Select(document => (document.DocumentId, document.DocumentType, document.Status)).ToArray());
                 return observation != null;
             }
             public bool TryGetRefundBaseline(out string sourceNamespace, out long maximumDocumentId, out DateTimeOffset databaseTime) { sourceNamespace = ""; maximumDocumentId = 0; databaseTime = default; return false; }

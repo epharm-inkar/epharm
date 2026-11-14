@@ -26,9 +26,9 @@ public sealed class NativeRefundCaptureTests : IDisposable
     }
 
     [Fact]
-    public void DefaultsOffAndFirstActivationNeverBackfillsHistoricalReturns()
+    public void DefaultsToServerManagedAndFirstActivationNeverBackfillsHistoricalReturns()
     {
-        Assert.False(new EpharmConfig().NativeRefundCaptureEnabled);
+        Assert.Null(new EpharmConfig().NativeRefundCaptureEnabled);
         var source = new Source(); source.Rows[90] = Refund(90);
         var reports = new List<SaleReport>(); var capture = Capture();
         capture.Poll(source, reports.Add, TestContext.Current.CancellationToken);

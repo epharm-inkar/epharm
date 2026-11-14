@@ -64,7 +64,7 @@ public sealed class ReceiptReplaySafetyTests : IDisposable
         using var server = new LoopbackEndpoint();
         using var api = new EpharmApiClient(new EpharmConfig { BackendBaseUrl = server.BaseUrl, DeviceKey = "synthetic-key" });
         using var flusher = new OutboxFlusher(restarted, api, periodSec: 3600,
-            onDelivered: item => recovered.MarkSaleDelivered(item.Id));
+            onDelivered: item => recovered.MarkSaleDelivered(item.Id), startBackground: false);
 
         await flusher.FlushNowAsync();
 
@@ -178,7 +178,7 @@ public sealed class ReceiptReplaySafetyTests : IDisposable
 
         // Simulated process restart: both queue and real HTTP flusher reopen persisted data.
         var restarted = new OfflineOutbox(DbPath);
-        using var flusher = new OutboxFlusher(restarted, api, periodSec: 3600, onDelivered: item => delivered.Add(item.Id));
+        using var flusher = new OutboxFlusher(restarted, api, periodSec: 3600, onDelivered: item => delivered.Add(item.Id), startBackground: false);
         await flusher.FlushNowAsync();
         Assert.Empty(server.Requests);
         Assert.Empty(delivered);
@@ -214,6 +214,24 @@ public sealed class ReceiptReplaySafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task ControlledReplayWaitsForExplicitFlushWithoutTheStartupBackgroundRace()
+    {
+        var queue = new OfflineOutbox(DbPath);
+        queue.Enqueue("manual-only", "sale", SaleJson("manual-only", "standardn-print-log"));
+        using var server = new LoopbackEndpoint();
+        using var api = new EpharmApiClient(new EpharmConfig { BackendBaseUrl = server.BaseUrl, DeviceKey = "synthetic-key" });
+        using var flusher = new OutboxFlusher(queue, api, startBackground: false);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(2100), TestContext.Current.CancellationToken);
+        Assert.Empty(server.Requests);
+        Assert.Single(queue.DequeueReady());
+
+        await flusher.FlushNowAsync();
+        Assert.Single(server.Requests);
+        Assert.Empty(queue.DequeueReady());
+    }
+
+    [Fact]
     public async Task RewardEvidenceSurvivesOfflineReplayAndIsSentOnTheExistingShownAndSaleRoutes()
     {
         var shownAt = DateTimeOffset.Parse("2026-11-09T10:00:00Z");
@@ -231,7 +249,7 @@ public sealed class ReceiptReplaySafetyTests : IDisposable
         queue.Enqueue(sale.SaleId, "sale", JsonSerializer.Serialize(sale, EpharmJson.Options));
         using var server = new LoopbackEndpoint();
         using var api = new EpharmApiClient(new EpharmConfig { BackendBaseUrl = server.BaseUrl, DeviceKey = "synthetic-key" });
-        using var flusher = new OutboxFlusher(new OfflineOutbox(DbPath), api, 3600);
+        using var flusher = new OutboxFlusher(new OfflineOutbox(DbPath), api, 3600, startBackground: false);
         server.Available = false;
         await flusher.FlushNowAsync();
         Assert.Empty(queue.DequeueReady(10)); // Retry scheduling remains persisted until reconnect.

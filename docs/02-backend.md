@@ -6,7 +6,10 @@ Optional evidence protocol 1 extends the existing POSM recommend/shown/sales rou
 older clients keep their existing journal and attribution behavior. Both
 `POSM_SALE_BONUS_ENABLED` and `POSM_SALE_BONUS_AUTO_CREDIT_ENABLED` default to false.
 Auto credit additionally requires an explicit `POSM_SALE_BONUS_ELIGIBLE_AFTER` cutoff;
-there is no historical backfill. This task does not enable them in production.
+there is no historical backfill. `POSM_SALE_BONUS_DEVICE_ALLOWLIST` is closed when empty;
+exact individual device IDs select a pilot, standalone `*` explicitly selects the fleet.
+The authenticated heartbeat advertises protocol 1 only inside this scope. Shown
+admission and the final money decision independently enforce the same scope.
 
 The first actual display snapshot is immutable. Only newly added, remaining full
 packages in the same checkout and physical document/line, added within 0–120 seconds
@@ -14,8 +17,9 @@ inclusive, qualify after positively confirmed payment (payment can be later).
 An explicit same-pharmacy HQ Standard-N USER mapping is required for automatic money;
 RPS login, supplied internal IDs and fuzzy name matching are not financial proof.
 Unknown units, incomplete evidence and ambiguous employees go to HQ. The current native
-adapter does not establish full-package semantics for raw QUANT, so real desk evidence
-with unknown units cannot automatically credit. See [POSM contract](05-posm-client.md).
+adapter requires an explicit positive integer HUMAN_QUANT agreeing with absolute
+QUANT to prove a full package; fractional/missing/conflicting units never earn
+automatically. Raw QUANT alone is insufficient. See [POSM contract](05-posm-client.md).
 
 Physical and fiscal receipt fences, per-product cases, ordered transaction locks,
 finite campaign budgets and the existing append-only wallet prevent replay and
@@ -32,11 +36,11 @@ same-pharmacy active beneficiary, verified source-user mapping and canonical rec
 keys. Conflicting source evidence cannot be approved through a checkbox. XLSX respects
 the same scopes/filters and rejects more than 10,000 rows instead of truncating.
 
-Rollback: disable both sale-bonus flags before running an older backend that lacks
-the new financial guards; keep V100 and the ledger/evidence. Also prevent older
-manual/Excel reconciliation writers from deciding v2 reservations: disabling the
-flags alone does not gate those writers. Merely reverting the binary is not a
-verified monetary rollback.
+Recovery after V100 requires a reviewed reward-capable forward image; the release
+transition guard rejects an older generic wallet binary even on empty V100 tables.
+To stop automatic money while retaining refund observation, disable auto-credit
+only. Keep the schema, ledger, evidence and cutoff; disabling flags does not make
+older manual/Excel writers safe. Rehearse the exact recovery artifact before release.
 The isolated HTTP/SQL workload and acceptance criteria are in
 [`tools/loadtests/recommendation-rewards`](../tools/loadtests/recommendation-rewards/README.md).
 

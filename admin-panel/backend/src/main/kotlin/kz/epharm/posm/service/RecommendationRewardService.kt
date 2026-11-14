@@ -43,12 +43,14 @@ class RecommendationRewardService(
     @Value("\${app.posm.sale-bonus.enabled:false}") private val enabled: Boolean,
     @Value("\${app.posm.sale-bonus.auto-credit-enabled:false}") private val autoCredit: Boolean,
     @Value("\${app.posm.sale-bonus.eligible-after:}") eligibleAfterRaw: String,
+    @Value("\${app.posm.sale-bonus.device-allowlist:}") deviceAllowlist: String,
 ) {
     private val cutoff = eligibleAfterRaw.trim().takeIf(String::isNotBlank)?.let(Instant::parse)
     private val policy = RecommendationRewardEvidencePolicy()
+    private val deviceScope = RecommendationRewardDeviceScope(deviceAllowlist)
     init { require(!autoCredit || enabled && cutoff != null) { "Automatic rewards require opt-in and an activation cutoff" } }
 
-    fun protocol(): Int? = if (enabled) 1 else null
+    fun protocol(device: PosmDeviceIdentity): Int? = if (enabled && deviceScope.allows(device)) 1 else null
     fun sameEvidence(a: RewardSaleEvidence?, b: RewardSaleEvidence?): Boolean =
         a == null && b == null || a != null && b != null && hash(a) == hash(b)
 
@@ -71,7 +73,7 @@ class RecommendationRewardService(
             }
         } else {
             val promo = jdbc.query("SELECT promo_id FROM rules WHERE id=?", { rs, _ -> rs.getString(1) }, event.ruleId).singleOrNull()
-            val eligible = enabled && autoCredit && !device.legacy && cutoff != null &&
+            val eligible = enabled && autoCredit && deviceScope.allows(device) && cutoff != null &&
                 !at.isBefore(cutoff) && !event.shownAt.isBefore(cutoff) &&
                 event.sessionId == evidence.checkoutSessionId && evidence.version == 1
             jdbc.update("""INSERT INTO recommendation_reward_shows
@@ -115,13 +117,15 @@ class RecommendationRewardService(
             if (problem == null) refund(sale, evidence) else unverifiedRefund(sale, evidence, problem)
             return
         }
-        val canonical = canonical(sale, evidence) ?: return
+        val sessionEvents = events.findAllBySessionId(sale.sessionId!!).filter { it.pharmacyId == sale.pharmacyId }
+        val candidates = sessionEvents.map { it.recommendSku }.toSet()
+        // Preserve known receipt-conflict fences even when an alias has no recommendation events.
+        // Ordinary checkouts stay in the raw sale journal and can be replayed after a late shown ACK.
+        val canonical = canonical(sale, evidence, createIfMissing = candidates.isNotEmpty()) ?: return
+        if (candidates.isEmpty()) return
         val returned = rows("""SELECT h.refund_sale_id FROM recommendation_reward_refund_holds h
             JOIN recommendation_reward_receipts r ON r.id=? AND r.pharmacy_id=h.pharmacy_id
             WHERE h.physical_key=r.physical_key OR h.fiscal_key=r.fiscal_key LIMIT 1""", canonical).isNotEmpty()
-        val sessionEvents = events.findAllBySessionId(sale.sessionId!!).filter { it.pharmacyId == sale.pharmacyId }
-        val candidates = sessionEvents.map { it.recommendSku }.toSet()
-        if (candidates.isEmpty()) return
         val snapshots = rows("""SELECT s.* FROM recommendation_reward_shows s
             JOIN recommendation_events e ON e.id=s.event_id WHERE e.pharmacy_id=? AND e.session_id=?""",
             sale.pharmacyId, sale.sessionId).associate { row ->
@@ -151,10 +155,11 @@ class RecommendationRewardService(
                 returned -> "refund_reported"
                 decision.eligible && staffMismatch -> "rps_identity_mismatch"
                 decision.eligible && !actorValid -> "employee_unverified"
+                decision.eligible && !deviceScope.allowsId(sale.deviceId) -> "device_not_enabled"
                 decision.eligible && !autoCredit -> "automatic_credit_disabled"
                 else -> decision.reason
             }
-            val ready = decision.eligible && actorValid && autoCredit && !returned && !staffMismatch
+            val ready = decision.eligible && actorValid && autoCredit && deviceScope.allowsId(sale.deviceId) && !returned && !staffMismatch
             val state = when {
                 returned -> "refund_review"
                 ready -> "ready"
@@ -202,7 +207,7 @@ class RecommendationRewardService(
         }
     }
 
-    private fun canonical(sale: PosSaleEntity, evidence: RewardSaleEvidence): String? {
+    private fun canonical(sale: PosSaleEntity, evidence: RewardSaleEvidence, createIfMissing: Boolean = true): String? {
         val complete = evidence.completion
         val namespace = complete.identity.sourceNamespace
         val physical = if (namespace.matches(Regex("[a-f0-9]{64}")) && sale.sourceDocumentId != null)
@@ -236,6 +241,7 @@ class RecommendationRewardService(
             if (found.single()["source_sale_id"] != sale.id) return null
             return found.single()["id"].toString()
         }
+        if (!createIfMissing) return null
         val id = hash(listOf("receipt", sale.pharmacyId, physical ?: sale.id))
         jdbc.update("""INSERT INTO recommendation_reward_receipts
             (id,pharmacy_id,source_sale_id,physical_key,fiscal_key,payload_hash,device_id,session_id)
