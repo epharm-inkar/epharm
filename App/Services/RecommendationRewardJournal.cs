@@ -85,17 +85,20 @@ public sealed class RecommendationRewardJournal
             TryChange(checkout, state =>
             {
                 var codes = OfferBarcodes(barcode, barcodes);
-                Observe(state, identity, cart, shownAt, cartComplete);
                 var previous = state.Offers.SingleOrDefault(offer => offer.EventId == eventId);
                 if (previous != null) {
                     if (previous.Barcode != Clean(barcode) || previous.Sku != Clean(sku) ||
-                        !OfferBarcodes(previous.Barcode, previous.Barcodes).SequenceEqual(codes, StringComparer.Ordinal)) state.Complete = false;
+                        !OfferBarcodes(previous.Barcode, previous.Barcodes).SequenceEqual(codes, StringComparer.Ordinal) ||
+                        identity.IdentityStatus == "mismatch" || ValidIdentity(identity) && identity != previous.Evidence.Identity) state.Complete = false;
                     result = previous.Evidence; return;
-                } // Never reset a timer/baseline on a repeat show.
+                } // A repeated UI display is not another native cart observation or a new timer/baseline.
                 if (state.Offers.Count >= MaximumOffers || string.IsNullOrWhiteSpace(eventId))
                     throw new InvalidDataException("Reward show bound/identity is invalid.");
+                var complete = cartComplete && ValidIdentity(identity) && ValidLines(cart);
+                if (complete) Observe(state, identity, cart, shownAt, true);
+                else state.Complete = false; // Missing UI proof cannot manufacture native removal transitions.
                 result = new RewardShownEvidence { CheckoutSessionId = checkout, ObservationId = Id(), Identity = identity,
-                    CartComplete = cartComplete && ValidIdentity(identity) && ValidLines(cart), Lines = cart.Take(MaximumLines).ToList() };
+                    CartComplete = complete, Lines = cart.Take(MaximumLines).ToList() };
                 state.Offers.Add(new Offer { EventId = eventId, Barcode = Clean(barcode), Barcodes = codes, Sku = Clean(sku),
                     ShownAt = shownAt, Evidence = result });
             });

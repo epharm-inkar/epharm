@@ -88,6 +88,35 @@ public sealed class StandardNUnitAndFinalLineTests
         Assert.Equal(first, retried);
     }
 
+    [Fact]
+    public void FinalReaderRejectsRawPostedRowsAsActiveObservationsInsteadOfSelfLinking()
+    {
+        var posted = new StandardNReceiptDocument(100, 80, 100, 1, -300, "register", 1, 1,
+            [Line(42392), Line(42393, part: 11, price: 200)]) { FinalDetailsRead = true };
+        var observations = StandardNDbLookup.FinalLineObservations(posted);
+        Assert.Empty(observations);
+        Assert.All(StandardNFinalLineLinker.Link(100, posted.Lines, observations), line => {
+            Assert.Null(line.ObservedSourceLineId); Assert.Null(line.LineLinkSource);
+        });
+    }
+
+    [Fact]
+    public void FinalReaderPreservesOriginalActiveIdsAndBarcodeAcrossPostedRetry()
+    {
+        var active = new StandardNReceiptDocument(100, 80, 100, 0, -300, null, null, null,
+            [Line(61059), Line(61060, part: 11, price: 200)]);
+        var rawPosted = new[] { Line(42392) with { Barcode = "1234567890128" },
+            Line(42393, part: 11, price: 200) with { Barcode = "1234567890135" } };
+        var observations = StandardNDbLookup.FinalLineObservations(active);
+        var first = StandardNFinalLineLinker.Link(100, rawPosted, observations);
+        var finalized = active with { Status = 1, FinalDetailsRead = true, Lines = first };
+        var retried = StandardNFinalLineLinker.Link(100, rawPosted, StandardNDbLookup.FinalLineObservations(finalized));
+        Assert.Equal(new long?[] { 61059, 61060 }, retried.Select(line => line.ObservedSourceLineId));
+        Assert.Equal(new long[] { 42392, 42393 }, retried.Select(line => line.LineId));
+        Assert.Equal(first, retried);
+        Assert.Equal("4600000000012", active.Lines[0].Barcode);
+    }
+
     [Theory]
     [InlineData("other-document")]
     [InlineData("other-product")]

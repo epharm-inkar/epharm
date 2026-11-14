@@ -89,8 +89,7 @@ public sealed partial class StandardNDbLookup
                     lines.Any(line => members.All(header => header.Id != line.SourceDocumentId || header.Status != 1)))
                     throw new InvalidDataException("Posted physical detail membership is not proven.");
                 var documents = members.Select(header => {
-                    var observedLines = observed.Documents.SingleOrDefault(document => document.DocumentId == header.Id)?.Lines
-                        ?? Array.Empty<StandardNReceiptLine>();
+                    var observedLines = FinalLineObservations(observed.Documents.SingleOrDefault(document => document.DocumentId == header.Id));
                     var enriched = lines.Where(line => line.SourceDocumentId == header.Id).Select(line =>
                     {
                         // Metadata enrichment is exact local product identity only. Final prices,
@@ -123,9 +122,51 @@ public sealed partial class StandardNDbLookup
         }
     }
 
-    private bool TryReadCurrentReceiptGroup(out StandardNReceiptSnapshot? receipt)
+    internal static IReadOnlyList<StandardNReceiptLine> FinalLineObservations(StandardNReceiptDocument? document) =>
+        document == null ? Array.Empty<StandardNReceiptLine>() :
+        document.Status == 1 && document.FinalDetailsRead
+            ? document.Lines.Where(line => line.ObservedSourceLineId is > 0 &&
+                line.LineLinkSource == StandardNFinalLineLinker.Source).ToArray()
+            : document.Lines;
+
+    internal static bool IsCurrentReceiptPosting(long sessionId, IReadOnlyList<StandardNReceiptHeader> active,
+        IReadOnlyList<StandardNReceiptHeader> members)
+    {
+        var key = StandardNReceiptProjection.CurrentGroup(sessionId, active)
+            ?? throw new InvalidDataException("No active physical receipt group.");
+        StandardNReceiptProjection.ValidateMembers(sessionId, key.Root, key.Linked, members);
+        if (!active.Select(row => row.Id).OrderBy(id => id).SequenceEqual(
+                members.Where(row => row.Status == 0).Select(row => row.Id).OrderBy(id => id)) ||
+            members.Any(row => row.Status is not (0 or 1)))
+            throw new InvalidDataException("Receipt membership changed or contains unknown documents.");
+        return members.Any(row => row.Status == 1);
+    }
+
+    internal static bool KnownReceiptMatchesSession(StandardNReceiptSnapshot? known, long sessionId, string userId,
+        string? workstationId, string? workstationName) =>
+        known != null && sessionId > 0 && known.SessionId == sessionId && known.Pharmacist.SessionId == sessionId &&
+        !string.IsNullOrWhiteSpace(userId) && known.Pharmacist.Id == userId &&
+        !string.IsNullOrWhiteSpace(workstationId) && known.WorkstationId == workstationId &&
+        StaffSessionResolver.CanonicalComputer(workstationName) is { Length: > 0 } machine &&
+        StaffSessionResolver.CanonicalComputer(known.WorkstationName) == machine;
+
+    internal static bool IsKnownReceiptPosting(StandardNReceiptSnapshot known, IReadOnlyList<StandardNReceiptHeader> members)
+    {
+        if (known.LinkId is > 0 && known.LinkId != known.DocumentId ||
+            known.Documents is not { Count: > 0 and <= StandardNReceiptProjection.MaxDocuments } documents ||
+            documents.Any(document => document.SessionId != known.SessionId || document.DocumentType != 3 ||
+                document.Status is not (0 or 1)) || documents.Select(document => document.DocumentId).Distinct().Count() != documents.Count ||
+            !documents.Select(document => document.DocumentId).OrderBy(id => id).SequenceEqual(
+                members.Select(row => row.Id).OrderBy(id => id)) || members.Any(row => row.Status != 1)) return false;
+        StandardNReceiptProjection.ValidateMembers(known.SessionId, known.DocumentId, known.LinkId is > 0, members);
+        return true;
+    }
+
+    private bool TryReadCurrentReceiptGroup(out StandardNReceiptSnapshot? receipt, out bool posting,
+        StandardNReceiptSnapshot? knownCurrent = null)
     {
         receipt = null;
+        posting = false;
         if (!_cfg.StandardNDbEnabled) return false;
         try
         {
@@ -137,10 +178,28 @@ public sealed partial class StandardNDbLookup
             var active = ReadReceiptHeaders(connection, transaction, StandardNReceiptProjection.ActiveDocumentsSql,
                 ("@sessionId", session.SessionId));
             var key = StandardNReceiptProjection.CurrentGroup(session.SessionId, active);
-            if (!key.HasValue) return true; // Exact unique local session + successful empty query only.
+            if (!key.HasValue)
+            {
+                // Posting precedes the human print/save dialog; only the later real cue may finish this group.
+                if (KnownReceiptMatchesSession(knownCurrent, session.SessionId, session.UserId,
+                    session.WorkstationId?.ToString(System.Globalization.CultureInfo.InvariantCulture), session.WorkstationName))
+                {
+                    var posted = ReadReceiptHeaders(connection, transaction, knownCurrent!.LinkId is > 0
+                        ? StandardNReceiptProjection.LinkedDocumentsSql : StandardNReceiptProjection.SingleDocumentSql,
+                        ("@rootId", knownCurrent.DocumentId));
+                    posting = IsKnownReceiptPosting(knownCurrent, posted);
+                }
+                return true;
+            }
             var members = ReadReceiptHeaders(connection, transaction, key.Value.Linked
                 ? StandardNReceiptProjection.LinkedDocumentsSql : StandardNReceiptProjection.SingleDocumentSql,
                 ("@rootId", key.Value.Root));
+            if (IsCurrentReceiptPosting(session.SessionId, active, members))
+            {
+                // Posted IDs and EANs are payment evidence, never additions to the live cart.
+                posting = true;
+                return true;
+            }
             var lines = new List<StandardNReceiptLine>();
             using (var command = connection.CreateCommand())
             {
@@ -149,18 +208,6 @@ public sealed partial class StandardNDbLookup
                 command.CommandText = StandardNReceiptProjection.ActiveLinesSql(active.Count);
                 command.Parameters.AddWithValue("@sessionId", session.SessionId);
                 for (var index = 0; index < active.Count; index++) command.Parameters.AddWithValue("@doc" + index, active[index].Id);
-                using var reader = command.ExecuteReader();
-                while (reader.Read()) lines.Add(StandardNReceiptProjection.Line(reader));
-            }
-            var posted = members.Where(header => header.Status == 1).ToArray();
-            if (posted.Length > 0)
-            {
-                using var command = connection.CreateCommand();
-                command.Transaction = transaction;
-                command.CommandTimeout = TimeoutSec();
-                command.CommandText = StandardNReceiptProjection.PostedLinesSql(posted.Length, HasPostedHumanQuantity(connection, transaction));
-                command.Parameters.AddWithValue("@sessionId", session.SessionId);
-                for (var index = 0; index < posted.Length; index++) command.Parameters.AddWithValue("@doc" + index, posted[index].Id);
                 using var reader = command.ExecuteReader();
                 while (reader.Read()) lines.Add(StandardNReceiptProjection.Line(reader));
             }

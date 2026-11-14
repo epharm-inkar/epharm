@@ -70,6 +70,65 @@ public sealed class RecommendationRewardJournalTests : IDisposable
     }
 
     [Fact]
+    public void RepeatShowWithUnavailableSnapshotCannotInventCartRemovalsOrPoisonTheFirstValidDisplay()
+    {
+        var journal = Journal();
+        var trigger = Line(line: 500) with { Sku = "20", Barcode = "4600000000029" };
+        var first = Show(journal, trigger);
+        journal.Observe("checkout", _identity, [trigger, Line()], _at.AddSeconds(40));
+
+        var repeated = journal.RecordShown("checkout", "event-1", "4600000000012", "catalogue-product",
+            new RewardSourceIdentity(), [], _at.AddSeconds(70), false);
+        var sale = journal.BuildSale("checkout", Paid(trigger, Line()), _identity, _at.AddMinutes(5));
+
+        Assert.Equal(first.ObservationId, repeated!.ObservationId);
+        Assert.True(sale.JournalComplete);
+        var addition = Assert.Single(sale.Changes);
+        Assert.Equal((0m, 1m, "event-1"), (addition.BeforeQty, addition.AfterQty, addition.EventId));
+        Assert.Equal(_identity, addition.Identity);
+        Assert.Equal(_at.AddSeconds(40), addition.ObservedAt);
+    }
+
+    [Fact]
+    public void RepeatShowCannotReplaceAnActualObservationOrCreateATimelyAddition()
+    {
+        var journal = Journal();
+        var trigger = Line(line: 500) with { Sku = "20", Barcode = "4600000000029" };
+        Show(journal, trigger);
+
+        journal.RecordShown("checkout", "event-1", "4600000000012", "catalogue-product", _identity,
+            [trigger, Line()], _at.AddSeconds(40), true);
+        var sale = journal.BuildSale("checkout", Paid(trigger, Line()), _identity, _at.AddMinutes(5));
+
+        Assert.Empty(sale.Changes);
+        Assert.False(sale.JournalComplete);
+    }
+
+    [Theory]
+    [InlineData("changed-source")]
+    [InlineData("mismatch")]
+    public void RepeatShowStillRejectsAKnownChangedOrMismatchedIdentity(string kind)
+    {
+        var journal = Journal(); Show(journal, Line());
+        var identity = kind == "changed-source" ? _identity with { RawUserId = "18" } : _identity with { IdentityStatus = "mismatch" };
+        journal.RecordShown("checkout", "event-1", "4600000000012", "catalogue-product", identity,
+            [Line()], _at.AddSeconds(40), true);
+        Assert.False(journal.BuildSale("checkout", Paid(Line()), _identity, _at.AddMinutes(5)).JournalComplete);
+    }
+
+    [Fact]
+    public void FirstUnavailableShowStaysIncompleteWithoutFabricatingRemovalObservations()
+    {
+        var journal = Journal(); journal.Observe("checkout", _identity, [Line()], _at);
+        var shown = journal.RecordShown("checkout", "new-event", "4600000000012", "catalogue-product",
+            new RewardSourceIdentity(), [], _at.AddSeconds(1), false)!;
+        var sale = journal.BuildSale("checkout", Paid(Line()), _identity, _at.AddMinutes(5));
+        Assert.False(shown.CartComplete);
+        Assert.False(sale.JournalComplete);
+        Assert.Empty(sale.Changes);
+    }
+
+    [Fact]
     public void DeletionAndReaddAllocateNewGenerationEvenWhenNativeLineIdIsReused()
     {
         var journal = Journal(); Show(journal, Line());

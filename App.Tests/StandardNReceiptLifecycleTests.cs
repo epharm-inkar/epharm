@@ -251,6 +251,33 @@ namespace CustomerDisplay.Core.Tests
             Assert.Single(report.RewardEvidence.Changes);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void PartialPrintingHoldPreservesCartWithoutHealingAnActualObservationGap(bool failedRead)
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.Observe(RewardReceipt(100, 1));
+            var shown = window.ShowReward("event-synthetic", "4601164003157")!;
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(40));
+            var increased = RewardReceipt(100, 2); window.Observe(increased);
+            if (failedRead) window.DatabaseFailed();
+            window.AdvanceReceiptTime(TimeSpan.FromMinutes(3));
+            window.ObservePosting(); window.ObservePosting();
+            Assert.Equal(2m, Assert.Single(window.ReceiptItems).Qty);
+            Assert.Equal(100, window.DocumentId); Assert.Empty(window.Reports);
+            var repeated = window.ShowReward("event-synthetic", "4601164003157");
+            if (failedRead) Assert.Null(repeated);
+            else Assert.Equal(JsonSerializer.Serialize(shown, EpharmJson.Options),
+                JsonSerializer.Serialize(repeated, EpharmJson.Options));
+            window.PrintWithStates(Posted(increased, 100));
+            var evidence = Assert.Single(window.Reports).RewardEvidence!;
+            Assert.Equal(!failedRead, evidence.JournalComplete);
+            var change = Assert.Single(evidence.Changes);
+            Assert.Equal((1m, 2m, "event-synthetic"), (change.BeforeQty, change.AfterQty, change.EventId));
+            Assert.Empty(window.ReceiptItems);
+        }
+
         [Fact]
         public void LogDeleteReaddBetweenEqualDatabaseSnapshotsCannotReviveEarlierEligibleUnits()
         {
@@ -1398,8 +1425,9 @@ namespace CustomerDisplay
         internal void Observe(StandardNReceiptSnapshot? receipt) => CompleteRead(ReadRevision, receipt);
         internal void CompleteRead(long revision, StandardNReceiptSnapshot? receipt)
         {
-            Dispatcher.Invoke(() => { if (_receiptObservations.Admit(revision, receipt != null)) ApplyStandardNReceipt(receipt); });
+            Dispatcher.Invoke(() => ApplyStandardNReceiptRead(revision, receipt, false));
         }
+        internal void ObservePosting() => Dispatcher.Invoke(() => ApplyStandardNReceiptRead(ReadRevision, null, true));
         internal void Print()
         {
             Dispatcher.Invoke(() =>
@@ -1572,6 +1600,8 @@ namespace CustomerDisplay
             public ReceiptProbeBlock BlockNext() => _block = new();
             public void ReleaseBlockedRead() { _block?.Release(); _active?.Release(); }
             public bool TryGetCurrentReceipt(out StandardNReceiptSnapshot? receipt) { receipt = null; return false; }
+            public bool TryGetCurrentReceipt(out StandardNReceiptSnapshot? receipt, out bool posting,
+                StandardNReceiptSnapshot? knownCurrent = null) { receipt = null; posting = false; return false; }
             public bool TryGetPhysicalReceiptStates(IReadOnlyList<StandardNObservedReceiptGroup> groups,
                 out IReadOnlyList<StandardNReceiptSnapshot> states)
             {

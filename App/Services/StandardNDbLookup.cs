@@ -222,7 +222,12 @@ namespace CustomerDisplay.Services
         /// DOCS query succeeded and confirmed that no receipt is open.
         /// </summary>
         public bool TryGetCurrentReceipt(out StandardNReceiptSnapshot? receipt) =>
-            TryReadCurrentReceiptGroup(out receipt);
+            TryReadCurrentReceiptGroup(out receipt, out var posting) && !posting;
+
+        /// <summary>A valid partially posted group is a healthy hold, not a new cart or a read failure.</summary>
+        public bool TryGetCurrentReceipt(out StandardNReceiptSnapshot? receipt, out bool posting,
+            StandardNReceiptSnapshot? knownCurrent = null) =>
+            TryReadCurrentReceiptGroup(out receipt, out posting, knownCurrent);
 
         /// <summary>
         /// Read-only report for a pharmacy workstation. It intentionally prints table/column

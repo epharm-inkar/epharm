@@ -17,6 +17,7 @@ public sealed class StandardNReceiptProjectionTests
         var receipt = StandardNReceiptProjection.Current(1, "CASH-1", new("cashier", null, 1),
             [root, child], [root, child], [first, second]);
 
+        Assert.False(StandardNDbLookup.IsCurrentReceiptPosting(1, [root, child], [root, child]));
         Assert.Equal(100, receipt.DocumentId);
         Assert.Equal(100, receipt.LinkId);
         Assert.Equal(2, receipt.Documents!.Count);
@@ -27,16 +28,114 @@ public sealed class StandardNReceiptProjectionTests
     }
 
     [Fact]
-    public void FirstReadMixedPostedAndActiveGroupIncludesFinalRowsForDisplayOnly()
+    public void LiveReaderHoldsMixedGroupInsteadOfAdmittingFinalRowsAsFreshCart()
     {
         var posted = Header(100, -100m) with { Status = 1, Device = "register", FiscalNumber = 100, FiscalShift = 1 };
         var active = Header(101, -200m);
+        Assert.True(StandardNDbLookup.IsCurrentReceiptPosting(1, [active], [posted, active]));
+        // The generic projection can represent final details; the live reader must not admit them.
         var receipt = StandardNReceiptProjection.Current(1, "CASH-1", new("cashier", null, 1), [active],
             [posted, active], [Line(501, 100, 10, 100m, -1m, -100m), Line(502, 101, 20, 200m, -1m, -200m)]);
         Assert.Equal(300m, receipt.Lines.Sum(line => line.SourceTotal));
         Assert.Equal(2, receipt.Documents!.Count);
         Assert.True(receipt.Documents.Single(document => document.DocumentId == 100).FinalDetailsRead);
         Assert.False(receipt.Documents.Single(document => document.DocumentId == 101).FinalDetailsRead);
+    }
+
+    [Fact]
+    public void LiveReaderHoldsWhenChildPostsBeforeRootAndWhenRootPostsBeforeChild()
+    {
+        var root = Header(23664, -210m, link: 23664);
+        var child = Header(23665, -710m, link: 23664);
+        Assert.True(StandardNDbLookup.IsCurrentReceiptPosting(1, [root],
+            [root, child with { Status = 1, Device = "register", FiscalNumber = 1, FiscalShift = 3 }]));
+        Assert.True(StandardNDbLookup.IsCurrentReceiptPosting(1, [child],
+            [root with { Status = 1, Device = "register", FiscalNumber = 2, FiscalShift = 3 }, child]));
+        Assert.False(StandardNDbLookup.IsCurrentReceiptPosting(1, [root, child], [root, child]));
+    }
+
+    [Fact]
+    public void KnownExactGroupKeepsHealthyHoldAfterLastPostingBeforeHumanPrintCue()
+    {
+        var known = KnownGroup();
+        Assert.True(StandardNDbLookup.KnownReceiptMatchesSession(known, 1, "cashier", "77", "DOMAIN\\CASH-1.company"));
+        var posted = new[] { Header(100, -100m) with { Status = 1 }, Header(101, -200m) with { Status = 1 } };
+        Assert.True(StandardNDbLookup.IsKnownReceiptPosting(known, posted));
+        Assert.All(known.Documents!, document => {
+            Assert.Equal(0, document.Status); Assert.False(document.FinalDetailsRead);
+        });
+        Assert.Equal(new long[] { 501, 502 }, known.Lines.Select(line => line.LineId));
+    }
+
+    [Theory]
+    [InlineData("no-snapshot")]
+    [InlineData("session")]
+    [InlineData("user")]
+    [InlineData("workstation")]
+    [InlineData("missing-workstation")]
+    [InlineData("missing-known-workstation")]
+    [InlineData("machine")]
+    [InlineData("missing-machine")]
+    [InlineData("cashier-session")]
+    public void KnownPostingHoldRequiresTheSameExactCurrentSessionAndWorkstation(string defect)
+    {
+        StandardNReceiptSnapshot? known = KnownGroup();
+        known = defect switch {
+            "no-snapshot" => null,
+            "missing-known-workstation" => known with { WorkstationId = null },
+            "cashier-session" => known with { Pharmacist = known.Pharmacist with { SessionId = 2 } },
+            _ => known,
+        };
+        Assert.False(StandardNDbLookup.KnownReceiptMatchesSession(known, defect == "session" ? 2 : 1,
+            defect == "user" ? "different" : "cashier", defect switch {
+                "workstation" => "88", "missing-workstation" => null, _ => "77",
+            }, defect switch { "machine" => "CASH-2", "missing-machine" => "", _ => "CASH-1" }));
+    }
+
+    [Theory]
+    [InlineData("deleted")]
+    [InlineData("new-member")]
+    [InlineData("cancelled")]
+    [InlineData("suspended")]
+    [InlineData("still-active")]
+    [InlineData("missing-known-documents")]
+    [InlineData("wrong-known-link")]
+    public void DeletedCancelledSuspendedOrChangedKnownGroupCannotMasqueradeAsPosting(string defect)
+    {
+        var known = KnownGroup();
+        StandardNReceiptHeader[] members = [Header(100, -100m) with { Status = 1 }, Header(101, -200m) with { Status = 1 }];
+        members = defect switch {
+            "deleted" => [members[0]],
+            "new-member" => [.. members, Header(102, -50m) with { Status = 1 }],
+            "cancelled" => [members[0], members[1] with { Status = -1 }],
+            "suspended" => [members[0], members[1] with { Status = 2 }],
+            "still-active" => [members[0], members[1] with { Status = 0 }],
+            _ => members,
+        };
+        known = defect switch {
+            "missing-known-documents" => known with { Documents = null },
+            "wrong-known-link" => known with { LinkId = 200 },
+            _ => known,
+        };
+        Assert.False(StandardNDbLookup.IsKnownReceiptPosting(known, members));
+    }
+
+    [Theory]
+    [InlineData("foreign-session")]
+    [InlineData("foreign-link")]
+    [InlineData("other-type")]
+    public void ChangedPostedPhysicalIdentityIsRejectedEvenWithTheSameKnownDocumentIds(string defect)
+    {
+        var known = KnownGroup();
+        var root = Header(100, -100m) with { Status = 1 };
+        var child = Header(101, -200m) with { Status = 1 };
+        child = defect switch {
+            "foreign-session" => child with { SessionId = 2 },
+            "foreign-link" => child with { LinkId = 200 },
+            "other-type" => child with { Type = 9 },
+            _ => child,
+        };
+        Assert.Throws<InvalidDataException>(() => StandardNDbLookup.IsKnownReceiptPosting(known, [root, child]));
     }
 
     [Theory]
@@ -141,6 +240,7 @@ public sealed class StandardNReceiptProjectionTests
         };
         Assert.Throws<InvalidDataException>(() => StandardNReceiptProjection.Current(1, "CASH-1", new("cashier", null, 1),
             active, members, [Line(501, 100, 10, 100m, -1m, -100m), Line(502, 101, 20, 100m, -1m, -100m)]));
+        Assert.Throws<InvalidDataException>(() => StandardNDbLookup.IsCurrentReceiptPosting(1, active, members));
     }
 
     [Fact]
@@ -265,6 +365,14 @@ public sealed class StandardNReceiptProjectionTests
         Assert.True(reader.Read());
         Assert.Throws<InvalidDataException>(() => StandardNReceiptProjection.Header(reader));
         Assert.Throws<InvalidDataException>(() => StandardNReceiptProjection.Line(reader));
+    }
+
+    private static StandardNReceiptSnapshot KnownGroup()
+    {
+        var root = Header(100, -100m);
+        var child = Header(101, -200m);
+        return StandardNReceiptProjection.Current(1, "CASH-1", new("cashier", null, 1), [root, child], [root, child],
+            [Line(501, 100, 10, 100m, -1m, -100m), Line(502, 101, 20, 200m, -1m, -200m)]) with { WorkstationId = "77" };
     }
 
     private static StandardNReceiptHeader Header(long id, decimal amount, long? link = 100, bool hasLinkColumn = true)

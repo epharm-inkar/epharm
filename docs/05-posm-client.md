@@ -5,6 +5,22 @@ Path: `App/` and `Models/`.
 Current client is C#/WPF/.NET 10. Older Electron references are historical and no longer describe the
 implementation.
 
+## Native reward observation corrections — 2026-11-15
+
+Repeating an already recorded display returns its original evidence without observing
+the UI cart again. An unavailable UI snapshot cannot fabricate removals, additions or
+a new eligibility timer. A real native read failure, conflicting offer or changed source
+identity still makes the checkout incomplete.
+
+During posting, final `DOC_DETAIL` IDs must never replace live `DOC_DETAIL_ACTIVE`
+observations. A validated posting hold preserves the last observed group while paper/PDF
+printing finishes; only the real print cue plus independently checked final documents
+can enqueue sales. Existing proven active-to-final aliases survive retries. A first
+observation made after posting already began cannot establish a missing baseline.
+
+These are candidate corrections discovered by the Windows acceptance test; the earlier
+synthetic load result does not prove acceptance of the corrected native capture.
+
 ## Reward evidence activation candidate — 2026-11-14
 
 A signed runtime update preserves pharmacy configuration and outbox. Missing local

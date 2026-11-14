@@ -37,14 +37,11 @@ namespace CustomerDisplay
                 try
                 {
                     var readRevision = _receiptObservations.Revision;
-                    if (_standardNDb?.TryGetCurrentReceipt(out var receipt) == true)
+                    var knownCurrent = _standardNCurrentReceipt;
+                    if (_standardNDb?.TryGetCurrentReceipt(out var receipt, out var posting, knownCurrent) == true)
                     {
                         querySucceeded = true;
-                        Dispatcher.Invoke(() =>
-                        {
-                            if (_receiptObservations.Admit(readRevision, receipt != null))
-                                ApplyStandardNReceipt(receipt);
-                        });
+                        Dispatcher.Invoke(() => ApplyStandardNReceiptRead(readRevision, receipt, posting));
                     }
                     else
                     {
@@ -68,6 +65,17 @@ namespace CustomerDisplay
                 try { await Task.Delay(nextDelayMs, token).ConfigureAwait(false); }
                 catch (OperationCanceledException) { return; }
             }
+        }
+
+        private void ApplyStandardNReceiptRead(long readRevision, StandardNReceiptSnapshot? receipt, bool posting)
+        {
+            if (posting)
+            {
+                // Printing siblings moves ACTIVE rows to final IDs; retain the last native cart.
+                ConfirmPhysicalReceiptPrints();
+                return;
+            }
+            if (_receiptObservations.Admit(readRevision, receipt != null)) ApplyStandardNReceipt(receipt);
         }
 
         private void ApplyStandardNReceipt(StandardNReceiptSnapshot? receipt)
