@@ -355,6 +355,7 @@ namespace CustomerDisplay
                 var request = await Dispatcher.InvokeAsync(() =>
                 {
                     var req = _session.BuildRequest(_posmConfig, ReceiptItems, scannedItem);
+                    req.SourceNamespace = RecommendSourceNamespace(req);
                     if (req.Cart.Count == 0)
                     {
                         ResetRecommendationUiState(closeWindows: true);

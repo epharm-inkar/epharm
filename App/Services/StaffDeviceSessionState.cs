@@ -78,21 +78,22 @@ public sealed class StaffDeviceSessionState
             Invalidate(); LastKnownSource = null; ProcessInstanceId = process.Identity;
         }
         Observation = observation;
-        if (source != null) LastKnownSource = source;
+        if (source != null) LastKnownSource = source with { SourceNamespace = source.SourceNamespace ?? LastKnownSource?.SourceNamespace };
         return changed;
     }
 
     public static StaffAuthContext SourceContext(StaffObservedSession observed) =>
         new(observed.ExternalUserId, observed.ExternalSessionId, observed.WorkstationId, observed.ProcessIdentity,
-            observed.StandardNIin, observed.StandardNIinStatus, observed.StandardNFullName, observed.StandardNFullNameStatus);
+            observed.StandardNIin, observed.StandardNIinStatus, observed.StandardNFullName, observed.StandardNFullNameStatus, observed.SourceNamespace);
     private static bool SameCashier(StaffAuthContext first, StaffAuthContext second) =>
         first.StandardNUserId == second.StandardNUserId && first.StandardNSessionId == second.StandardNSessionId &&
-        first.WorkstationId == second.WorkstationId && first.ProcessInstanceId == second.ProcessInstanceId;
+        first.WorkstationId == second.WorkstationId && first.ProcessInstanceId == second.ProcessInstanceId &&
+        (first.SourceNamespace == null || second.SourceNamespace == null || first.SourceNamespace == second.SourceNamespace);
 
     public bool Accept(long generation, StaffDeviceContext sent, StaffAuthResponse response, DateTimeOffset now)
     {
         if (generation != Generation || ProcessInstanceId == null || sent.ProcessInstanceId != ProcessInstanceId ||
-            response.Status != "authenticated" || response.DeviceContext != sent || response.Pharmacist == null ||
+            response.Status != "authenticated" || !sent.MatchesResponse(response.DeviceContext) || response.Pharmacist == null ||
             string.IsNullOrWhiteSpace(response.Pharmacist.Id) || string.IsNullOrWhiteSpace(response.SessionToken) ||
             response.ExpiresAt is not { } expires || expires <= now ||
             sent.StandardNContext != null && (sent.StandardNContext.ProcessInstanceId != ProcessInstanceId ||
@@ -136,7 +137,7 @@ public sealed class StaffDeviceSessionState
     public bool ConfirmValidation(long generation, string token, StaffDeviceContext sent, StaffAuthResponse response, DateTimeOffset now)
     {
         if (Generation != generation || Grant != token || !CanValidate(now) || ProcessInstanceId != sent.ProcessInstanceId ||
-            response.Status != "authenticated" || response.DeviceContext != sent || response.Pharmacist == null ||
+            response.Status != "authenticated" || !sent.MatchesResponse(response.DeviceContext) || response.Pharmacist == null ||
             string.IsNullOrWhiteSpace(response.Pharmacist.Id) || response.Pharmacist.Id != _pharmacistId ||
             response.ExpiresAt is not { } expires || expires <= now ||
             sent.StandardNContext != null && LastKnownSource != null && !SameCashier(sent.StandardNContext, LastKnownSource)) return false;

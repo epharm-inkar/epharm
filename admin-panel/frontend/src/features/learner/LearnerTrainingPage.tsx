@@ -959,6 +959,61 @@ export default function LearnerTrainingPage() {
     return () => window.clearTimeout(timer)
   }, [authenticated, clearSession, loadPortal])
 
+  const activePharmacistId = pharmacist?.id
+  const activePharmacistStatus = pharmacist?.status
+  useEffect(() => {
+    if (
+      !authenticated ||
+      !activePharmacistId ||
+      personalDataLoading ||
+      (activePharmacistStatus && activePharmacistStatus !== 'active')
+    )
+      return
+    let cancelled = false
+    let busy = false
+    const refreshBalance = async () => {
+      if (busy || document.visibilityState === 'hidden') return
+      const activeTokens = readTokens()
+      if (!activeTokens) return
+      const epoch = sessionVersion.current
+      const requestId = portalRequest.current
+      const isCurrent = () =>
+        !cancelled && sessionVersion.current === epoch && portalRequest.current === requestId
+      busy = true
+      try {
+        const balance = await requestPersonalData<PersonalBalance>(
+          '/api/mobile/me/balance',
+          activeTokens,
+          tokenLifecycle,
+        )
+        if (isCurrent()) {
+          setPersonalBalance(balance)
+          setBalanceError('')
+        }
+      } catch (loadError) {
+        if (isCurrent()) setBalanceError(personalDataError(loadError, 'balance'))
+      } finally {
+        busy = false
+      }
+    }
+    const timer = window.setInterval(() => void refreshBalance(), 30_000)
+    const onVisible = () => void refreshBalance()
+    window.addEventListener('focus', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [
+    authenticated,
+    activePharmacistId,
+    activePharmacistStatus,
+    personalDataLoading,
+    tokenLifecycle,
+  ])
+
   const loadAssignment = useCallback(
     async (id: string, activeTokens: Tokens, signal: AbortSignal) => {
       const epoch = sessionVersion.current

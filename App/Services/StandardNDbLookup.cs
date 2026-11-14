@@ -142,6 +142,7 @@ namespace CustomerDisplay.Services
                 return observation with { Session = session with {
                     StandardNIin = identity.Iin, StandardNIinStatus = identity.Status,
                     StandardNFullName = name.FullName, StandardNFullNameStatus = name.Status,
+                    SourceNamespace = RewardSourceNamespace,
                 } };
             }
             catch

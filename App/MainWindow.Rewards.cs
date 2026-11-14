@@ -30,6 +30,7 @@ public partial class MainWindow
     private RecommendationRewardJournal? _rewardJournal;
     private StandardNReceiptSnapshot? _rewardSnapshot;
     private DateTimeOffset _rewardSnapshotAt;
+    private string? _rewardSnapshotNamespace;
 
     private RecommendationRewardJournal? RewardJournal()
     {
@@ -39,7 +40,7 @@ public partial class MainWindow
     }
 
     private RewardSourceIdentity RewardIdentity(StandardNReceiptSnapshot? source) => new() {
-        SourceNamespace = _standardNDb?.RewardSourceNamespace ?? "", RawUserId = source?.Pharmacist.Id ?? "",
+        SourceNamespace = (ReferenceEquals(source, _rewardSnapshot) ? _rewardSnapshotNamespace : _standardNDb?.RewardSourceNamespace) ?? "", RawUserId = source?.Pharmacist.Id ?? "",
         NativeSessionId = source?.SessionId ?? 0, WorkstationId = source?.WorkstationId ?? "",
         // RPS authenticates its own account independently. Do not invent a source match from its token/name.
         IdentityStatus = "unknown",
@@ -53,16 +54,38 @@ public partial class MainWindow
 
     private void ObserveRewardSnapshot(StandardNReceiptSnapshot source)
     {
-        if (!RewardEvidenceEnabled) return;
         _rewardSnapshot = source;
         _rewardSnapshotAt = _receiptProofClock();
+        _rewardSnapshotNamespace = _standardNDb?.RewardSourceNamespace;
+        if (!RewardEvidenceEnabled) return;
         RewardJournal()?.Observe(_session.SessionId, RewardIdentity(source), RewardLines(source), _rewardSnapshotAt);
     }
 
     private void InvalidateRewardObservation()
     {
         _rewardSnapshot = null;
+        _rewardSnapshotNamespace = null;
         _rewardJournal?.MarkIncomplete(_session.SessionId);
+    }
+
+    private string? RecommendSourceNamespace(RecommendRequest request)
+    {
+        var source = _rewardSnapshot;
+        var ns = _rewardSnapshotNamespace;
+        if (!HasCurrentRewardSnapshot(source, _receiptProofClock()) || source == null || ns == null || ns.Length != 64 ||
+            ns.Any(c => c is not (>= 'a' and <= 'f') and not (>= '0' and <= '9')) ||
+            request.SessionId != _session.SessionId || request.PharmacistId != source.Pharmacist.Id ||
+            source.SessionId != _session.StandardNSessionId || string.IsNullOrWhiteSpace(source.WorkstationId)) return null;
+        return ns;
+    }
+
+    private bool HasCurrentRewardSnapshot(StandardNReceiptSnapshot? source, DateTimeOffset at)
+    {
+        var current = ReceiptItems.Where(item => item.PartId > 0).ToArray();
+        return source != null && at >= _rewardSnapshotAt && at - _rewardSnapshotAt <= TimeSpan.FromSeconds(2) &&
+            current.Length == source.Lines.Count && current.All(item => source.Lines.Any(line =>
+                item.SourceDocumentId == line.SourceDocumentId && item.SourceLineId == line.LineId &&
+                item.PartId == line.PartId && item.Qty == line.Qty && string.Equals(item.Barcode?.Trim(), line.Barcode?.Trim(), StringComparison.Ordinal)));
     }
 
     private RewardShownEvidence? CaptureRewardShown(Recommendation recommendation, DateTimeOffset shownAt)
@@ -70,11 +93,7 @@ public partial class MainWindow
         var journal = RewardJournal();
         if (journal == null) return null;
         var source = _rewardSnapshot;
-        var current = ReceiptItems.Where(item => item.PartId > 0).ToArray();
-        var complete = source != null && shownAt >= _rewardSnapshotAt && shownAt - _rewardSnapshotAt <= TimeSpan.FromSeconds(2) &&
-            current.Length == source.Lines.Count && current.All(item => source.Lines.Any(line =>
-                item.SourceDocumentId == line.SourceDocumentId && item.SourceLineId == line.LineId &&
-                item.PartId == line.PartId && item.Qty == line.Qty && string.Equals(item.Barcode?.Trim(), line.Barcode?.Trim(), StringComparison.Ordinal)));
+        var complete = HasCurrentRewardSnapshot(source, shownAt);
         return journal.RecordShown(_session.SessionId, recommendation.EventId, recommendation.RecommendBarcode,
             recommendation.RecommendSku, RewardIdentity(source), source == null ? new() : RewardLines(source), shownAt, complete,
             recommendation.RecommendBarcodes);

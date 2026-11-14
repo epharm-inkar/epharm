@@ -108,7 +108,11 @@ class RecommendationRewardReviewService(
                 val owner = pharmacists.findById(recipient).orElse(null) ?: invalid("Фармацевт не найден")
                 if (owner.status != PharmacistStatus.active || owner.pharmacyId != row["pharmacy_id"]) conflict("Получатель должен быть активен в этой аптеке")
                 val sale = sales.findById(row["source_sale_id"].toString()).orElseThrow()
-                val identity = identities.resolve(sale.pharmacyId, sale.reportedPharmacistId.orEmpty(), sale.reportedPharmacistName)
+                val identity = identities.resolve(sale.pharmacyId, sale.reportedPharmacistId.orEmpty(), sale.reportedPharmacistName,
+                    deviceId=sale.deviceId,sourceNamespace=sale.rewardEvidence?.completion?.identity?.sourceNamespace,
+                    at=sale.rewardEvidence?.completion?.completedAt ?: sale.printedAt,
+                    nativeSession=sale.rewardEvidence?.completion?.identity?.nativeSessionId?.toString(),
+                    workstation=sale.rewardEvidence?.completion?.identity?.workstationId)
                 if (identity.source.wireValue != "standardn_explicit_mapping" || identity.pharmacistId != recipient)
                     conflict("Сначала подтвердите связь пользователя Стандарт-Н с фармацевтом")
                 if (sale.pharmacistId.isNotBlank() && sale.pharmacistId != recipient) conflict("Нельзя перенести начисление другому получателю")

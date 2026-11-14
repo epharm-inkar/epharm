@@ -73,6 +73,8 @@ class PosmController(
             pharmacyId = req.pharmacyId,
             reportedPharmacistId = req.pharmacistId,
             reportedPharmacistName = req.pharmacistName,
+            deviceId = device.deviceId,
+            sourceNamespace = req.sourceNamespace,
         )
         return recommendationService.recommend(req.copy(pharmacistId = identity.pharmacistId))
             .copy(rewardEvidenceProtocol = rewards.protocol(device))
@@ -115,6 +117,11 @@ class PosmController(
             pharmacyId = req.pharmacyId,
             reportedPharmacistId = req.pharmacistId,
             reportedPharmacistName = req.pharmacistName,
+            deviceId = device.deviceId,
+            sourceNamespace = req.rewardEvidence?.completion?.identity?.sourceNamespace,
+            at = req.rewardEvidence?.completion?.completedAt ?: req.printedAt,
+            nativeSession = req.rewardEvidence?.completion?.identity?.nativeSessionId?.toString(),
+            workstation = req.rewardEvidence?.completion?.identity?.workstationId,
         )
         val effective = req.copy(
             pharmacistId = identity.pharmacistId,

@@ -68,7 +68,7 @@ public sealed class StaffPromptPolicy
     public bool AcceptAuthentication(StaffSessionState session, long generation, string observedKey,
         StaffAuthContext context, StaffAuthResponse response, DateTimeOffset now)
     {
-        if (response.Status != "authenticated" || response.Context != context || response.Pharmacist == null ||
+        if (response.Status != "authenticated" || !context.MatchesResponse(response.Context) || response.Pharmacist == null ||
             string.IsNullOrWhiteSpace(response.Pharmacist.Id) || string.IsNullOrWhiteSpace(response.SessionToken) ||
             response.ExpiresAt is not { } expires || !session.Accept(generation, observedKey, response.SessionToken, expires, now)) return false;
         _bypassedGeneration = null;

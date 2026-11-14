@@ -40,6 +40,7 @@ class RecommendationRewardService(
     private val pendingService: PendingBonusService,
     private val reconcile: ReconcileService,
     private val em: EntityManager,
+    private val sourceBindings: kz.epharm.posm.staff.SourceStaffBindingService,
     @Value("\${app.posm.sale-bonus.enabled:false}") private val enabled: Boolean,
     @Value("\${app.posm.sale-bonus.auto-credit-enabled:false}") private val autoCredit: Boolean,
     @Value("\${app.posm.sale-bonus.eligible-after:}") eligibleAfterRaw: String,
@@ -119,6 +120,10 @@ class RecommendationRewardService(
         }
         val sessionEvents = events.findAllBySessionId(sale.sessionId!!).filter { it.pharmacyId == sale.pharmacyId }
         val candidates = sessionEvents.map { it.recommendSku }.toSet()
+        val automaticActor = sale.pharmacistSource == "standardn_rps_binding" && sourceBindings.authorizes(
+            sale.pharmacistId,sale.pharmacyId,sale.deviceId,evidence.completion.identity.sourceNamespace,
+            evidence.completion.identity.rawUserId,evidence.completion.completedAt,
+            evidence.completion.identity.nativeSessionId.toString(),evidence.completion.identity.workstationId)
         // Preserve known receipt-conflict fences even when an alias has no recommendation events.
         // Ordinary checkouts stay in the raw sale journal and can be replayed after a late shown ACK.
         val canonical = canonical(sale, evidence, createIfMissing = candidates.isNotEmpty()) ?: return
@@ -146,7 +151,7 @@ class RecommendationRewardService(
             val existing = rows("SELECT * FROM recommendation_sale_rewards WHERE id=?", caseId).singleOrNull()
             if (existing != null && existing["state"] != "waiting_evidence") continue
             val show = decision.eventId?.let(snapshots::get)
-            val actorValid = sale.pharmacistSource == "standardn_explicit_mapping" &&
+            val actorValid = (sale.pharmacistSource == "standardn_explicit_mapping" || automaticActor) &&
                 sale.reportedPharmacistId == evidence.completion.identity.rawUserId &&
                 pharmacists.findById(sale.pharmacistId).orElse(null)?.let {
                     it.status == PharmacistStatus.active && it.pharmacyId == sale.pharmacyId
@@ -317,13 +322,14 @@ class RecommendationRewardService(
         return jdbc.query("""SELECT s.*,p.iin AS profile_iin,p.name AS profile_name FROM posm_device_staff_sessions s
             JOIN pharmacists p ON p.id=? WHERE s.pharmacy_id=? AND s.device_id=?
             AND s.standard_n_user_id=? AND s.standard_n_session_id=? AND s.workstation_id=?
+            AND (s.source_namespace IS NULL OR s.source_namespace=?)
             AND s.created_at<=? AND s.expires_at>? AND (s.revoked_at IS NULL OR s.revoked_at>?)
             ORDER BY s.created_at DESC,s.token_hash DESC LIMIT 1""", { rs, _ ->
                 val context = StaffContext(rs.getString("standard_n_user_id"),rs.getString("standard_n_session_id"),
                     rs.getString("workstation_id"),rs.getString("process_instance_id"),rs.getString("standard_n_iin"),
                     rs.getString("standard_n_iin_status"),rs.getString("standard_n_full_name"),rs.getString("standard_n_full_name_status"))
                 StaffIdentityObservation.match(rs.getString("profile_iin").orEmpty(),rs.getString("profile_name"),context).status == "MISMATCH"
-            }, sale.pharmacistId,sale.pharmacyId,sale.deviceId,source.rawUserId,source.nativeSessionId.toString(),source.workstationId,at,at,at).singleOrNull() == true
+            }, sale.pharmacistId,sale.pharmacyId,sale.deviceId,source.rawUserId,source.nativeSessionId.toString(),source.workstationId,source.sourceNamespace,at,at,at).singleOrNull() == true
     }
 
     private fun flagEventCases(eventId: String, reason: String) {

@@ -112,7 +112,7 @@ class LegacyPosmWireContractTest {
             PosmDeviceIdentity(DEVICE, PHARMACY, legacy = false)
         every { devices.authenticateForUpdate(any(), any()) } returns
             PosmDeviceIdentity(DEVICE, PHARMACY, legacy = false)
-        every { identity.resolve(any(), any(), any()) } answers {
+        every { identity.resolve(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
             PosmPharmacistIdentity(
                 secondArg<String?>().orEmpty(), thirdArg(), PharmacistIdentitySource.STANDARDN_UNMAPPED,
                 secondArg(), thirdArg(),

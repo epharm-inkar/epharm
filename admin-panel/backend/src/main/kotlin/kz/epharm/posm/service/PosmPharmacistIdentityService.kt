@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 enum class PharmacistIdentitySource(val wireValue: String) {
     POSM_INTERNAL("posm_internal"),
     STANDARDN_EXPLICIT_MAPPING("standardn_explicit_mapping"),
+    STANDARDN_RPS_BINDING("standardn_rps_binding"),
     STANDARDN_NAME_MATCH("standardn_name_match"),
     STANDARDN_UNMAPPED("standardn_unmapped"),
     UNRESOLVED("unresolved"),
@@ -34,12 +35,18 @@ data class PosmPharmacistIdentity(
 class PosmPharmacistIdentityService(
     private val pharmacistRepository: PharmacistRepository,
     private val mappingRepository: PosmPharmacistMappingRepository,
+    private val sourceBindings: kz.epharm.posm.staff.SourceStaffBindingService,
 ) {
     @Transactional(readOnly = true)
     fun resolve(
         pharmacyId: String,
         reportedPharmacistId: String?,
         reportedPharmacistName: String?,
+        deviceId: String? = null,
+        sourceNamespace: String? = null,
+        at: java.time.Instant = java.time.Instant.now(),
+        nativeSession: String? = null,
+        workstation: String? = null,
     ): PosmPharmacistIdentity {
         val reportedId = reportedPharmacistId.clean()
         val reportedName = reportedPharmacistName.clean()
@@ -48,6 +55,8 @@ class PosmPharmacistIdentityService(
             ?.let { mappingRepository.findByPharmacyIdAndExternalUserIdAndActiveTrue(pharmacyId, it) }
             ?.let { pharmacistRepository.findById(it.pharmacistId).orElse(null) }
             ?.takeIf { it.status == PharmacistStatus.active && it.pharmacyId == pharmacyId }
+        val bound = sourceBindings.resolve(pharmacyId, deviceId, sourceNamespace, reportedId, at, nativeSession, workstation)
+        if (bound.blocksHq) return PosmPharmacistIdentity("",reportedName ?: reportedId,PharmacistIdentitySource.STANDARDN_UNMAPPED,reportedId,reportedName)
         if (explicitlyMapped != null) {
             return PosmPharmacistIdentity(
                 pharmacistId = explicitlyMapped.id,
@@ -56,6 +65,12 @@ class PosmPharmacistIdentityService(
                 reportedPharmacistId = reportedId,
                 reportedPharmacistName = reportedName,
             )
+        }
+
+        if (bound.exists) {
+            return PosmPharmacistIdentity(bound.recipient?.id.orEmpty(),bound.recipient?.name ?: reportedName,
+                if (bound.recipient != null) PharmacistIdentitySource.STANDARDN_RPS_BINDING else PharmacistIdentitySource.STANDARDN_UNMAPPED,
+                reportedId,reportedName)
         }
 
         val internal = reportedId?.let { pharmacistRepository.findById(it).orElse(null) }

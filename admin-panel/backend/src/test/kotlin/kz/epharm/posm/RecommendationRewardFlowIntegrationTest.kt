@@ -64,7 +64,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
  * reward cases, pending bonuses, receipts and wallet entries are produced by application endpoints. */
 @SpringBootTest(properties = [
     "app.posm.sale-bonus.enabled=true", "app.posm.sale-bonus.auto-credit-enabled=true",
-    "app.posm.sale-bonus.device-allowlist=*",
+    "app.posm.sale-bonus.device-allowlist=*", "app.posm.staff-auth-enabled=true",
     "app.posm.sale-bonus.eligible-after=2026-01-01T00:00:00Z", "app.posm.legacy-device-key-enabled=false",
 ])
 @AutoConfigureMockMvc
@@ -95,6 +95,9 @@ class RecommendationRewardFlowIntegrationTest {
     @Autowired lateinit var rules: RuleRepository
     @Autowired lateinit var sales: PosSaleRepository
     @Autowired lateinit var recommendationEvents: RecommendationEventRepository
+    @Autowired lateinit var sourceBindings: kz.epharm.posm.staff.SourceStaffBindingService
+    @Autowired lateinit var transactions: org.springframework.transaction.PlatformTransactionManager
+    @Autowired lateinit var encoder: org.springframework.security.crypto.password.PasswordEncoder
     @Autowired lateinit var rewardService: kz.epharm.posm.service.RecommendationRewardService
     @Autowired lateinit var campaignReports: CampaignReportRepository
     private var bearer: String? = null
@@ -231,6 +234,198 @@ class RecommendationRewardFlowIntegrationTest {
             assertThat(balance(f.employee)).isEqualTo(expected)
             assertThat(spent(f.world.offers.single())).isEqualTo(expected)
         }
+    }
+
+    @Test fun `password and exact native IIN bind automatically and actual shown sale credits the same learner wallet`() {
+        val login = sourceLogin()
+        val f = sourceFlow(login)
+        assertThat(number("SELECT count(*) FROM posm_pharmacist_mappings WHERE pharmacy_id=?", f.employee.pharmacy)).isZero()
+        assertThat(number("SELECT count(*) FROM posm_source_staff_bindings WHERE pharmacist_id=? AND state='active'", f.employee.person)).isEqualTo(1)
+        acknowledge(f); deliver(f,payment(f)); deliver(f,payment(f))
+        assertCredit(f,400)
+        assertThat(sales.findById(f.sale).orElseThrow().pharmacistSource).isEqualTo("standardn_rps_binding")
+        val auth=mvc.perform(post("/api/mobile/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsBytes(mapOf("iin" to login.iin,"password" to "A1!b"))))
+            .andExpect(status().isOk).andReturn().response.contentAsByteArray
+        val token=mapper.readTree(auth).path("tokens").path("accessToken").asText()
+        val body=mvc.perform(get("/api/mobile/me/balance").header("Authorization","Bearer $token"))
+            .andExpect(status().isOk).andReturn().response.contentAsByteArray
+        assertThat(mapper.readTree(body).path("balanceKzt").asLong()).isEqualTo(400)
+    }
+
+    @Test fun `two full normalized name words bind only when IIN is absent and unique in that pharmacy`() {
+        for (status in listOf("missing","unavailable")) {
+            val login=sourceLogin(status=status,name="  САБИРОВ   АМИР ")
+            val f=sourceFlow(login)
+            acknowledge(f);deliver(f,payment(f));assertCredit(f,400)
+            assertThat(rows("SELECT proof_method FROM posm_source_staff_bindings WHERE pharmacist_id=?",f.employee.person).single()["proof_method"]).isEqualTo("NAME")
+        }
+    }
+
+    @Test fun `available mismatching or invalid or ambiguous IIN never falls back to the same name`() {
+        for (status in listOf("available","invalid","ambiguous")) {
+            val login=sourceLogin(status=status,sourceIin=if(status=="available") "000000000001" else null)
+            val f=sourceFlow(login)
+            acknowledge(f);deliver(f,payment(f))
+            assertThat(balance(f.employee)).isZero()
+            assertThat(number("SELECT count(*) FROM posm_source_staff_bindings WHERE pharmacist_id=?",f.employee.person)).isZero()
+        }
+    }
+
+    @Test fun `duplicate full names and initials remain unbound without a manual HQ decision`() {
+        for (mode in listOf("duplicate","initials","generic")) {
+            val base=employee(mapped=false)
+            if(mode=="duplicate") {
+                employee(base,mapped=false).also { jdbc.update("UPDATE pharmacists SET name='Сабиров Амир' WHERE id=?",it.person) }
+            }
+            val login=sourceLogin(base,status="missing",name=when(mode){"initials"->"Сабиров А.";"generic"->"Кассир Пользователь";else->"Амир Сабиров"})
+            val f=sourceFlow(login)
+            acknowledge(f);deliver(f,payment(f))
+            assertThat(balance(base)).isZero()
+            assertThat(number("SELECT count(*) FROM posm_source_staff_bindings WHERE pharmacist_id=?",base.person)).isZero()
+        }
+    }
+
+    @Test fun `a later live source observation binds the same logged in employee without registering again`() {
+        val login=sourceLogin(attachSource=false)
+        assertThat(number("SELECT count(*) FROM posm_source_staff_bindings WHERE pharmacist_id=?",login.employee.person)).isZero()
+        checkSource(login)
+        val f=sourceFlow(login);acknowledge(f);deliver(f,payment(f));assertCredit(f,400)
+    }
+
+    @Test fun `source bindings cannot cross device database user session or workstation or bypass actual shown ACK`() {
+        for(mode in listOf("namespace","device","user","session","workstation","not-shown")) {
+            val login=sourceLogin();val initial=sourceFlow(login)
+            val f=initial.copy(identity=when(mode) {
+                "namespace"->initial.identity.copy(sourceNamespace=sha("another-database"))
+                "user"->initial.identity.copy(rawUserId="different-user")
+                "session"->initial.identity.copy(nativeSessionId=777)
+                "workstation"->initial.identity.copy(workstationId="other-workstation")
+                else->initial.identity
+            })
+            if(mode!="not-shown") acknowledge(f)
+            if(mode=="device") {
+                val key="different-native-device-${UUID.randomUUID()}"
+                jdbc.update("INSERT INTO fulfillment_devices(id,device_id,pharmacy_id,secret_sha256,secret_hint) VALUES (?,?,?,?,?)",
+                    UUID.randomUUID(),"other-device-${token()}",f.employee.pharmacy,sha(key),"test-only")
+                deliver(f,payment(f),employee=f.employee.copy(key=key))
+            } else deliver(f,payment(f))
+            assertThat(balance(f.employee)).isZero()
+        }
+    }
+
+    @Test fun `source binding uses the grant alive at payment and never a newer login for an old offline sale`() {
+        for(mode in listOf("revoked-before","expired-before","revoked-after","late-proof")) {
+            val login=sourceLogin();val initial=sourceFlow(login)
+            val f=initial.copy(shownAt=Instant.now().minusSeconds(240).truncatedTo(ChronoUnit.MILLIS))
+            val paidAt=payment(f).printedAt
+            val proofAt=if(mode=="late-proof") paidAt.plusMillis(1) else f.shownAt.minusSeconds(1)
+            jdbc.update("UPDATE posm_device_staff_sessions SET created_at=?,source_verified_at=?,expires_at=?,revoked_at=? WHERE token_hash=?",
+                java.sql.Timestamp.from(f.shownAt.minusSeconds(2)),java.sql.Timestamp.from(proofAt),
+                java.sql.Timestamp.from(if(mode=="expired-before") paidAt else paidAt.plusSeconds(30)),
+                if(mode.startsWith("revoked")) java.sql.Timestamp.from(if(mode=="revoked-before")paidAt else paidAt.plusSeconds(1)) else null,sha(login.token))
+            jdbc.update("UPDATE posm_source_staff_bindings SET created_at=? WHERE pharmacist_id=?",java.sql.Timestamp.from(f.shownAt.minusSeconds(1)),login.employee.person)
+            acknowledge(f);deliver(f,payment(f))
+            assertThat(balance(f.employee)).isEqualTo(if(mode=="revoked-after")400L else 0L)
+        }
+    }
+
+    @Test fun `blocked transferred or changed credentials cannot spend an old automatic source binding`() {
+        for(mode in listOf("blocked","transferred","password","iin","hq-revoked")) {
+            val login=sourceLogin();val f=sourceFlow(login);acknowledge(f)
+            when(mode) {
+                "blocked"->jdbc.update("UPDATE pharmacists SET status='blocked' WHERE id=?",f.employee.person)
+                "transferred"->jdbc.update("UPDATE pharmacists SET pharmacy_id=NULL WHERE id=?",f.employee.person)
+                "password"->jdbc.update("UPDATE pharmacists SET password_hash=? WHERE id=?",encoder.encode("Other123!"),f.employee.person)
+                "iin"->jdbc.update("UPDATE pharmacists SET iin=? WHERE id=?",validIin(),f.employee.person)
+                else->{
+                    mvc.perform(post("/api/admin/posm/pharmacist-mappings").header("Authorization",hq()).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsBytes(UpsertPosmPharmacistMappingRequest(f.employee.pharmacy,f.employee.rawUser,"HQ",f.employee.person))))
+                        .andExpect(status().isOk)
+                    jdbc.update("UPDATE posm_pharmacist_mappings SET active=false,revoked_at=now() WHERE pharmacy_id=? AND external_user_id=?",f.employee.pharmacy,f.employee.rawUser)
+                }
+            }
+            deliver(f,payment(f));assertThat(balance(f.employee)).isZero()
+        }
+    }
+
+    @Test fun `changing a proven database context revokes its grant rather than reusing a native USER across databases`() {
+        val login=sourceLogin()
+        val changed=login.context.copy(standardNContext=login.context.standardNContext!!.copy(sourceNamespace=sha("another-source")))
+        mvc.perform(post("/api/posm/staff/device/session/check").header("X-Posm-Key",login.employee.key)
+            .header("X-Staff-Session",login.token).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsBytes(changed)))
+            .andExpect(status().isUnauthorized)
+        assertThat(rows("SELECT revoked_at FROM posm_device_staff_sessions WHERE token_hash=?",sha(login.token)).single()["revoked_at"]).isNotNull()
+    }
+
+    @Test fun `a conflicting verified login never rewrites a binding and the existing HQ mapping tool resolves the exception`() {
+        for(preexisting in listOf(false,true)) {
+        val first=sourceLogin();val other=employee(first.employee,mapped=false).copy(rawUser=first.employee.rawUser)
+        if(preexisting) mvc.perform(post("/api/admin/posm/pharmacist-mappings").header("Authorization",hq()).contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsBytes(UpsertPosmPharmacistMappingRequest(other.pharmacy,other.rawUser,"HQ existing choice",other.person))))
+            .andExpect(status().isOk)
+        val second=sourceLogin(other)
+        val binding=rows("SELECT * FROM posm_source_staff_bindings WHERE pharmacy_id=?",first.employee.pharmacy).single()
+        assertThat(binding["pharmacist_id"]).isEqualTo(first.employee.person)
+        assertThat(binding["state"]).isEqualTo("conflict")
+        val blocked=sourceFlow(second);acknowledge(blocked);deliver(blocked,payment(blocked))
+        assertThat(balance(other)).isZero()
+        mvc.perform(post("/api/admin/posm/pharmacist-mappings").header("Authorization",hq()).contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsBytes(UpsertPosmPharmacistMappingRequest(other.pharmacy,other.rawUser,"Verified HQ choice",other.person))))
+            .andExpect(status().isOk)
+        val resumed=sourceFlow(second);acknowledge(resumed);deliver(resumed,payment(resumed))
+        assertCredit(resumed,400)
+        assertThat(balance(first.employee)).isZero()
+        assertThat(rows("SELECT pharmacist_id FROM posm_source_staff_bindings WHERE pharmacy_id=?",other.pharmacy).single()["pharmacist_id"]).isEqualTo(first.employee.person)
+        if(preexisting) assertThat(number("SELECT count(*) FROM posm_pharmacist_mapping_audit WHERE pharmacy_id=? AND action='reviewed'",other.pharmacy)).isEqualTo(1)
+        }
+    }
+
+    @Test fun `repeated checked conflict preserves HQ approval but a new contradiction requires a new HQ decision`() {
+        val first=sourceLogin()
+        val second=sourceLogin(employee(first.employee,mapped=false).copy(rawUser=first.employee.rawUser))
+        val oldConflict=rows("SELECT conflict_at FROM posm_source_staff_bindings WHERE pharmacy_id=?",first.employee.pharmacy).single()["conflict_at"]
+        mvc.perform(post("/api/admin/posm/pharmacist-mappings").header("Authorization",hq()).contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsBytes(UpsertPosmPharmacistMappingRequest(second.employee.pharmacy,second.employee.rawUser,"HQ",second.employee.person))))
+            .andExpect(status().isOk)
+        checkSource(second)
+        assertThat(rows("SELECT conflict_at FROM posm_source_staff_bindings WHERE pharmacy_id=?",first.employee.pharmacy).single()["conflict_at"]).isEqualTo(oldConflict)
+        val third=sourceLogin(employee(first.employee,mapped=false).copy(rawUser=first.employee.rawUser))
+        val afterThird=rows("SELECT conflict_at FROM posm_source_staff_bindings WHERE pharmacy_id=?",first.employee.pharmacy).single()["conflict_at"] as java.sql.Timestamp
+        val reviewed=rows("SELECT updated_at FROM posm_pharmacist_mappings WHERE pharmacy_id=?",first.employee.pharmacy).single()["updated_at"] as java.sql.Timestamp
+        assertThat(afterThird.toInstant()).isAfter(reviewed.toInstant())
+        val denied=sourceFlow(third);acknowledge(denied);deliver(denied,payment(denied));assertThat(balance(third.employee)).isZero()
+        checkSource(second)
+        assertThat(number("SELECT count(*) FROM posm_source_staff_binding_audit WHERE claimant_id=? AND action='conflict'",second.employee.person)).isEqualTo(2)
+        assertThat(rows("SELECT pharmacist_id FROM posm_source_staff_bindings WHERE pharmacy_id=?",first.employee.pharmacy).single()["pharmacist_id"]).isEqualTo(first.employee.person)
+    }
+
+    @Test fun `HQ remapping cannot commit inside a source authorized monetary transaction`() {
+        val login=sourceLogin();val other=employee(login.employee,mapped=false)
+        val hqToken=hq();val held=CountDownLatch(1);val release=CountDownLatch(1)
+        val workers=Executors.newFixedThreadPool(2)
+        try {
+            val financial=workers.submit<Boolean> {
+                org.springframework.transaction.support.TransactionTemplate(transactions).execute {
+                    val admitted=sourceBindings.authorizes(login.employee.person,login.employee.pharmacy,login.employee.device,
+                        login.context.standardNContext!!.sourceNamespace,login.employee.rawUser,Instant.now().plusSeconds(1),"901",login.employee.device)
+                    held.countDown()
+                    assertThat(release.await(10,TimeUnit.SECONDS)).isTrue()
+                    admitted
+                }!!
+            }
+            assertThat(held.await(10,TimeUnit.SECONDS)).isTrue()
+            val remap=workers.submit {
+                mvc.perform(post("/api/admin/posm/pharmacist-mappings").header("Authorization",hqToken).contentType(MediaType.APPLICATION_JSON)
+                    .content(mapper.writeValueAsBytes(UpsertPosmPharmacistMappingRequest(other.pharmacy,login.employee.rawUser,"HQ",other.person))))
+                    .andExpect(status().isOk)
+            }
+            org.junit.jupiter.api.assertThrows<java.util.concurrent.TimeoutException> { remap.get(250,TimeUnit.MILLISECONDS) }
+            release.countDown()
+            assertThat(financial.get(10,TimeUnit.SECONDS)).isTrue()
+            remap.get(10,TimeUnit.SECONDS)
+            assertThat(rows("SELECT pharmacist_id FROM posm_pharmacist_mappings WHERE pharmacy_id=?",other.pharmacy).single()["pharmacist_id"]).isEqualTo(other.person)
+        } finally { release.countDown();workers.shutdownNow() }
     }
 
     @Test fun `the exact two minute addition boundary qualifies but one nanosecond later does not`() {
@@ -902,13 +1097,40 @@ class RecommendationRewardFlowIntegrationTest {
         return World(trigger, barcode, offers)
     }
 
+    private data class SourceLogin(val employee: Employee,val iin: String,val token: String,val context: kz.epharm.posm.staff.StaffDeviceContext)
+    private fun validIin():String {
+        while(true) {
+            val prefix=sequence.incrementAndGet().toString().takeLast(11)
+            (0..9).map { prefix+it }.firstOrNull(kz.epharm.shared.IinUtil::isValid)?.let { return it }
+        }
+    }
+    private fun sourceLogin(base:Employee=employee(mapped=false),status:String="available",name:String="Сабиров Амир",
+        sourceIin:String?=null,attachSource:Boolean=true):SourceLogin {
+        val iin=validIin()
+        jdbc.update("UPDATE pharmacists SET iin=?,name='Сабиров Амир',password_hash=? WHERE id=?",iin,encoder.encode("A1!b"),base.person)
+        val source=kz.epharm.posm.staff.StaffContext(base.rawUser,"901",base.device,"process_${base.person}",
+            if(status=="available") sourceIin ?: iin else null,status,name,"available",sha("synthetic-database:${base.pharmacy}"))
+        val context=kz.epharm.posm.staff.StaffDeviceContext(source.processInstanceId,source)
+        val body=kz.epharm.posm.staff.StaffDeviceLoginRequest(iin,"A1!b",if(attachSource)context else context.copy(standardNContext=null))
+        val response=postDevice("/api/posm/staff/device/login",base,body)
+        return SourceLogin(base,iin,response["sessionToken"].asText(),context)
+    }
+    private fun checkSource(login:SourceLogin) {
+        mvc.perform(post("/api/posm/staff/device/session/check").header("X-Posm-Key",login.employee.key)
+            .header("X-Staff-Session",login.token).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsBytes(login.context)))
+            .andExpect(status().isOk)
+    }
+    private fun sourceFlow(login:SourceLogin):Flow = flow(employee=login.employee,
+        sourceNamespace=login.context.standardNContext!!.sourceNamespace).let { f -> f.copy(shownAt=Instant.now().truncatedTo(ChronoUnit.MILLIS),
+            identity=f.identity.copy(nativeSessionId=901)) }
+
     private fun flow(world: World = world(), employee: Employee = employee(), quantities: List<Long> = listOf(2),
-        preexisting: Boolean = false, reverse: Boolean = false): Flow {
+        preexisting: Boolean = false, reverse: Boolean = false, sourceNamespace: String? = null): Flow {
         require(quantities.size == world.offers.size)
         val id = token()
         val session = "checkout_$id"
         val body = RecommendRequest(employee.rawUser, pharmacyId = employee.pharmacy, sessionId = session,
-            scannedBarcode = world.triggerBarcode, cart = listOf(CartItemDto(barcode = world.triggerBarcode, qty = 1.0)))
+            scannedBarcode = world.triggerBarcode, cart = listOf(CartItemDto(barcode = world.triggerBarcode, qty = 1.0)), sourceNamespace = sourceNamespace)
         val response = postDevice("/api/posm/recommend", employee, body)
         assertThat(response["rewardEvidenceProtocol"].asInt()).isEqualTo(1)
         val events = response["recommendations"].associate { it["recommendSku"].asText() to it["eventId"].asText() }

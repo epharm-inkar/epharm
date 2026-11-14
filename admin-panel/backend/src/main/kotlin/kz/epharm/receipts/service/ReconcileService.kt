@@ -188,6 +188,7 @@ class ReconcileService(
 
     @Transactional
     fun approve(id: String, reviewer: String): ReceiptDto {
+        entityManager.flush() // JDBC must see receipts created or reassigned earlier in this transaction.
         val recipient = jdbc.query("SELECT pharmacist_id FROM receipts WHERE id=?", { rs, _ -> rs.getString(1) }, id).singleOrNull()
         lockRewardRecipient(recipient)
         val receipt = loadForDecision(id)
@@ -296,6 +297,7 @@ class ReconcileService(
     /** V2 evidence has already proved a timely addition; checkout itself has no thirty-minute deadline. */
     @Transactional
     fun ingestVerifiedRecommendationReward(pendingId: String, sourceSaleId: String, totalAmount: Long, autoCredit: Boolean): String {
+        entityManager.flush()
         val recipient = jdbc.query("SELECT pharmacist_id FROM pending_bonuses WHERE id=?", { rs, _ -> rs.getString(1) }, pendingId).singleOrNull()
         lockRewardRecipient(recipient)
         val pending = lockPending(pendingId) ?: throw AppException(ErrorCode.CONFLICT, "reward_pending_missing", HttpStatus.CONFLICT)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace CustomerDisplay.Models.Posm
 {
@@ -33,6 +34,9 @@ namespace CustomerDisplay.Models.Posm
         public string SessionId { get; set; } = "";
         public string? ScannedBarcode { get; set; }   // последний отсканированный EAN-13 (информационно)
         public List<CartItem> Cart { get; set; } = new();
+        /// <summary>Optional exact source of a fresh native cart; absent context never uses a cached database guess.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SourceNamespace { get; set; }
     }
 
     /// <summary>Строка таблицы «Сравнение» (триггер-товар vs рекомендованный).</summary>

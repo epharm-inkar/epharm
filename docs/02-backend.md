@@ -14,8 +14,15 @@ admission and the final money decision independently enforce the same scope.
 The first actual display snapshot is immutable. Only newly added, remaining full
 packages in the same checkout and physical document/line, added within 0–120 seconds
 inclusive, qualify after positively confirmed payment (payment can be later).
-An explicit same-pharmacy HQ Standard-N USER mapping is required for automatic money;
-RPS login, supplied internal IDs and fuzzy name matching are not financial proof.
+The beneficiary requires either an explicit active same-pharmacy HQ Standard-N USER
+mapping or source-bound proof from a successful password-authenticated RPS login.
+Proof uses exact IIN first; only missing/unavailable source IIN permits a unique
+normalized full-name match. Available mismatched/invalid/ambiguous IIN never falls
+back to a name. V102 scopes this proof to pharmacy, individual device, database
+namespace and native USER; the live grant must also match native SESSION/workstation
+at payment. Later login cannot authorize an earlier sale. A conflicting/revoked HQ
+mapping blocks automatic rebinding; an explicit later HQ review resolves exceptions.
+Supplied internal IDs and fuzzy name matching are not financial proof.
 Unknown units, incomplete evidence and ambiguous employees go to HQ. The current native
 adapter requires an explicit positive integer HUMAN_QUANT agreeing with absolute
 QUANT to prove a full package; fractional/missing/conflicting units never earn
@@ -25,8 +32,8 @@ Physical and fiscal receipt fences, per-product cases, ordered transaction locks
 finite campaign budgets and the existing append-only wallet prevent replay and
 concurrent double credit. Bonuses use `receipt_bonus` and the same balance read by
 the separate `/learn`. A refund retains the original credit and opens HQ review,
-including when the refund arrives before the original sale. Native refund capture
-is not yet supplied by the Standard-N adapter.
+including when the refund arrives before the original sale. Native refund capture uses the verified posted-return type, original receipt and
+signed native lines; ambiguous or unlinked evidence is retained for review.
 
 HQ routes: `/api/admin/reconcile/recommendation-rewards`, `/{id}`, `/export.xlsx`
 and `/{id}/decision`. They require explicit scoped `motivation.sales_review`

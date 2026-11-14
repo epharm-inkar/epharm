@@ -19,6 +19,47 @@ namespace CustomerDisplay.Core.Tests
     public sealed class StandardNReceiptLifecycleTests
     {
         [Fact]
+        public void FreshExactCartSendsItsNamespaceWithoutEnablingMoneyCapture()
+        {
+            using var window = new MainWindow();
+            window.Observe(RewardReceipt(100, 1));
+            var request = window.RecommendRequestWithSource();
+            Assert.Equal(new string('a', 64), request.SourceNamespace);
+            Assert.Equal("cashier-1", request.PharmacistId);
+            Assert.Single(request.Cart);
+            Assert.Null(window.ShowReward("still-disabled", "4601164003157"));
+        }
+
+        [Theory]
+        [InlineData("stale")]
+        [InlineData("failed-read")]
+        [InlineData("changed-quantity")]
+        [InlineData("different-checkout")]
+        [InlineData("different-user")]
+        public void UnknownOrDifferentNativeContextNeverAddsACachedNamespaceToRecommendation(string change)
+        {
+            using var window = new MainWindow(); window.Observe(RewardReceipt(100, 1));
+            var request = window.RecommendRequestWithSource();
+            Assert.NotNull(request.SourceNamespace);
+            switch (change) {
+                case "stale": window.AdvanceReceiptTime(TimeSpan.FromSeconds(2).Add(TimeSpan.FromTicks(1))); break;
+                case "failed-read": window.DatabaseFailed(); break;
+                case "changed-quantity": window.ReceiptItems.Single().Qty = 2; break;
+                case "different-checkout": request.SessionId = "different-checkout"; break;
+                default: request.PharmacistId = "different-user"; break;
+            }
+            Assert.Null(window.NamespaceForRecommend(request));
+        }
+
+        [Fact]
+        public void LogOnlyCartStillBuildsAnOrdinaryRecommendationWithoutNamespace()
+        {
+            using var window = new MainWindow(); window.ObserveLogLine(Item(10, "Synthetic", "4600000000012", 100, 1));
+            var request = window.RecommendRequestWithSource();
+            Assert.Null(request.SourceNamespace); Assert.Single(request.Cart);
+        }
+
+        [Fact]
         public async Task DelayedExactPrintBatchUsesOnlyRetainedDocumentAndDoesNotReplay()
         {
             using var window = new MainWindow(); var old = Receipt(100, 10); var current = Receipt(200, 20);
@@ -1436,6 +1477,14 @@ namespace CustomerDisplay
         internal RewardShownEvidence? ShowReward(string eventId, string barcode) => CaptureRewardShown(new Recommendation {
             EventId = eventId, RecommendBarcode = barcode, RecommendSku = "catalogue-synthetic",
         }, _testReceiptNow);
+        internal RecommendRequest RecommendRequestWithSource()
+        {
+            CaptureCurrentSellerForSession();
+            var request = _session.BuildRequest(_posmConfig, ReceiptItems);
+            request.SourceNamespace = RecommendSourceNamespace(request);
+            return request;
+        }
+        internal string? NamespaceForRecommend(RecommendRequest request) => RecommendSourceNamespace(request);
         internal void ObserveMissingForSessions(string?[] workstations, string? selected)
         {
             if (ReceiptObservationGate.CanConfirmEmptyReceipt(workstations, selected, "CASH-1")) Observe(null);

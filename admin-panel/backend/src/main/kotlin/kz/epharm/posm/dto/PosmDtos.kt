@@ -44,6 +44,8 @@ data class RecommendRequest(
     @field:NotNull
     @field:Valid
     val cart: List<CartItemDto> = emptyList(),
+    @field:jakarta.validation.constraints.Pattern(regexp = "[a-f0-9]{64}")
+    val sourceNamespace: String? = null,
 )
 
 /** Строка таблицы «Сравнение» в карточке. Зеркалит C# ComparisonRow. */

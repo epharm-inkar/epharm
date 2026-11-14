@@ -235,9 +235,12 @@ signed final details and fiscal device/number/shift. The logical checkout may co
 documents, but each addition must match the physical document and native line of its completed
 sale. A print command, cart disappearance or UI-only line is not payment evidence; unproven
 line-ID migration cannot justify an automatic reward. Source identities at show/addition/completion must agree; the beneficiary comes
-from the explicit HQ mapping of the native Standard-N `USER_ID` in that pharmacy. Names, an
-independent RPS login or a body-supplied internal account ID cannot replace that mapping. A known
-RPS mismatch requires HQ review.
+from an active explicit HQ mapping or a source-bound RPS proof for that native user.
+After successful password login, exact IIN establishes the proof; only missing/unavailable
+source IIN permits an exact unique full-name match. The device, database namespace, USER,
+native SESSION and workstation must match and the grant must have been valid at payment.
+A body-supplied internal ID, fuzzy name or later login cannot authorize money. Known IIN
+mismatch, ambiguous names and conflicting/revoked mappings require HQ review.
 
 `App/Services/RecommendationRewardJournal.cs` stores a private atomic, checksummed observation
 journal, bounded to 32 checkouts / 8 MiB and 2,048 changes per checkout. Optional `rewardEvidence`
@@ -301,10 +304,11 @@ those IDs cannot authorize a sale. Legacy/docless classification keeps its five-
 window, and the bounded five-second probe after the cue plus paid/source/session/fiscal checks
 remain unchanged. Rotation, interruption and overflow cannot enable the exact-ID exception.
 
-A server-observed RPS mismatch is a negative-only HQ veto, scoped to the available pharmacy,
-device, raw user, native session and workstation of a grant alive at completion. RPS storage has
-no database namespace; this conservative veto is not positive proof of financial identity.
-Absent/matching/unrelated observations do not replace or create an HQ user mapping.
+A server-observed RPS mismatch remains an HQ veto. V102 separately records source-bound
+positive proof and its audit, without rewriting the HQ mapping. SourceNamespace is sent only
+from a fresh successful native read and an exact current cart/source; stale, failed or log-only
+observations omit it. Changing a known namespace invalidates the native grant. Old clients
+and old server responses retain their existing behavior; they cannot invent the new proof.
 
 **Acceptance limits:** core/contract tests and a Windows-targeted WPF build do not constitute a
 complete real Windows/pharmacy acceptance test. The full current-candidate pilot is tracked in
