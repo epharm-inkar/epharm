@@ -24,9 +24,7 @@ public sealed class StaffAuthWindow : Window
     private readonly StaffRegistrationPolicy _registrationPolicy = new();
     private readonly string _sessionRequiredMessage;
     private readonly string _sessionRequiredMessageKk;
-    private bool _requireSignIn;
-    private bool _workReleased;
-    private readonly System.Windows.Forms.Screen _screen;
+    private bool _sourceContextReleased;
     private bool _dismissAllowed;
     private readonly CancellationTokenSource _stop = new();
     private readonly List<Action> _localizers = [];
@@ -71,6 +69,10 @@ public sealed class StaffAuthWindow : Window
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     public event Action? AuthenticationStarted;
     public event Action<StaffAuthResponse>? Authenticated;
+    // The parent may need bounded fresh process confirmation. Await it while the
+    // original form is busy; never fire-and-forget an async authentication handler.
+    public Func<StaffAuthResponse, Task>? AuthenticationCompletion { get; set; }
+    public event Action? AssignmentPending;
     public event Action<StaffPromptBypassReason>? BypassRequested;
     public event Action<bool>? LanguageChanged;
     public bool IsKazakh => _kazakh;
@@ -79,12 +81,12 @@ public sealed class StaffAuthWindow : Window
         string? sessionReason = null, bool requireSignIn = false, StaffDeviceContext? deviceContext = null, bool registrationSmsRequired = true, bool kazakh = false)
     {
         _client = client;
-        _screen = screen;
         _context = context;
         _deviceContext = deviceContext;
         _registrationPolicy.SetSmsRequired(registrationSmsRequired);
-        requireSignIn = requireSignIn && StaffPromptPolicy.HasComparableIdentity(context);
-        _requireSignIn = requireSignIn;
+        // Keep the legacy constructor argument for callers, but source identity is
+        // never permission to lock the cashier's desktop. Authentication is still
+        // decided by the server and the parent's process-bound grant checks.
         _sessionRequiredMessage = deviceContext != null
             ? "Вход ePharm доступен. Если данные Standard-N недоступны, соответствие кассира пока не подтверждено; касса продолжает работать."
             : (sessionReason ?? "Кассовая сессия ещё не подтверждена.") +
@@ -94,15 +96,10 @@ public sealed class StaffAuthWindow : Window
             : "Касса сессиясы әлі расталмаған. Standard-N жүйесіндегі ағымдағы сессия анықталған соң кіруге болады. SMS-сіз тіркелу үшін ePharm-ның өзекті нұсқасы қажет; құпиясөзді қазір қалпына келтіруге болады. Касса жұмысын жалғастырады.";
         Title = "Вход сотрудника ePharm";
         Width = 1100; Height = 700; MinWidth = 360; MinHeight = 300;
-        ShowActivated = requireSignIn;
-        if (requireSignIn)
-        {
-            // Presentation only: secure desktop and administrator access remain available.
-            WindowStyle = WindowStyle.None;
-            ResizeMode = ResizeMode.NoResize;
-            MinWidth = MinHeight = 0;
-        }
-        Topmost = true;
+        ShowActivated = false;
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ResizeMode = ResizeMode.CanResize;
+        Topmost = false;
         Background = Brushes.White;
         FontFamily = new FontFamily("/CustomerDisplay;component/Assets/Brand/#Manrope"); FontSize = 14;
         Foreground = Color("#171A18"); UseLayoutRounding = true; SnapsToDevicePixels = true;
@@ -128,26 +125,13 @@ public sealed class StaffAuthWindow : Window
         _phone.TextChanged += (_, _) => ClearChallenge();
         _request.Click += async (_, _) => await RunAsync(RequestOtp, smsOperation: true);
         _submit.Click += async (_, _) => await RunAsync(Submit, smsOperation: _mode.SelectedIndex != 0 && !RegistrationWithoutSms);
-        _continueWithoutSignIn.Click += (_, _) => BypassRequested?.Invoke(_deviceContext != null && !_requireSignIn
-            ? StaffPromptBypassReason.IdentityUnavailable : StaffPromptBypassReason.SmsWait);
-        SourceInitialized += (_, _) => {
-            var dpi = VisualTreeHelper.GetDpi(this);
-            if (requireSignIn)
-            {
-                Left = screen.Bounds.Left / dpi.DpiScaleX;
-                Top = screen.Bounds.Top / dpi.DpiScaleY;
-                Width = screen.Bounds.Width / dpi.DpiScaleX;
-                Height = screen.Bounds.Height / dpi.DpiScaleY;
-                return;
-            }
-            FitToScreen(screen);
+        _continueWithoutSignIn.Click += (_, _) => {
+            BypassRequested?.Invoke(_deviceContext != null
+                ? StaffPromptBypassReason.IdentityUnavailable : StaffPromptBypassReason.SmsWait);
+            if (!_stop.IsCancellationRequested) Close();
         };
+        SourceInitialized += (_, _) => FitToScreen(screen);
         SizeChanged += (_, _) => ApplyResponsiveLayout(ActualWidth, ActualHeight);
-        Closing += (_, args) => { if (_requireSignIn && !_dismissAllowed) args.Cancel = true; };
-        StateChanged += (_, _) => {
-            if (_requireSignIn && !_dismissAllowed && WindowState == WindowState.Minimized)
-                WindowState = WindowState.Normal;
-        };
         Closed += (_, _) => { _stop.Cancel(); _statusTimer.Stop(); _password.Clear(); _passwordConfirmation.Clear(); _iin.Clear(); _phone.Clear(); _code.Clear(); _name.Clear(); ClearChallenge(); };
         _statusTimer.Tick += (_, _) => RefreshStatus();
         SwitchLanguage(kazakh);
@@ -155,18 +139,12 @@ public sealed class StaffAuthWindow : Window
 
     public bool WasDismissed => _dismissAllowed;
     public bool IsRequestPending => _busy;
+    public CancellationToken ClosedToken => _stop.Token;
     public void Dismiss() { _dismissAllowed = true; Close(); }
 
     /// <summary>Fail-open releases presentation, not the filled form or an outstanding SMS challenge.</summary>
     public void ReleaseWork(string? message = null, string? kazakhMessage = null)
     {
-        _workReleased = true;
-        if (_requireSignIn) {
-            _requireSignIn = false;
-            WindowStyle = WindowStyle.SingleBorderWindow; ResizeMode = ResizeMode.CanResize;
-            ShowActivated = false;
-            FitToScreen(_screen);
-        }
         _continueWithoutSignIn.Visibility = Visibility.Visible;
         UpdateModePresentation();
         if (message != null) SetStatus(message, kazakhMessage ?? message);
@@ -175,7 +153,8 @@ public sealed class StaffAuthWindow : Window
     /// <summary>Source loss releases only presentation: keep fields, OTP and an independently pending login.</summary>
     public void UpdateSourceContext(StaffAuthContext? currentContext)
     {
-        if (!_requireSignIn || StaffPromptPolicy.HasComparableIdentity(currentContext)) return;
+        if (_sourceContextReleased || !StaffPromptPolicy.HasComparableIdentity(_context) || StaffPromptPolicy.HasComparableIdentity(currentContext)) return;
+        _sourceContextReleased = true;
         ReleaseWork(
             "Данные кассовой сессии временно не подтверждены. Форма сохранена; можно войти в ePharm или продолжить работу без входа.",
             "Касса сессиясының деректері уақытша расталмаған. Нысан сақталды; ePharm жүйесіне кіруге немесе кірмей жұмысты жалғастыруға болады.");
@@ -295,9 +274,7 @@ public sealed class StaffAuthWindow : Window
         _request.Style = (Style)FindResource("SecondaryButton"); _request.Margin = new Thickness(0, 15, 0, 0); _form.Children.Add(_request);
         Caption(_request, "Получить SMS-код", "SMS кодын алу");
         _continueWithoutSignIn.Style = (Style)FindResource("SecondaryButton");
-        if (_deviceContext != null && !_requireSignIn)
-            Caption(_continueWithoutSignIn, "Продолжить работу без входа", "Кірмей жұмысты жалғастыру");
-        else Caption(_continueWithoutSignIn, "Продолжить работу: SMS ещё не пришло", "Жұмысты жалғастыру: SMS әлі келген жоқ");
+        Caption(_continueWithoutSignIn, "Продолжить работу без входа", "Кірмей жұмысты жалғастыру");
         Field(_codeRow, "Код из SMS *", "SMS коды *", _code, "0000", "0000"); _form.Children.Add(_codeRow);
         _forgot.HorizontalAlignment = HorizontalAlignment.Right; _forgot.Margin = new Thickness(0, 10, 0, 0);
         Link(_forgot, "Забыли пароль?", "Құпиясөзді ұмыттыңыз ба?"); _form.Children.Add(_forgot);
@@ -328,11 +305,8 @@ public sealed class StaffAuthWindow : Window
         privacy.LineHeight = 18;
         _form.Children.Add(new Border { BorderBrush = Color("#EFEEEB"), BorderThickness = new Thickness(0, 1, 0, 0),
             Padding = new Thickness(0, 18, 0, 0), Margin = new Thickness(0, 24, 0, 0), Child = privacy });
-        var independence = Copy(_requireSignIn
-            ? "После входа окно закроется автоматически. При сбое сервиса работа кассы останется доступной."
-            : "Окно можно закрыть и открыть через значок ePharm в трее. Standard-N продолжает работать.", _requireSignIn
-            ? "Кірген соң терезе автоматты түрде жабылады. Қызмет істемесе, касса жұмысы қолжетімді болады."
-            : "Терезені жауып, ePharm белгішесі арқылы қайта ашуға болады. Standard-N жұмысын жалғастырады.", 10, "#76736D");
+        var independence = Copy("Окно можно закрыть и открыть через значок ePharm в трее. Standard-N продолжает работать.",
+            "Терезені жауып, ePharm белгішесі арқылы қайта ашуға болады. Standard-N жұмысын жалғастырады.", 10, "#76736D");
         independence.Margin = new Thickness(0, 10, 0, 0); _form.Children.Add(independence);
     }
 
@@ -404,25 +378,20 @@ public sealed class StaffAuthWindow : Window
         _forgot.Visibility = _newStaff.Visibility = _activate.Visibility = login ? Visibility.Visible : Visibility.Collapsed;
         _heading.Text = _mode.SelectedIndex switch {
             1 => T("Новый сотрудник", "Жаңа қызметкер"), 2 => T("Восстановление пароля", "Құпиясөзді қалпына келтіру"),
-            3 => T("Создайте пароль", "Құпиясөз жасаңыз"), _ => T("Вход для фармацевта", "Фармацевттің кіруі"),
+            3 => T("Активация профиля", "Профильді белсендіру"), _ => T("Вход для фармацевта", "Фармацевттің кіруі"),
         };
         _intro.Text = _mode.SelectedIndex switch {
             1 => T("Заполните ИИН, ФИО, телефон и пароль. SMS не требуется; номер телефона пока не подтверждён.", "ЖСН, аты-жөніңізді, телефон мен құпиясөзді енгізіңіз. SMS қажет емес; телефон нөмірі әлі расталмаған."),
             2 => T("Укажите ИИН и ранее привязанный телефон. Подтвердите SMS-код и задайте новый пароль.", "ЖСН мен тіркелген телефонды көрсетіңіз. SMS кодын растап, жаңа құпиясөз орнатыңыз."),
-            3 => T("Подтвердите ранее привязанный телефон и создайте пароль для существующего профиля.", "Тіркелген телефонды растап, бар профиль үшін құпиясөз жасаңыз."),
+            3 => T("Это не регистрация нового сотрудника. SMS-код подтверждает доступ к ранее привязанному телефону, чтобы создать пароль для существующего профиля. Новому сотруднику: «К входу» → «Новый сотрудник? Регистрация» — без SMS.", "Бұл жаңа қызметкерді тіркеу емес. SMS коды бұрын тіркелген телефонға қолжетімділікті растайды, содан кейін бар профиль үшін құпиясөз жасайсыз. Жаңа қызметкерге: «Кіруге оралу» → «Жаңа қызметкерсіз бе? Тіркелу» — SMS-сіз."),
             _ => T("Введите ИИН и пароль. Если вы впервые в ePharm, выберите регистрацию нового сотрудника.", "ЖСН мен құпиясөзді енгізіңіз. ePharm жүйесіне алғаш кірсеңіз, жаңа қызметкер ретінде тіркеліңіз."),
         };
         _passwordHint.Text = T("Новый пароль: 4–128 символов и не более 72 байт UTF-8.", "Жаңа құпиясөз: 4–128 таңба, UTF-8 форматында ең көбі 72 байт.");
-        if (_workReleased || _deviceContext != null && !_requireSignIn) {
-            _continueWithoutSignIn.Content = T("Продолжить работу без входа", "Кірмей жұмысты жалғастыру");
-            AutomationProperties.SetName(_continueWithoutSignIn, _continueWithoutSignIn.Content.ToString());
-        }
         _submit.Content = login ? T("Войти", "Кіру") : _mode.SelectedIndex == 1 ? T("Зарегистрироваться", "Тіркелу") : T("Сохранить новый пароль", "Жаңа құпиясөзді сақтау");
         AutomationProperties.SetName(_submit, _submit.Content.ToString());
     }
     private string Purpose => _mode.SelectedIndex switch { 1 => "register", 2 => "reset", _ => "activate" };
-    private void ClearChallenge() { _challenge = null; _challengeIin = null; _challengePhone = null; _continueWithoutSignIn.Visibility =
-        _workReleased || _deviceContext != null && !_requireSignIn ? Visibility.Visible : Visibility.Collapsed; }
+    private void ClearChallenge() { _challenge = null; _challengeIin = null; _challengePhone = null; _continueWithoutSignIn.Visibility = Visibility.Visible; }
     private void ApplyMode()
     {
         ClearChallenge(); _password.Clear(); _passwordConfirmation.Clear(); _code.Clear(); SetStatus("", "");
@@ -437,7 +406,7 @@ public sealed class StaffAuthWindow : Window
         _submit.IsEnabled = !_busy && (!login || _context != null || _deviceContext != null);
         if (login && (_context == null || _deviceContext != null && !StaffPromptPolicy.HasComparableIdentity(_context)))
             SetStatus(_sessionRequiredMessage, _sessionRequiredMessageKk);
-        if (_deviceContext != null && !_requireSignIn) _continueWithoutSignIn.Visibility = Visibility.Visible;
+        _continueWithoutSignIn.Visibility = Visibility.Visible;
         if (RegistrationWithoutSms && !CanRegisterWithoutSms) ReleaseForRegistrationUnavailable();
     }
     private void ValidateIdentity()
@@ -460,7 +429,7 @@ public sealed class StaffAuthWindow : Window
         _challengeExpiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(result.TtlSeconds, 1, 300));
         SetStatus("Если данные подходят, код отправлен. Введите SMS-код. Повторная отправка отменит предыдущий код.",
             "Деректер сәйкес болса, код жіберілді. SMS кодын енгізіңіз. Қайта жібергенде алдыңғы код жарамсыз болады.");
-        if (_requireSignIn) _continueWithoutSignIn.Visibility = Visibility.Visible;
+        _continueWithoutSignIn.Visibility = Visibility.Visible;
     }
     private async Task Submit()
     {
@@ -484,7 +453,7 @@ public sealed class StaffAuthWindow : Window
             if (result.Status == "authenticated") {
                 if (_deviceContext != null && result.DeviceContext != _deviceContext) throw new StaffApiException("INVALID_RESPONSE");
                 SetStatus("Подтверждаем вход ePharm…", "ePharm жүйесіне кіруді растап жатырмыз…");
-                Authenticated?.Invoke(result);
+                await CompleteAuthentication(result);
                 return;
             }
             if (_deviceContext != null)
@@ -492,6 +461,7 @@ public sealed class StaffAuthWindow : Window
                     "Бұл профильдің дәріханаға тағайындалуы әлі расталмаған. Әкімшіге хабарласыңыз; Standard-N жұмысын жалғастырады.");
             else SetStatus("Профиль ожидает подтверждения назначения администратором. Вход пока не разрешён.",
                 "Профиль тағайындауды әкімшінің растауын күтуде. Кіруге әзірше рұқсат жоқ.");
+            AssignmentPending?.Invoke();
             if (_deviceContext != null) ReleaseWork();
             return;
         }
@@ -503,7 +473,7 @@ public sealed class StaffAuthWindow : Window
             AuthenticationStarted?.Invoke();
             var registered = await _client.DeviceRegisterWithoutSmsAsync(_iin.Text.Trim(), _phone.Text.Trim(), _name.Text.Trim(), password, _deviceContext!, _stop.Token);
             _stop.Token.ThrowIfCancellationRequested();
-            if (!await DiscardChangedRegistration(policyGeneration, registered)) CompleteRegistration(registered);
+            if (!await DiscardChangedRegistration(policyGeneration, registered)) await CompleteRegistration(registered);
             return;
         }
         if (_challenge == null || _challengeExpiresAt <= DateTimeOffset.UtcNow || _challengeIin != _iin.Text.Trim() || _challengePhone != _phone.Text.Trim()) throw new StaffApiException("SMS_REQUIRED");
@@ -513,17 +483,22 @@ public sealed class StaffAuthWindow : Window
         if (_context == null) SetStatus("Пароль сохранён. " + _sessionRequiredMessage, "Құпиясөз сақталды. " + _sessionRequiredMessageKk);
         else SetStatus("Пароль сохранён. Теперь войдите с новым паролем.", "Құпиясөз сақталды. Енді жаңа құпиясөзбен кіріңіз.");
     }
-    private void CompleteRegistration(StaffRegistrationResponse registered)
+    private async Task CompleteRegistration(StaffRegistrationResponse registered)
     {
         if (registered.Status is not ("authenticated" or "registered" or "pending")) throw new StaffApiException("INVALID_RESPONSE");
         ClearChallenge(); _code.Clear();
-        if (registered.Status == "authenticated" &&
-            (_deviceContext != null ? registered.DeviceContext == _deviceContext : registered.Context == _context && _context != null) &&
-            registered.Pharmacist != null && !string.IsNullOrWhiteSpace(registered.SessionToken) &&
-            registered.ExpiresAt > DateTimeOffset.UtcNow)
+        if (IsValidAuthenticatedRegistration(registered))
         {
-            Authenticated?.Invoke(new StaffAuthResponse(registered.Status, registered.SessionToken,
-                registered.ExpiresAt, registered.Pharmacist, _context, registered.DeviceContext));
+            var awaitedParent = AuthenticationCompletion != null;
+            var statusBeforeHandoff = _statusMessage;
+            await CompleteAuthentication(new StaffAuthResponse(registered.Status, registered.SessionToken,
+                registered.ExpiresAt, registered.Pharmacist!, _context, registered.DeviceContext));
+            // The server has created the account, even if fresh process confirmation
+            // rejects its grant. The awaited parent dismisses accepted windows; a live
+            // form must offer login, not a second account-creation request. Preserve
+            // its exact process diagnostic and never replay credentials automatically.
+            if (awaitedParent)
+                PrepareLoginAfterCreatedAccount(ReferenceEquals(statusBeforeHandoff, _statusMessage) ? null : _statusMessage);
             return;
         }
         if (registered.Status == "authenticated") throw new StaffApiException("INVALID_RESPONSE");
@@ -537,6 +512,32 @@ public sealed class StaffAuthWindow : Window
         else SetStatus("Профиль создан. Войдите по ИИН и паролю после определения кассовой сессии.",
             "Профиль жасалды. Касса сессиясы анықталған соң ЖСН және құпиясөз арқылы кіріңіз.");
         if (_deviceContext != null && registered.Status is ("pending" or "registered")) ReleaseWork();
+        if (registered.Status == "pending") AssignmentPending?.Invoke();
+    }
+
+    private async Task CompleteAuthentication(StaffAuthResponse response)
+    {
+        if (AuthenticationCompletion is { } complete) await complete(response);
+        else Authenticated?.Invoke(response); // Legacy embedding/tests retain their synchronous contract.
+    }
+
+    private bool IsValidAuthenticatedRegistration(StaffRegistrationResponse response) =>
+        response.Status == "authenticated" &&
+        (_deviceContext != null ? response.DeviceContext == _deviceContext : response.Context == _context && _context != null) &&
+        !string.IsNullOrWhiteSpace(response.Pharmacist?.Id) && !string.IsNullOrWhiteSpace(response.SessionToken) &&
+        response.ExpiresAt > DateTimeOffset.UtcNow;
+
+    private void PrepareLoginAfterCreatedAccount(Func<string>? parentStatus)
+    {
+        if (_stop.IsCancellationRequested || !IsVisible || !RegistrationWithoutSms) return;
+        var password = _password.Password;
+        _mode.SelectedIndex = 0;
+        _password.Password = password;
+        _statusMessage = () => T("Профиль создан. Вход ещё не подтверждён. Повторная регистрация не нужна.",
+            "Профиль жасалды. Кіру әлі расталған жоқ. Қайта тіркелудің қажеті жоқ.") +
+            (parentStatus == null ? "" : " " + parentStatus());
+        RefreshStatus();
+        RevealError();
     }
 
     private async Task<bool> DiscardChangedRegistration(long generation, StaffRegistrationResponse response)
@@ -547,6 +548,7 @@ public sealed class StaffAuthWindow : Window
         if (_deviceContext != null && !string.IsNullOrWhiteSpace(response.SessionToken)) {
             try { await _client.DeviceLogoutAsync(response.SessionToken, _stop.Token); } catch { }
         }
+        if (IsValidAuthenticatedRegistration(response)) PrepareLoginAfterCreatedAccount(_statusMessage);
         return true;
     }
 
@@ -555,7 +557,9 @@ public sealed class StaffAuthWindow : Window
         if (_busy || _stop.IsCancellationRequested) return;
         _busy = true; _submit.IsEnabled = _request.IsEnabled = _mode.IsEnabled = _forgot.IsEnabled = _newStaff.IsEnabled = false;
         _recoveryGuidance.IsEnabled = _activate.IsEnabled = _back.IsEnabled = _languageRu.IsEnabled = _languageKk.IsEnabled = false;
-        _continueWithoutSignIn.IsEnabled = false;
+        // Leaving the form is always available, including while a request is pending.
+        // Closed cancels that request; a late response cannot authenticate this window.
+        _continueWithoutSignIn.IsEnabled = true;
         _iin.IsEnabled = _phone.IsEnabled = _name.IsEnabled = _code.IsEnabled = _password.IsEnabled = _passwordConfirmation.IsEnabled = false;
         SetStatus("Подождите…", "Күте тұрыңыз…");
         try { await operation(); }
@@ -566,6 +570,9 @@ public sealed class StaffAuthWindow : Window
                 if (ex.Code is "UNAVAILABLE" or "INVALID_RESPONSE")
                     ReleaseForServiceFailure(smsOperation);
                 else if (ex.Code is "RATE_LIMITED" or "REGISTRATION_UNAVAILABLE") ReleaseWork();
+                else if (ex.Code is "STAFF_PHARMACY_ASSIGNMENT_REQUIRED" or "STAFF_PHARMACY_MISMATCH") {
+                    AssignmentPending?.Invoke(); ReleaseWork();
+                }
                 if (_mode.SelectedIndex == 0 && StaffAuthDiagnostics.OfferRecovery(ex.Code)) {
                     ClearChallenge(); _code.Clear();
                     _recoveryGuidance.Visibility = Visibility.Visible;
@@ -639,12 +646,15 @@ public sealed class StaffAuthWindow : Window
         "SESSION_REQUIRED" => T("Сначала войдите в Standard-N и дождитесь определения текущей кассовой сессии. Регистрация без SMS доступна на обновлённой кассе; восстановление пароля доступно независимо.", "Алдымен Standard-N жүйесіне кіріп, ағымдағы касса сессиясы анықталғанша күтіңіз. SMS-сіз тіркелу жаңартылған кассада қолжетімді; құпиясөзді бөлек қалпына келтіруге болады."),
         "PASSWORD_REQUIRED" => T("Введите пароль. Нужно не менее 4 символов.", "Құпиясөз енгізіңіз. Кемінде 4 таңба болуы керек."),
         "PASSWORD_LENGTH" => T("Пароль должен содержать от 4 до 128 символов.", "Құпиясөз 4–128 таңбадан тұруы керек."),
+        "PASSWORD_BYTES" when _mode.SelectedIndex == 0 => T("Этот пароль превышает ограничение 72 байта UTF-8. Не сокращайте существующий пароль: выберите «Забыли пароль?» и восстановите пароль по привязанному телефону.", "Бұл құпиясөз UTF-8 форматындағы 72 байт шегінен асады. Бар құпиясөзді қысқартпаңыз: «Құпиясөзді ұмыттыңыз ба?» арқылы тіркелген телефонмен қалпына келтіріңіз."),
         "PASSWORD_BYTES" => T("Пароль слишком длинный: допускается не более 72 байт UTF-8. Сократите пароль, особенно если он содержит кириллицу или эмодзи.", "Құпиясөз тым ұзын: UTF-8 форматында 72 байттан аспауы керек. Әсіресе кириллица немесе эмодзи болса, құпиясөзді қысқартыңыз."),
         "PASSWORD_MISMATCH" => T("Пароли не совпадают. Проверьте новый пароль и его подтверждение.", "Құпиясөздер сәйкес емес. Жаңа құпиясөз бен растауын тексеріңіз."),
         "NAME_REQUIRED" => T("Введите полное ФИО.", "Толық аты-жөніңізді енгізіңіз."),
         "SMS_REQUIRED" => T("Сначала запросите новый SMS-код для указанных данных.", "Алдымен көрсетілген деректерге жаңа SMS кодын сұраңыз."),
         "CODE_REQUIRED" => T("Введите код из SMS: 4–8 цифр.", "SMS кодын енгізіңіз: 4–8 цифр."),
         "RATE_LIMITED" => T("Слишком много попыток. Подождите перед повтором.", "Әрекет тым көп. Қайталау алдында күтіңіз."),
+        "STAFF_PHARMACY_ASSIGNMENT_REQUIRED" => T("Учётная запись ещё не привязана к аптеке. Обратитесь в HQ для проверки и назначения аптеки. Повторная регистрация не нужна.", "Есептік жазба дәріханаға әлі бекітілмеген. Дәріхананы тексеріп, тағайындау үшін HQ-ға хабарласыңыз. Қайта тіркелудің қажеті жоқ."),
+        "STAFF_PHARMACY_MISMATCH" => T("Учётная запись закреплена за другой аптекой. Обратитесь в HQ для проверки привязки. Повторная регистрация не нужна.", "Есептік жазба басқа дәріханаға бекітілген. Байланысты тексеру үшін HQ-ға хабарласыңыз. Қайта тіркелудің қажеті жоқ."),
         "INVALID_CREDENTIALS" or "FORBIDDEN" => T("Не удалось войти. Проверьте ИИН и пароль или обратитесь к администратору.", "Кіру мүмкін болмады. ЖСН мен құпиясөзді тексеріңіз немесе әкімшіге хабарласыңыз."),
         "INVALID_DATA" when _mode.SelectedIndex == 0 => T("Проверьте ИИН и пароль.", "ЖСН мен құпиясөзді тексеріңіз."),
         "INVALID_DATA" when RegistrationWithoutSms => T("Проверьте ИИН и данные регистрации. Если профиль уже существует, перейдите ко входу.", "ЖСН мен тіркелу деректерін тексеріңіз. Профиль бар болса, кіруге өтіңіз."),

@@ -5,6 +5,62 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Recover a confirmed created POSM profile into explicit manual sign-in when fresh
+  local process confirmation rejects the login handoff. Preserve form-only credentials,
+  clear confirmation fields, revoke rejected grants and never replay registration.
+- Bound a retained staff grant when Windows cannot confirm the cashier process,
+  including partially readable process enumeration;
+  recovery still requires fresh server verification and cannot extend its deadline.
+- Distinguish existing-profile activation from new SMS-free registration in RU/KK.
+- Prepare signed POSM 1.0.86 as a separate client release, gated on exact-main
+  Windows update/recovery, registration and two-display acceptance. Backend/frontend
+  v0.2.17 and their explicit JVM heap bound are unchanged by this client-only release.
+
+## [0.2.17] - 2026-11-13
+
+### Fixed
+
+- Bound the backend runtime heap to 1280 MiB inside its 2 GiB container. The
+  explicit JVM limit prevents host-sized heap ergonomics from causing a cgroup
+  OOM; application behavior, frontend source, POSM and protected configuration stay unchanged.
+
+## [0.2.16] - 2026-11-12
+
+### Fixed
+
+- Keep cashier work available when the POSM login window is open, minimized,
+  dismissed or waiting for a request. Bound automatic prompts independently of
+  security generations; manual tray login and immediate grant revocation remain.
+- Recheck the current OS cashier process after background session validation before
+  restoring a retained grant, preserving the existing bounded fail-closed recovery.
+- Check the current pharmacist account status for issued JWTs, including learner
+  requests. Blocked/deleted accounts lose access; pending onboarding remains.
+- Preserve HQ sessions during transient refresh failures and prevent stale merch
+  login/refresh completions from replacing a different account's session.
+- Prepare POSM 1.0.85 as a new immutable client release. Publication remains gated
+  on exact-main Windows upgrade, recovery, foreground and two-display acceptance.
+
+## [0.2.15] - 2026-11-11
+
+### Fixed
+
+- Recover a retained POSM staff grant after temporary transport errors only within
+  a bounded two-minute verification window. Pending checks do not authenticate the
+  employee; definitive refusals, expiry, changed process/cashier and closed forms
+  remain terminal. Successful login waits for fresh process proof without replaying
+  credentials, and Retry-After cannot extend the recovery deadline.
+- Apply the shared 72-byte UTF-8 BCrypt boundary to new pharmacist passwords in
+  HQ, learner and POSM flows before consuming recovery proofs. Preserve exact
+  password bytes and canonicalize IIN lookup and quota keys consistently.
+- Replace scheduled Standard-N directory snapshots in one PostgreSQL transaction
+  after reading Firebird, preserving the old snapshot on an insert failure.
+- Explain pending or mismatched pharmacy assignments after a correct password
+  without granting access or activating employees; preserve the first logout time.
+- Prepare signed POSM 1.0.84 as a separate immutable client release. Client
+  publication remains gated on exact-main Windows acceptance and artifact checks.
+
 ## [0.2.14] - 2026-11-09
 
 ### Fixed

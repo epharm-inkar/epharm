@@ -68,9 +68,12 @@ internal static class Program
             try
             {
                 _screen = Screen.PrimaryScreen ?? throw new InvalidOperationException("No primary display.");
-                await Run("required-screen-and-safe-dismiss", RequiredBoundsAndDismiss);
+                await Run("fresh-login-never-displays-registration-or-sms-controls", FreshLoginPresentation);
+                await Run("known-source-window-preserves-cashier-focus-and-can-minimize-or-close", NonblockingBoundsAndDismiss);
+                await Run("known-source-errors-and-pending-requests-never-trap-cashier", NonblockingErrorsAndPendingRequests);
                 await Run("registration-local-and-api-errors-retain-passwords-until-success", RegistrationPasswordRetention);
                 await Run("initial-registration-never-offers-sms-for-any-capability", RegistrationNeverSms);
+                await Run("activation-is-distinct-from-sms-free-registration-in-ru-and-kk", ActivationRegistrationNavigation);
                 await Run("registration-grant-closes-after-parent-check", RegisterAndClose);
                 await Run("wrong-registration-context-does-not-authenticate", WrongContext);
                 await Run("service-error-bypasses-without-grant", proof => ServiceFailure(false, proof));
@@ -105,6 +108,10 @@ internal static class Program
                 await Run("server-retry-after-countdown-is-bilingual-and-never-replays", RetryAfterCountdown);
                 await Run("exhausted-otp-requires-new-code-without-invented-countdown-or-auto-send", ExhaustedOtp);
                 await Run("rapid-submit-is-single-request-and-parent-accepted-grant-clears-password", RapidSubmit);
+                await Run("awaited-parent-handoff-keeps-form-busy-and-rejects-dismissed-replies", AwaitedParentHandoff);
+                await Run("created-profile-with-rejected-parent-handoff-retries-login-not-registration", RegistrationHandoffRecovery);
+                await Run("assignment-denial-is-bilingual-actionable-and-never-registers-again", AssignmentDenial);
+                await Run("oversized-existing-password-guides-reset-without-truncation", OversizedExistingPassword);
                 await Run("registration-network-timeout-and-malformed-errors-retain-input", RegistrationTransportFailures);
                 await Run("registration-invalid-success-response-never-clears-form", InvalidRegistrationResponse);
                 await Run("both-login-routes-validate-success-status-without-changing-valid-flows", LoginSuccessStatuses);
@@ -125,7 +132,7 @@ internal static class Program
                 watchdog.Stop();
                 foreach (var window in Windows) if (window.IsVisible) window.Dismiss();
                 foreach (var window in RecommendationWindows) if (window.IsVisible) window.Close();
-                var success = Results.Count == 47 && Results.All(result => result.Passed);
+                var success = Results.Count == 54 && Results.All(result => result.Passed);
                 WriteProof(success, null);
                 application.Shutdown(success ? 0 : 1);
             }
@@ -233,23 +240,91 @@ internal static class Program
         using var file = File.Create(Path.Combine(Output, name + ".png")); encoder.Save(file);
     }
 
-    private static async Task RequiredBoundsAndDismiss(Dictionary<string, bool> proof)
+    private static async Task NonblockingBoundsAndDismiss(Dictionary<string, bool> proof)
     {
         using var handler = new FakeHandler(); using var client = new StaffAuthClient(Config(), handler);
-        var window = Window(client, Context(), true); await Idle();
-        var dpi = VisualTreeHelper.GetDpi(window);
-        Check(proof, "session-mode-explicit", _interactiveSession || _allowNoninteractive);
-        Check(proof, "covers-cashier-monitor", Math.Abs(window.Left - _screen.Bounds.Left / dpi.DpiScaleX) < 2 &&
-            Math.Abs(window.Top - _screen.Bounds.Top / dpi.DpiScaleY) < 2 &&
-            Math.Abs(window.ActualWidth - _screen.Bounds.Width / dpi.DpiScaleX) < 2 &&
-            Math.Abs(window.ActualHeight - _screen.Bounds.Height / dpi.DpiScaleY) < 2);
-        Check(proof, "topmost-borderless", window.Topmost && window.WindowStyle == WindowStyle.None && window.ResizeMode == ResizeMode.NoResize);
-        SaveOwnWindow(window, "01-required-login");
-        window.Close(); await Idle(); Check(proof, "ordinary-close-is-cancelled", window.IsVisible);
-        window.WindowState = WindowState.Minimized; await Idle();
-        Check(proof, "ordinary-minimize-is-reversed", window.WindowState == WindowState.Normal && window.IsVisible);
-        window.Dismiss(); await Idle(); Check(proof, "parent-dismiss-closes", !window.IsVisible);
-        Check(proof, "no-http-requests", handler.TotalCalls == 0);
+        var cashierInput = new TextBox { Text = "DEV synthetic cashier input" };
+        var cashier = new System.Windows.Window { Title = "DEV isolated cashier focus fixture", Width = 320, Height = 160, Content = cashierInput };
+        try {
+            cashier.Show(); cashier.Activate(); cashierInput.Focus(); await Idle();
+            var focusBefore = System.Windows.Input.Keyboard.FocusedElement;
+            var activeBefore = cashier.IsActive;
+            Check(proof, "cashier-keyboard-focus-precondition", ReferenceEquals(focusBefore, cashierInput));
+            var window = Window(client, Context(), true); await Idle();
+            var dpi = VisualTreeHelper.GetDpi(window);
+            Check(proof, "session-mode-explicit", _interactiveSession || _allowNoninteractive);
+            Check(proof, "fits-working-area-with-taskbar-accessible", window.ActualWidth < _screen.WorkingArea.Width / dpi.DpiScaleX &&
+                window.ActualHeight < _screen.WorkingArea.Height / dpi.DpiScaleY);
+            Check(proof, "known-source-never-requests-activation-or-topmost", !window.ShowActivated && !window.Topmost &&
+                window.WindowStyle == WindowStyle.SingleBorderWindow && window.ResizeMode == ResizeMode.CanResize);
+            Check(proof, "show-keeps-cashier-keyboard-focus", ReferenceEquals(focusBefore, System.Windows.Input.Keyboard.FocusedElement) && cashier.IsActive == activeBefore);
+            Check(proof, "continue-is-available-before-any-error", Field<Button>(window, "_continueWithoutSignIn").Visibility == Visibility.Visible && Field<Button>(window, "_continueWithoutSignIn").IsEnabled);
+            SaveOwnWindow(window, "01-nonblocking-login");
+            window.WindowState = WindowState.Minimized; await Idle();
+            Check(proof, "ordinary-minimize-stays-minimized", window.WindowState == WindowState.Minimized);
+            window.Close(); await Idle();
+            Check(proof, "ordinary-close-succeeds-and-cancels-requests", !window.IsVisible && window.ClosedToken.IsCancellationRequested);
+            Check(proof, "no-http-requests", handler.TotalCalls == 0);
+        }
+        finally { cashier.Close(); }
+    }
+
+    private static async Task NonblockingErrorsAndPendingRequests(Dictionary<string, bool> proof)
+    {
+        foreach (var serverError in new[] { false, true }) {
+            var state = KnownDeviceState();
+            using var handler = new FakeHandler { DeviceContext = state.Context, DirectFailureStatuses = serverError ? [HttpStatusCode.Conflict] : [] };
+            using var client = new StaffAuthClient(Config(), handler);
+            var window = DeviceWindow(client, state, registrationSmsRequired: false);
+            var accepted = false; window.Authenticated += _ => accepted = true;
+            window.BypassRequested += reason => state.Bypass(reason);
+            RegistrationFields(window);
+            if (!serverError) Field<TextBox>(window, "_name").Clear();
+            Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
+            var prefix = serverError ? "existing-profile" : "local-validation";
+            var message = Field<TextBlock>(window, "_status").Text;
+            Check(proof, prefix + "-has-actionable-error-and-retains-passwords", PasswordsRetained(window) &&
+                message.Contains(serverError ? "профиль уже существует" : "ФИО", StringComparison.Ordinal));
+            Check(proof, prefix + "-retains-identity-fields", Field<TextBox>(window, "_iin").Text == FixtureIin && Field<TextBox>(window, "_phone").Text == FixturePhone);
+            Check(proof, prefix + "-never-locks-cashier", !window.Topmost && !window.ShowActivated && window.WindowStyle == WindowStyle.SingleBorderWindow);
+            window.WindowState = WindowState.Minimized; await Idle();
+            Check(proof, prefix + "-minimize-is-respected", window.WindowState == WindowState.Minimized);
+            window.WindowState = WindowState.Normal;
+            Click(Field<Button>(window, "_continueWithoutSignIn")); await Idle();
+            Check(proof, prefix + "-continue-closes-without-authentication", !window.IsVisible && !accepted && state.Grant == null && !state.NeedsPrompt(DateTimeOffset.UtcNow));
+            Check(proof, prefix + "-does-not-submit-or-replay-on-dismiss", handler.TotalCalls == (serverError ? 1 : 0));
+        }
+        {
+            var state = KnownDeviceState();
+            using var handler = new FakeHandler { DeviceContext = state.Context, LoginFailure = HttpStatusCode.Unauthorized, LoginFailureCode = "INVALID_CREDENTIALS" };
+            using var client = new StaffAuthClient(Config(), handler);
+            var window = DeviceWindow(client, state);
+            window.Closed += (_, _) => state.Bypass(StaffPromptBypassReason.IdentityUnavailable);
+            FillLogin(window); Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
+            Check(proof, "wrong-password-keeps-input-and-specific-error", Field<PasswordBox>(window, "_password").Password == FixturePassword &&
+                Field<TextBlock>(window, "_status").Text.Contains("Проверьте ИИН и пароль", StringComparison.Ordinal));
+            Check(proof, "wrong-password-does-not-lock-cashier", !window.Topmost && !window.ShowActivated &&
+                Field<Button>(window, "_continueWithoutSignIn").Visibility == Visibility.Visible && Field<Button>(window, "_continueWithoutSignIn").IsEnabled);
+            window.Close(); await Idle();
+            Check(proof, "wrong-password-close-does-not-create-grant-or-repeat", !window.IsVisible && state.Grant == null && !state.NeedsPrompt(DateTimeOffset.UtcNow) && handler.DeviceLoginCalls == 1);
+        }
+        foreach (var continueWork in new[] { false, true }) {
+            var state = KnownDeviceState();
+            using var handler = new FakeHandler { DeviceContext = state.Context, DeviceDelayMilliseconds = 300 };
+            using var client = new StaffAuthClient(Config(), handler);
+            var window = DeviceWindow(client, state, registrationSmsRequired: false);
+            var authenticated = false; window.Authenticated += _ => authenticated = true;
+            window.BypassRequested += reason => state.Bypass(reason);
+            window.Closed += (_, _) => state.Bypass(StaffPromptBypassReason.IdentityUnavailable);
+            RegistrationFields(window); Click(Field<Button>(window, "_submit"));
+            await Until(() => handler.WithoutSmsCalls == 1);
+            var prefix = continueWork ? "pending-continue" : "pending-close";
+            Check(proof, prefix + "-request-is-pending-with-exit-enabled", Busy(window) && Field<Button>(window, "_continueWithoutSignIn").IsEnabled);
+            if (continueWork) Click(Field<Button>(window, "_continueWithoutSignIn")); else window.Close();
+            await Until(() => !Busy(window));
+            Check(proof, prefix + "-cancels-without-accepting-late-grant", !window.IsVisible && window.ClosedToken.IsCancellationRequested && !authenticated && state.Grant == null);
+            Check(proof, prefix + "-has-no-retry-or-auto-popup", handler.WithoutSmsCalls == 1 && handler.OtpCalls == 0 && !state.NeedsPrompt(DateTimeOffset.UtcNow));
+        }
     }
 
     private static async Task RegisterAndClose(Dictionary<string, bool> proof)
@@ -362,7 +437,7 @@ internal static class Program
         Check(proof, "no-source-iin-is-invented", context.StandardNIin == null);
         Check(proof, "actual-full-name-allows-presentation", policy.RequiresSignIn(state.Observation, state.Generation, false));
         var window = Window(client, context, true); await Idle();
-        Check(proof, "name-only-context-is-fullscreen", window.WindowStyle == WindowStyle.None && window.Topmost);
+        Check(proof, "name-only-context-never-locks-cashier", window.WindowStyle == WindowStyle.SingleBorderWindow && !window.Topmost && !window.ShowActivated);
         var accepted = false;
         window.Authenticated += response => {
             accepted = policy.AcceptAuthentication(state, state.Generation, state.Observation.Session!.Key, context, response, DateTimeOffset.UtcNow);
@@ -537,7 +612,7 @@ internal static class Program
         using var handler = new FakeHandler { DeviceContext = context, PendingDeviceLogin = true };
         using var client = new StaffAuthClient(Config(), handler); var window = DeviceWindow(client, state);
         var authenticated = false; window.Authenticated += _ => authenticated = true;
-        Check(proof, "known-source-initially-uses-required-presentation", window.WindowStyle == WindowStyle.None);
+        Check(proof, "known-source-is-nonblocking-from-start", window.WindowStyle == WindowStyle.SingleBorderWindow && !window.Topmost);
         FillLogin(window); Click(Field<Button>(window, "_submit")); await Until(() => handler.DeviceLoginCalls == 1 && !Busy(window));
         Check(proof, "pending-profile-does-not-emit-authentication-or-grant", !authenticated && state.Grant == null && !state.IsAuthenticated(DateTimeOffset.UtcNow));
         Check(proof, "pending-keeps-the-form-open-and-releases-work", window.IsVisible && window.WindowStyle != WindowStyle.None &&
@@ -546,6 +621,37 @@ internal static class Program
         window.Closed += (_, _) => state.Bypass(StaffPromptBypassReason.IdentityUnavailable);
         window.Close(); await Idle();
         Check(proof, "pending-profile-can-close-without-forging-login", !window.IsVisible && !state.IsAuthenticated(DateTimeOffset.UtcNow) && !state.NeedsPrompt(DateTimeOffset.UtcNow));
+    }
+
+    private static async Task FreshLoginPresentation(Dictionary<string, bool> proof)
+    {
+        foreach (var device in new[] { false, true })
+        foreach (var kazakh in new[] { false, true })
+        {
+            var state = DeviceState();
+            using var handler = new FakeHandler { DeviceContext = device ? state.Context : null };
+            using var client = new StaffAuthClient(Config(), handler);
+            var window = new StaffAuthWindow(client, device ? null : Context(), _screen,
+                deviceContext: device ? state.Context : null, registrationSmsRequired: false, kazakh: kazakh);
+            Windows.Add(window);
+            var prefix = $"device-{device}-kk-{kazakh}-";
+            Check(proof, prefix + "constructor-selects-login-without-navigation", Field<ComboBox>(window, "_mode").SelectedIndex == 0 &&
+                Field<TextBlock>(window, "_heading").Text == (kazakh ? "Фармацевттің кіруі" : "Вход для фармацевта"));
+            Check(proof, prefix + "constructor-hides-sms-and-registration-only-fields",
+                Field<Button>(window, "_request").Visibility == Visibility.Collapsed &&
+                Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Collapsed &&
+                Field<StackPanel>(window, "_phoneRow").Visibility == Visibility.Collapsed &&
+                Field<StackPanel>(window, "_nameRow").Visibility == Visibility.Collapsed &&
+                Field<StackPanel>(window, "_passwordConfirmationRow").Visibility == Visibility.Collapsed);
+            window.Show(); await Idle();
+            Check(proof, prefix + "first-render-hides-sms-and-preserves-login", Field<Button>(window, "_request").Visibility == Visibility.Collapsed &&
+                Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Collapsed && Field<Button>(window, "_submit").IsEnabled);
+            Click(Field<Button>(window, kazakh ? "_languageRu" : "_languageKk")); await Idle();
+            Check(proof, prefix + "language-change-does-not-show-sms-or-send-request", Field<ComboBox>(window, "_mode").SelectedIndex == 0 &&
+                Field<Button>(window, "_request").Visibility == Visibility.Collapsed && Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Collapsed &&
+                handler.TotalCalls == 0);
+            window.Close(); await Idle();
+        }
     }
 
     private static async Task RegistrationNeverSms(Dictionary<string, bool> proof)
@@ -578,6 +684,40 @@ internal static class Program
                 Check(proof, prefix + "intentional-navigation-clears-password", Field<PasswordBox>(window, "_password").Password.Length == 0 && Field<PasswordBox>(window, "_passwordConfirmation").Password.Length == 0);
                 window.Close(); await Idle();
             }
+    }
+
+    private static async Task ActivationRegistrationNavigation(Dictionary<string, bool> proof)
+    {
+        var state = DeviceState();
+        using var handler = new FakeHandler { DeviceContext = state.Context };
+        using var client = new StaffAuthClient(Config(), handler);
+        var window = DeviceWindow(client, state, registrationSmsRequired: false);
+        foreach (var kazakh in new[] { false, true })
+        {
+            Click(Field<Button>(window, kazakh ? "_languageKk" : "_languageRu"));
+            Click(Field<Button>(window, "_activate")); await Idle();
+            var prefix = kazakh ? "kk-" : "ru-";
+            Check(proof, prefix + "activation-heading-is-explicit", Field<ComboBox>(window, "_mode").SelectedIndex == 3 &&
+                Field<TextBlock>(window, "_heading").Text == (kazakh ? "Профильді белсендіру" : "Активация профиля"));
+            var intro = Field<TextBlock>(window, "_intro").Text;
+            Check(proof, prefix + "activation-explains-existing-phone-proof-and-registration-route",
+                intro.Contains(kazakh ? "Бұл жаңа қызметкерді тіркеу емес" : "Это не регистрация нового сотрудника", StringComparison.Ordinal) &&
+                intro.Contains(kazakh ? "бұрын тіркелген телефон" : "ранее привязанному телефону", StringComparison.Ordinal) &&
+                intro.Contains(kazakh ? "Кіруге оралу" : "К входу", StringComparison.Ordinal) &&
+                intro.Contains(kazakh ? "SMS-сіз" : "без SMS", StringComparison.Ordinal));
+            Check(proof, prefix + "activation-retains-otp-controls", Field<Button>(window, "_request").Visibility == Visibility.Visible &&
+                Field<Button>(window, "_request").IsEnabled && Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Visible);
+            Click(Field<Button>(window, "_back"));
+            Click(Field<Button>(window, "_newStaff")); await Idle();
+            Check(proof, prefix + "new-staff-route-is-labelled-registration", Field<ComboBox>(window, "_mode").SelectedIndex == 1 &&
+                Field<TextBlock>(window, "_heading").Text == (kazakh ? "Жаңа қызметкер" : "Новый сотрудник") &&
+                Field<TextBlock>(window, "_intro").Text.Contains(kazakh ? "SMS қажет емес" : "SMS не требуется", StringComparison.Ordinal));
+            Check(proof, prefix + "registration-never-inherits-activation-sms", Field<Button>(window, "_request").Visibility == Visibility.Collapsed &&
+                !Field<Button>(window, "_request").IsEnabled && Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Collapsed);
+            Click(Field<Button>(window, "_back")); await Idle();
+            Check(proof, prefix + "navigation-does-not-send-sms-or-authenticate", handler.TotalCalls == 0 && state.Grant == null);
+        }
+        window.Close(); await Idle();
     }
 
     private static async Task RegistrationPasswordRetention(Dictionary<string, bool> proof)
@@ -670,7 +810,7 @@ internal static class Program
         using var client = new StaffAuthClient(Config(), handler);
         var window = DeviceWindow(client, state, registrationSmsRequired: false);
         if (login) FillLogin(window); else RegistrationFields(window);
-        Check(proof, "known-source-starts-required-presentation", window.WindowStyle == WindowStyle.None);
+        Check(proof, "known-source-starts-nonblocking", window.WindowStyle == WindowStyle.SingleBorderWindow && !window.Topmost);
         var bypassed = false; var authenticated = false;
         window.BypassRequested += _ => bypassed = true; window.Authenticated += _ => authenticated = true;
         Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
@@ -695,6 +835,9 @@ internal static class Program
             Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Collapsed && handler.OtpCalls == 0 && handler.WithoutSmsCalls == 1 && handler.DeviceRegisterCalls == 0);
         Check(proof, "rollback-keeps-identity-and-explains-no-duplicate-registration", Field<TextBox>(window, "_iin").Text == FixtureIin &&
             Field<TextBox>(window, "_phone").Text == FixturePhone && Field<TextBlock>(window, "_status").Text.Contains("не регистрируйтесь повторно", StringComparison.Ordinal));
+        Check(proof, "rollback-of-created-account-offers-login-with-preserved-password", Field<ComboBox>(window, "_mode").SelectedIndex == 0 &&
+            Field<PasswordBox>(window, "_password").Password == FixturePassword && Field<PasswordBox>(window, "_passwordConfirmation").Password.Length == 0 &&
+            handler.DeviceLoginCalls == 0);
     }
     private static async Task DirectRegistrationRecovery(Dictionary<string, bool> proof)
     {
@@ -726,7 +869,7 @@ internal static class Program
         using var handler = new FakeHandler { DeviceContext = context }; using var client = new StaffAuthClient(Config(), handler);
         var window = DeviceWindow(client, state); RecoveryFields(window); Field<TextBox>(window, "_name").Text = "DEV synthetic employee"; await RequestOtp(window, handler);
         Field<TextBox>(window, "_code").Text = "5445";
-        Check(proof, "same-existing-window-starts-required", window.IsVisible && window.WindowStyle == WindowStyle.None);
+        Check(proof, "same-existing-window-starts-nonblocking", window.IsVisible && window.WindowStyle == WindowStyle.SingleBorderWindow && !window.Topmost);
         var challenge = Field<string>(window, "_challenge");
         state.Observe(new("resolved", context.ProcessInstanceId), new("database_unavailable"));
         // Exercise the real public presentation hook used by MainWindow.ApplyStaffObservation;
@@ -873,6 +1016,129 @@ internal static class Program
         Check(proof, "new-code-guidance-retranslates-current-state", Field<TextBlock>(window, "_status").Text.Contains("Жаңа SMS кодын сұраңыз", StringComparison.Ordinal));
     }
 
+    private static async Task AwaitedParentHandoff(Dictionary<string, bool> proof)
+    {
+        foreach (var registering in new[] { false, true })
+        foreach (var dismiss in new[] { false, true })
+        {
+            var state = KnownDeviceState();
+            using var handler = new FakeHandler { DeviceContext = state.Context };
+            using var client = new StaffAuthClient(Config(), handler);
+            var window = DeviceWindow(client, state, registrationSmsRequired: false);
+            if (registering) RegistrationFields(window); else FillLogin(window);
+            var started = false; var accepted = false;
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            window.AuthenticationCompletion = async response => {
+                started = true;
+                await release.Task.WaitAsync(window.ClosedToken);
+                accepted = state.Accept(state.Generation, state.Context!, response, DateTimeOffset.UtcNow);
+                if (accepted) window.Dismiss();
+            };
+            var prefix = $"{(registering ? "registration" : "login")}-{(dismiss ? "dismissed" : "accepted")}";
+            Click(Field<Button>(window, "_submit")); await Until(() => started);
+            Check(proof, prefix + "-pending-parent-keeps-form-and-password-busy", Busy(window) &&
+                !Field<Button>(window, "_submit").IsEnabled && Field<PasswordBox>(window, "_password").Password == FixturePassword && state.Grant == null);
+            for (var n = 0; n < 5; n++) Field<Button>(window, "_submit").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(proof, prefix + "-no-auth-mutation-replay", handler.TotalCalls == 1);
+            if (dismiss) window.Dismiss();
+            release.TrySetResult(); await Until(() => !Busy(window));
+            Check(proof, prefix + "-only-live-completion-authenticates", accepted == !dismiss && !window.IsVisible &&
+                (state.Grant != null) == !dismiss && Field<PasswordBox>(window, "_password").Password.Length == 0);
+        }
+    }
+
+    private static async Task RegistrationHandoffRecovery(Dictionary<string, bool> proof)
+    {
+        foreach (var retry in new[] { false, true })
+        {
+            var state = KnownDeviceState();
+            using var handler = new FakeHandler { DeviceContext = state.Context };
+            using var client = new StaffAuthClient(Config(), handler);
+            var window = DeviceWindow(client, state, registrationSmsRequired: false);
+            RegistrationFields(window);
+            var started = false;
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            window.AuthenticationCompletion = async response => {
+                if (handler.DeviceLoginCalls == 0)
+                {
+                    started = true;
+                    await release.Task.WaitAsync(window.ClosedToken);
+                    await client.DeviceLogoutAsync(response.SessionToken!, window.ClosedToken);
+                    window.ReleaseWork("Windows не подтвердила кассовый процесс. Проверьте доступ к Standard-N.",
+                        "Windows касса процесін растамады. Standard-N қолжетімділігін тексеріңіз.");
+                }
+                else if (state.Accept(state.Generation, state.Context!, response, DateTimeOffset.UtcNow)) window.Dismiss();
+            };
+            var prefix = retry ? "manual-retry-" : "close-";
+            Click(Field<Button>(window, "_submit")); await Until(() => started);
+            Check(proof, prefix + "waits-for-parent-without-replaying-registration", Busy(window) &&
+                handler.WithoutSmsCalls == 1 && handler.TotalCalls == 1 && state.Grant == null);
+            release.TrySetResult(); await Until(() => !Busy(window));
+            Check(proof, prefix + "created-account-is-offered-login-not-another-registration", window.IsVisible &&
+                Field<ComboBox>(window, "_mode").SelectedIndex == 0 && (string)Field<Button>(window, "_submit").Content == "Войти");
+            Check(proof, prefix + "retains-login-credentials-only-in-open-form", Field<TextBox>(window, "_iin").Text == FixtureIin &&
+                Field<PasswordBox>(window, "_password").Password == FixturePassword && Field<PasswordBox>(window, "_passwordConfirmation").Password.Length == 0);
+            Check(proof, prefix + "rejected-grant-revoked-without-auto-login-or-sms", state.Grant == null &&
+                handler.DeviceLogoutCalls == 1 && handler.TotalCalls == 2 && handler.DeviceLoginCalls == 0 && handler.OtpCalls == 0 &&
+                Field<Button>(window, "_request").Visibility == Visibility.Collapsed);
+            Check(proof, prefix + "ru-confirms-created-account-and-preserves-parent-diagnostic",
+                Field<TextBlock>(window, "_status").Text.Contains("Профиль создан", StringComparison.Ordinal) &&
+                Field<TextBlock>(window, "_status").Text.Contains("Windows не подтвердила кассовый процесс", StringComparison.Ordinal));
+            Click(Field<Button>(window, "_languageKk"));
+            Check(proof, prefix + "kk-retranslates-created-account-and-parent-diagnostic",
+                Field<TextBlock>(window, "_status").Text.Contains("Профиль жасалды", StringComparison.Ordinal) &&
+                Field<TextBlock>(window, "_status").Text.Contains("Windows касса процесін растамады", StringComparison.Ordinal) &&
+                Field<PasswordBox>(window, "_password").Password == FixturePassword);
+            if (retry)
+            {
+                Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
+                Check(proof, prefix + "explicit-retry-only-logs-in-existing-profile", state.IsAuthenticated(DateTimeOffset.UtcNow) &&
+                    !window.IsVisible && handler.DeviceLoginCalls == 1 && handler.WithoutSmsCalls == 1 && handler.TotalCalls == 3 && handler.OtpCalls == 0);
+            }
+            else window.Close();
+            await Idle();
+            Check(proof, prefix + "close-clears-recovered-login-secrets", !window.IsVisible &&
+                Field<TextBox>(window, "_iin").Text.Length == 0 && Field<PasswordBox>(window, "_password").Password.Length == 0 &&
+                Field<PasswordBox>(window, "_passwordConfirmation").Password.Length == 0);
+        }
+    }
+
+    private static async Task AssignmentDenial(Dictionary<string, bool> proof)
+    {
+        foreach (var code in new[] { "STAFF_PHARMACY_ASSIGNMENT_REQUIRED", "STAFF_PHARMACY_MISMATCH" })
+        {
+            var state = KnownDeviceState();
+            using var handler = new FakeHandler { DeviceContext = state.Context, LoginFailure = HttpStatusCode.Forbidden, LoginFailureCode = code };
+            using var client = new StaffAuthClient(Config(), handler); var window = DeviceWindow(client, state);
+            window.AssignmentPending += state.AwaitAssignment;
+            FillLogin(window); Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
+            var ru = Field<TextBlock>(window, "_status").Text;
+            Check(proof, code + "-ru-guides-hq-without-new-registration", ru.Contains("HQ", StringComparison.Ordinal) &&
+                ru.Contains("Повторная регистрация не нужна", StringComparison.Ordinal) && window.WindowStyle != WindowStyle.None);
+            Click(Field<Button>(window, "_languageKk")); var kk = Field<TextBlock>(window, "_status").Text;
+            Check(proof, code + "-kk-retains-fields-and-pending-state", kk != ru && kk.Contains("Қайта тіркелудің қажеті жоқ", StringComparison.Ordinal) &&
+                state.BypassStatus == "pending_approval" && state.Grant == null && Field<PasswordBox>(window, "_password").Password == FixturePassword);
+            Check(proof, code + "-no-register-reset-or-raw-server-text", handler.TotalCalls == 1 && handler.DeviceLoginCalls == 1 &&
+                !ru.Contains("PRIVATE-RAW", StringComparison.Ordinal) && !kk.Contains("PRIVATE-RAW", StringComparison.Ordinal));
+            window.Dismiss();
+        }
+    }
+
+    private static async Task OversizedExistingPassword(Dictionary<string, bool> proof)
+    {
+        var state = DeviceState(); using var handler = new FakeHandler { DeviceContext = state.Context };
+        using var client = new StaffAuthClient(Config(), handler); var window = DeviceWindow(client, state);
+        FillLogin(window); var password = new string('я', 37); Field<PasswordBox>(window, "_password").Password = password;
+        Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
+        Check(proof, "ru-explains-reset-not-truncating-existing-password", Field<TextBlock>(window, "_status").Text.Contains("Не сокращайте существующий пароль", StringComparison.Ordinal) &&
+            Field<PasswordBox>(window, "_password").Password == password && handler.TotalCalls == 0);
+        Click(Field<Button>(window, "_languageKk"));
+        Check(proof, "kk-explains-safe-reset", Field<TextBlock>(window, "_status").Text.Contains("Бар құпиясөзді қысқартпаңыз", StringComparison.Ordinal));
+        Click(Field<Button>(window, "_forgot"));
+        Check(proof, "explicit-reset-route-keeps-iin-without-auto-sms", Field<ComboBox>(window, "_mode").SelectedIndex == 2 &&
+            Field<TextBox>(window, "_iin").Text == FixtureIin && Field<PasswordBox>(window, "_password").Password.Length == 0 && handler.TotalCalls == 0);
+    }
+
     private static async Task RegistrationTransportFailures(Dictionary<string, bool> proof)
     {
         foreach (var failure in new[] { "network", "timeout", "malformed-json" })
@@ -913,7 +1179,7 @@ internal static class Program
     }
     private static async Task InvalidRegistrationResponse(Dictionary<string, bool> proof)
     {
-        foreach (var fault in new[] { "unknown-status", "missing-status", "missing-grant" })
+        foreach (var fault in new[] { "unknown-status", "missing-status", "missing-grant", "missing-identity" })
         {
             var state = DeviceState();
             using var handler = new FakeHandler { DeviceContext = state.Context, DirectResponseFault = fault };
@@ -942,7 +1208,7 @@ internal static class Program
             using var client = new StaffAuthClient(Config(), handler);
             var window = deviceRoute ? DeviceWindow(client, deviceState) : Window(client, context, true);
             var prefix = (deviceRoute ? "device-" : "legacy-") + (responseStatus == null ? "null" : responseStatus.Length == 0 ? "empty" : responseStatus);
-            Check(proof, prefix + "-starts-with-required-presentation", window.WindowStyle == WindowStyle.None);
+            Check(proof, prefix + "-starts-with-nonblocking-presentation", window.WindowStyle == WindowStyle.SingleBorderWindow && !window.Topmost);
             var authenticatedEvent = false; var accepted = false; StaffPromptBypassReason? bypass = null;
             window.BypassRequested += reason => bypass = reason;
             window.Authenticated += response => {
@@ -969,7 +1235,7 @@ internal static class Program
             {
                 Check(proof, prefix + "-known-pending-flow-is-unchanged", bypass == null &&
                     message.Contains(deviceRoute ? "Назначение аптеки" : "Профиль ожидает", StringComparison.Ordinal) &&
-                    (deviceRoute ? window.WindowStyle != WindowStyle.None : window.WindowStyle == WindowStyle.None));
+                    window.WindowStyle == WindowStyle.SingleBorderWindow && !window.Topmost);
                 window.Dismiss();
             }
             else
@@ -1165,6 +1431,7 @@ internal static class Program
         public int? RetryAfterSeconds { get; init; }
         public string? RetryAction { get; init; }
         public HttpStatusCode? LoginFailure { get; init; }
+        public string LoginFailureCode { get; init; } = "SYNTHETIC_FAILURE";
         public bool OverrideLoginResponse { get; init; }
         public string? LoginResponseStatus { get; init; }
         public int DeviceDelayMilliseconds { get; init; }
@@ -1205,7 +1472,7 @@ internal static class Program
                     if (direct) DirectBodyMatched = DeviceBodyMatched && body.RootElement.EnumerateObject().Select(x => x.Name).Order().SequenceEqual(
                         new[] { "deviceContext", "iin", "name", "password", "phone" });
                     if (RateLimitedRequests) return LimitedReply();
-                    if (!registering && LoginFailure is { } failure) return Reply(new { code = "SYNTHETIC_FAILURE" }, failure);
+                    if (!registering && LoginFailure is { } failure) return Reply(new { code = LoginFailureCode, message = "PRIVATE-RAW-SYNTHETIC-TEXT" }, failure);
                     if (!registering && OverrideLoginResponse) return Reply(new StaffAuthResponse(LoginResponseStatus!, null, null,
                         new StaffIdentity("DEV-PERSON", "DEV synthetic employee"), DeviceContext: device));
                     if (direct && DirectTransportFailure == "network") throw new HttpRequestException("Synthetic offline transport.");
@@ -1214,6 +1481,8 @@ internal static class Program
                     if (direct && DirectResponseFault != null) return Reply(DirectResponseFault switch {
                         "missing-status" => new { status = (string?)null },
                         "missing-grant" => new { status = (string?)"authenticated" },
+                        "missing-identity" => (object)new StaffRegistrationResponse("authenticated", "DEV-SYNTHETIC-PROCESS-GRANT",
+                            DateTimeOffset.UtcNow.AddHours(1), new StaffIdentity("", "DEV synthetic employee"), DeviceContext: device),
                         _ => new { status = (string?)"unexpected" },
                     });
                     if (direct && WithoutSmsCalls <= DirectFailureStatuses.Length) return Reply(new { code = "SYNTHETIC_ERROR" }, DirectFailureStatuses[WithoutSmsCalls - 1]);
