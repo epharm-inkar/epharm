@@ -153,6 +153,21 @@ function renderPage() {
 }
 
 describe('DashboardPage — рендер', () => {
+  it('показывает автоматическое сопоставление через вход ePharm отдельно от правила HQ', () => {
+    const analytics = mkAnalytics()
+    analytics.log[1].pharmacistSource = 'standardn_rps_binding'
+    setAnalytics(analytics)
+    renderPage()
+    const badge = screen.getByText('Сопоставлен через ePharm')
+    expect(badge).toHaveAttribute(
+      'title',
+      'ИИН или полное имя совпали с пользователем Стандарт-Н на этой кассе',
+    )
+    const row = badge.closest('tr')!
+    expect(within(row).getByText('Иван')).toBeInTheDocument()
+    expect(within(row).queryByText('Standard-N: правило')).not.toBeInTheDocument()
+  })
+
   it('H1 + 4 KPI из API', () => {
     renderPage()
     expect(
@@ -233,7 +248,9 @@ describe('DashboardPage — Журнал показов и продаж (V032)',
     setAnalytics(undefined, { isError: true, isFetching: true, error: new Error('retrying') })
     renderPage()
 
-    expect(within(screen.getByRole('alert')).getByRole('button', { name: 'Повторить' })).toBeDisabled()
+    expect(
+      within(screen.getByRole('alert')).getByRole('button', { name: 'Повторить' }),
+    ).toBeDisabled()
   })
 
   it('KPI + единый лог: строка показа и строка продажи', () => {

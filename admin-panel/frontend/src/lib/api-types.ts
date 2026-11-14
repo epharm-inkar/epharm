@@ -683,6 +683,7 @@ export interface LogEntryDto {
     | 'legacy'
     | 'posm_internal'
     | 'standardn_explicit_mapping'
+    | 'standardn_rps_binding'
     | 'standardn_name_match'
     | 'standardn_unmapped'
     | 'unresolved'
