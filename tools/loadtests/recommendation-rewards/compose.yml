@@ -40,7 +40,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Generated local-only signing key required}
       OTP_DEV_MODE: 'true'
       POSM_LEGACY_DEVICE_KEY_ENABLED: 'false'
-      POSM_STAFF_AUTH_ENABLED: 'false'
+      POSM_STAFF_AUTH_ENABLED: ${STAFF_AUTH_ENABLED:-false}
       POSM_SALE_BONUS_ENABLED: 'true'
       POSM_SALE_BONUS_AUTO_CREDIT_ENABLED: 'true'
       POSM_SALE_BONUS_DEVICE_ALLOWLIST: '*'

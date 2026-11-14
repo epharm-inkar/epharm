@@ -15,6 +15,31 @@ No production origin, remote address, redirects, public catalog, SMS, mobile/Flu
 - At 1500 actors, **1440 expected credits × 200 KZT × 2 full packages = 576,000 KZT**, zero for 60 negative controls. The shared real promo has sufficient finite budget. Its atomic `spent` must equal the wallet total.
 - Heartbeat and nonempty exact playlist/slide polling continue every 60 seconds while each actor is active. Playlist media is a synthetic URL; this does **not** test video playback or uploads. This load does not validate the Windows desktop/UI, real scanner or real pharmacist identity.
 
+### Source-bound recipient mode without HQ mappings
+
+The default `--identity-mode hq` retains the original workload. For the new IIN/FIO financial
+identity path, generate a separate private fixture and a fresh isolated database:
+
+```sh
+python3 tools/loadtests/recommendation-rewards/build-fixture.py --run-id source01 --actors 8 --identity-mode source-bound --output-dir /ABS/PRIVATE/reward-source01
+```
+
+This mode seeds **zero HQ cashier mappings**. It seeds only synthetic active employee profiles,
+individual device credentials and previously admitted source-scoped bindings/live password grants;
+half use IIN proof and half full-name proof. These stand for the trusted identity inputs already
+covered by the real registration/login integration tests. This capacity test does not repeat
+password login or claim to prove physical identity. It never seeds money, recommendation events,
+sales, reward cases, receipts or wallet entries. The HTTP runner sends each exact namespace in
+`/recommend`, then exercises the same genuine shown/add/paid/replay operations and strict thresholds.
+The final SQL oracle additionally requires source-bound sale recipients, exact proof scope and
+zero HQ mappings. HTTP success alone cannot establish these conditions.
+
+Start with eight actors, then generate another run ID/database with `--actors 1500` after the
+small run passes. The candidate must include V102. `summary.json` records `identityMode` and offered
+IIN/NAME proof counts; these fixture counts become acceptance evidence only after the database
+oracle passes. The original HQ mode, 125-second real payment delay, negative controls, resource
+limits and no-production/no-proxy rules remain unchanged.
+
 ## Cheap self-checks (no Docker/server)
 
 From the repository root:

@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expectedCredit, isolatedOrigin, lineChange, offerValid, percentile, runConfig, salePayload,
+import { expectedCredit, isolatedOrigin, lineChange, offerValid, percentile, recommendPayload, runConfig, salePayload,
   scenario, shownPayload, validateFixture } from './contract.mjs'
 import { Gate, run } from './run.mjs'
 
@@ -16,6 +16,52 @@ const fixture = () => ({ kind: 'epharm-isolated-reward-load-v1', runId: 'unit', 
     rawUserId: `STD-USER-${i}`, nativeSessionId: 100 + i, sourceDocumentId: 1000 + i,
     sessionId: `session-${i}`, saleId: `sale-${i}`, scenario: scenario(i), expectedBonus: expectedCredit(scenario(i)),
     fiscalShift: 99, fiscalNumber: 100 + i, name: `Synthetic ${i}` })) })
+const sourceFixture = () => {
+  const f = fixture(); f.identityMode = 'source-bound'
+  f.actors.forEach((a, i) => Object.assign(a, { iin: String(900000000000 + i),
+    name: ['Тестов Алексей', 'Тестова Анна', 'Тестов Марк'][i % 3], proofMethod: i % 2 === 0 ? 'IIN' : 'NAME' }))
+  return f
+}
+
+test('default HQ mode keeps its existing payload and unknown identity modes are refused', () => {
+  const f = fixture(), a = f.actors[0]
+  assert.equal(validateFixture(f), f)
+  const expected = { pharmacistId: a.rawUserId, pharmacistName: a.name, pharmacyId: a.pharmacyId,
+    sessionId: a.sessionId, scannedBarcode: f.triggerBarcode,
+    cart: [{ sku: f.triggerSku, barcode: f.triggerBarcode, name: 'Synthetic trigger', qty: 1 }] }
+  assert.deepEqual(recommendPayload(f, a), expected)
+  assert.deepEqual(recommendPayload({ ...f, identityMode: 'hq' }, a), expected)
+  for (const identityMode of ['unknown', 'source', null, true, {}])
+    assert.throws(() => validateFixture({ ...f, identityMode }), /identity mode/)
+})
+
+test('source-bound mode alternates IIN and full-name proof and sends the exact database namespace', () => {
+  const f = sourceFixture()
+  assert.equal(validateFixture(f), f)
+  assert.equal(f.actors.filter(a => a.proofMethod === 'IIN').length, 4)
+  assert.equal(f.actors.filter(a => a.proofMethod === 'NAME').length, 4)
+  for (const a of f.actors) {
+    const payload = recommendPayload(f, a)
+    assert.equal(payload.sourceNamespace, a.sourceNamespace)
+    assert.equal(payload.pharmacistId, a.rawUserId)
+    assert.equal('iin' in payload, false)
+    assert.equal('password' in payload, false)
+  }
+})
+
+test('source-bound fixtures refuse partial names, ambiguous colleagues, invalid source sessions and proof coverage', () => {
+  for (const mutation of [
+    f => { f.actors[1].name = 'Кассир' },
+    f => { f.actors[1].name = 'Тестов А' },
+    f => { f.actors[1].name = f.actors[0].name },
+    f => { f.actors[1].proofMethod = 'IIN' },
+    f => { f.actors[1].nativeSessionId = '101' },
+    f => { f.actors[1].iin = '123' },
+  ]) {
+    const f = sourceFixture(); mutation(f)
+    assert.throws(() => validateFixture(f), /source-bound identity/)
+  }
+})
 
 test('only explicit loopback IPs can receive load; no production escape or redirect origin', () => {
   for (const raw of ['http://127.0.0.1:19081', 'http://[::1]:8080']) assert.equal(isolatedOrigin(raw), raw)

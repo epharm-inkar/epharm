@@ -22,9 +22,11 @@ def scenario(index):
     return cases[index % 100] if index % 100 < len(cases) else "positive"
 
 
-def generate(run_id, count=1500):
+def generate(run_id, count=1500, identity_mode="hq"):
     if not re.fullmatch(r"[a-z0-9_]{1,16}", run_id) or not 8 <= count <= 1500:
         raise ValueError("run-id: 1..16 lowercase letters/digits/underscores; actors: 8..1500")
+    if identity_mode not in ("hq", "source-bound"):
+        raise ValueError("identity-mode: hq or source-bound")
     prefix = "reward-" + run_id
     actors = []
     for i, iin in enumerate(helpers.synthetic_iins(count)):
@@ -32,14 +34,15 @@ def generate(run_id, count=1500):
         kind = scenario(i)
         actors.append({"pharmacyId": pharmacy, "deviceId": f"REWARD-{i:04d}", "deviceKey": secrets.token_urlsafe(32),
                        "pharmacistId": f"{prefix}-person-{i:04d}", "iin": iin, "phone": f"+7700{i:07d}",
-                       "name": f"Reward Synthetic {i:04d}", "rawUserId": f"STD-USER-{i % 3 + 1}",
+                       "name": (["Сабиров Амир", "Иванова Анна", "Петрова Мария"][i % 3] if identity_mode == "source-bound" else f"Reward Synthetic {i:04d}"),
+                       "proofMethod": "IIN" if i % 2 == 0 else "NAME", "rawUserId": f"STD-USER-{i % 3 + 1}",
                        "sourceNamespace": hashlib.sha256((pharmacy + ":synthetic-full-package-adapter").encode()).hexdigest(),
                        "nativeSessionId": 10000 + i, "sourceDocumentId": 1000000 + i,
                        "fiscalNumber": 100000 + i, "fiscalShift": 99,
                        "sessionId": f"{prefix}-checkout-{i:04d}", "saleId": f"{prefix}-sale-{i:04d}",
                        "scenario": kind, "expectedBonus": 400 if kind in ("positive", "duplicate_race", "offline_reorder") else 0})
     # Synthetic product IDs are intentionally local, with no storefront/Medusa links.
-    return {"kind": "epharm-isolated-reward-load-v1", "runId": run_id, "expectedDatabase": f"epharm_reward_load_{run_id}",
+    return {"kind": "epharm-isolated-reward-load-v1", "identityMode": identity_mode, "runId": run_id, "expectedDatabase": f"epharm_reward_load_{run_id}",
             "triggerSku": prefix + "-trigger", "triggerBarcode": "4870000000012", "recommendSku": prefix + "-offer",
             "recommendBarcode": "4870000000029", "promoId": prefix + "-promo", "ruleId": prefix + "-rule",
             "playlistId": prefix + "-playlist", "slideId": prefix + "-slide", "bonus": 200, "packages": 2,
@@ -47,6 +50,9 @@ def generate(run_id, count=1500):
 
 
 def seed_sql(f):
+    source_bound = f.get("identityMode", "hq") == "source-bound"
+    # Public synthetic BCrypt fixture only; no real employee password/credential is reused.
+    password_hash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
     lines = ["\\set ON_ERROR_STOP on", "BEGIN;", guard(f["expectedDatabase"]), """
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pharmacists) OR EXISTS (SELECT 1 FROM pharmacist_wallet_entries)
@@ -61,6 +67,8 @@ CREATE TABLE reward_load_expected (
 );
 """
     ]
+    if source_bound:
+        lines.append("CREATE TABLE reward_load_source_expected (pharmacist_id text PRIMARY KEY, device_id text, source_namespace text, native_user_id text, native_session_id text, proof_method text, proof_hash text);")
     chain = "reward-" + f["runId"]
     lines.append(f"INSERT INTO chains(id,name,\"group\") VALUES ({quote(chain)},'Isolated reward load','pilot');")
     for sku, barcode, name, price in [(f["triggerSku"], f["triggerBarcode"], "Synthetic trigger", 1500),
@@ -82,14 +90,29 @@ CREATE TABLE reward_load_expected (
                      ",".join(map(quote, [pharmacy, pharmacy, chain, "Isolated reward load", "Synthetic", "Synthetic", "pilot"])) + ");")
         lines.append(f"INSERT INTO playlist_pharmacy_assignments(pharmacy_id,playlist_id) VALUES ({quote(pharmacy)},{quote(f['playlistId'])});")
     for a in f["actors"]:
-        lines.append("INSERT INTO pharmacists(id,name,iin,phone,pharmacy_id,pharmacy_name,tier,status,phone_verification_status) VALUES (" +
-                     ",".join(map(quote, [a["pharmacistId"], a["name"], a["iin"], a["phone"], a["pharmacyId"], a["pharmacyId"], "Silver", "active", "self_declared"])) + ");")
+        lines.append("INSERT INTO pharmacists(id,name,iin,phone,pharmacy_id,pharmacy_name,tier,status,phone_verification_status" +
+                     (",password_hash" if source_bound else "") + ") VALUES (" +
+                     ",".join(map(quote, [a["pharmacistId"], a["name"], a["iin"], a["phone"], a["pharmacyId"], a["pharmacyId"], "Silver", "active", "self_declared"] +
+                                  ([password_hash] if source_bound else []))) + ");")
         digest = hashlib.sha256(a["deviceKey"].encode()).hexdigest()
         lines.append("INSERT INTO fulfillment_devices(id,device_id,pharmacy_id,secret_sha256,secret_hint) VALUES (" +
                      ",".join(map(quote, [str(uuid.uuid4()), a["deviceId"], a["pharmacyId"], digest, "load-only"])) + ");")
-        # This is an explicit mapping fixture, not runtime name inference or self-declared auto-authorization.
-        lines.append("INSERT INTO posm_pharmacist_mappings(id,pharmacy_id,external_user_id,external_user_name,pharmacist_id) VALUES (" +
-                     ",".join(map(quote, [str(uuid.uuid4()), a["pharmacyId"], a["rawUserId"], a["name"], a["pharmacistId"]])) + ");")
+        if source_bound:
+            proof_value = a["iin"] if a["proofMethod"] == "IIN" else " ".join(sorted(a["name"].lower().split()))
+            proof_hash = hashlib.sha256((a["proofMethod"] + ":" + proof_value).encode()).hexdigest()
+            fingerprint = hashlib.sha256(password_hash.encode()).hexdigest()
+            source_iin = quote(a["iin"]) if a["proofMethod"] == "IIN" else "NULL"
+            lines.append("INSERT INTO posm_source_staff_bindings(id,pharmacy_id,device_id,source_namespace,native_user_id,pharmacist_id,proof_method,proof_hash,state,reason_code) VALUES (" +
+                         ",".join(map(quote, [str(uuid.uuid4()), a["pharmacyId"], a["deviceId"], a["sourceNamespace"], a["rawUserId"], a["pharmacistId"], a["proofMethod"], proof_hash, "active", "synthetic_admitted_proof"])) + ");")
+            lines.append("INSERT INTO posm_device_staff_sessions(token_hash,pharmacist_id,device_id,pharmacy_id,password_fingerprint,process_instance_id,standard_n_user_id,standard_n_session_id,workstation_id,standard_n_iin,standard_n_iin_status,standard_n_full_name,standard_n_full_name_status,source_namespace,source_verified_at,source_proof_method,source_proof_hash,expires_at) VALUES (" +
+                         ",".join(map(quote, [hashlib.sha256(secrets.token_bytes(32)).hexdigest(), a["pharmacistId"], a["deviceId"], a["pharmacyId"], fingerprint, "synthetic-process-"+a["deviceId"], a["rawUserId"], str(a["nativeSessionId"]), a["deviceId"]])) + "," + source_iin + "," +
+                         ",".join(map(quote, ["available" if a["proofMethod"] == "IIN" else "missing", a["name"], "available", a["sourceNamespace"]])) + ",clock_timestamp()," +
+                         ",".join(map(quote, [a["proofMethod"], proof_hash])) + ",now()+interval '1 hour');")
+            lines.append("INSERT INTO reward_load_source_expected VALUES (" + ",".join(map(quote, [a["pharmacistId"],a["deviceId"],a["sourceNamespace"],a["rawUserId"],str(a["nativeSessionId"]),a["proofMethod"],proof_hash])) + ");")
+        else:
+            # The original mode stands for an explicit HQ mapping, not runtime name inference.
+            lines.append("INSERT INTO posm_pharmacist_mappings(id,pharmacy_id,external_user_id,external_user_name,pharmacist_id) VALUES (" +
+                         ",".join(map(quote, [str(uuid.uuid4()), a["pharmacyId"], a["rawUserId"], a["name"], a["pharmacistId"]])) + ");")
         lines.append("INSERT INTO reward_load_expected VALUES (" + ",".join(map(quote, [a["pharmacistId"], a["pharmacyId"], a["rawUserId"], a["sessionId"], a["saleId"]])) +
                      f",{a['sourceDocumentId']},{quote(a['scenario'])},{a['expectedBonus']});")
     lines.append("COMMIT;")
@@ -100,12 +123,34 @@ def verification_sql(f):
     count = len(f["actors"])
     credited = sum(a["expectedBonus"] > 0 for a in f["actors"])
     total = sum(a["expectedBonus"] for a in f["actors"])
+    source_bound = f.get("identityMode", "hq") == "source-bound"
+    trusted_source = "standardn_rps_binding" if source_bound else "standardn_explicit_mapping"
+    proof_oracle = ""
+    if source_bound:
+        proof_oracle = f"""
+  IF EXISTS (SELECT 1 FROM posm_pharmacist_mappings)
+    OR (SELECT count(*) FROM posm_source_staff_bindings WHERE state='active') <> {count}
+    OR (SELECT count(*) FROM reward_load_source_expected) <> {count}
+    THEN RAISE EXCEPTION 'Source-bound load must use no HQ mappings and complete synthetic proofs'; END IF;
+  IF EXISTS (SELECT 1 FROM reward_load_source_expected e
+    LEFT JOIN posm_source_staff_bindings b ON b.pharmacist_id=e.pharmacist_id AND b.device_id=e.device_id
+      AND b.source_namespace=e.source_namespace AND b.native_user_id=e.native_user_id
+    LEFT JOIN posm_device_staff_sessions g ON g.pharmacist_id=e.pharmacist_id AND g.device_id=e.device_id
+      AND g.source_namespace=e.source_namespace AND g.standard_n_user_id=e.native_user_id AND g.standard_n_session_id=e.native_session_id
+    JOIN pos_sales s ON s.pharmacist_id=e.pharmacist_id
+    WHERE b.id IS NULL OR b.state<>'active' OR b.proof_method<>e.proof_method OR b.proof_hash<>e.proof_hash
+      OR g.token_hash IS NULL OR g.source_proof_method<>e.proof_method OR g.source_proof_hash<>e.proof_hash
+      OR g.source_verified_at>s.printed_at OR g.created_at>s.printed_at OR g.expires_at<=s.printed_at
+      OR (g.revoked_at IS NOT NULL AND g.revoked_at<=s.printed_at))
+    THEN RAISE EXCEPTION 'Source binding or session proof was missing, expired or crossed scope'; END IF;
+"""
     # Hibernate's JSONB mapper stores Instant as epoch seconds; HTTP uses ISO strings.
     instant = """(CASE WHEN jsonb_typeof(s.reward_evidence->'changes'->0->'observedAt')='number'
         THEN to_timestamp((s.reward_evidence->'changes'->0->>'observedAt')::double precision)
         ELSE (s.reward_evidence->'changes'->0->>'observedAt')::timestamptz END)"""
     return "\\set ON_ERROR_STOP on\nBEGIN READ ONLY;\n" + guard(f["expectedDatabase"]) + f"""
 DO $$ BEGIN
+{proof_oracle}
   IF EXISTS (SELECT 1 FROM pg_stat_database WHERE datname=current_database() AND deadlocks<>0)
     THEN RAISE EXCEPTION 'Concurrent reward flow encountered a PostgreSQL deadlock'; END IF;
   IF (SELECT count(*) FROM reward_load_expected) <> {count}
@@ -144,7 +189,7 @@ DO $$ BEGIN
     THEN RAISE EXCEPTION 'Canonical case or wallet source duplicate'; END IF;
   IF (SELECT count(*) FROM pos_sales s JOIN reward_load_expected e ON s.id=e.sale_id
       WHERE s.pharmacy_id=e.pharmacy_id AND s.pharmacist_id=e.pharmacist_id
-        AND s.pharmacist_source='standardn_explicit_mapping' AND s.reward_evidence IS NOT NULL) <> {count}
+        AND s.pharmacist_source={quote(trusted_source)} AND s.reward_evidence IS NOT NULL) <> {count}
     THEN RAISE EXCEPTION 'Not all actual HTTP sales were persisted with correct trusted identity'; END IF;
   IF (SELECT count(*) FROM recommendation_events v JOIN reward_load_expected e ON v.session_id=e.session_id
       WHERE v.rule_id={quote(f['ruleId'])} AND v.pharmacy_id=e.pharmacy_id AND v.recommend_sku={quote(f['recommendSku'])}) <> {count}
@@ -193,9 +238,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--run-id", required=True)
     p.add_argument("--actors", type=int, default=1500)
+    p.add_argument("--identity-mode", choices=("hq", "source-bound"), default="hq")
     p.add_argument("--output-dir", type=Path, required=True)
     args = p.parse_args()
-    f = generate(args.run_id, args.actors)
+    f = generate(args.run_id, args.actors, args.identity_mode)
     args.output_dir.mkdir(parents=True, mode=0o700, exist_ok=False)
     exclusive(args.output_dir / "fixture.private.json", json.dumps(f, indent=2) + "\n")
     exclusive(args.output_dir / "seed.private.sql", seed_sql(f))
@@ -204,7 +250,7 @@ def main():
               "\nJWT_SECRET=" + secrets.token_urlsafe(48) + "\n")
     print(json.dumps({"state": "generated-only-no-external-actions", "actors": args.actors,
                       "pharmacies": len(set(a["pharmacyId"] for a in f["actors"])), "database": f["expectedDatabase"],
-                      "expectedCreditKzt": sum(a["expectedBonus"] for a in f["actors"])}))
+                      "expectedCreditKzt": sum(a["expectedBonus"] for a in f["actors"]), "identityMode": args.identity_mode}))
 
 
 if __name__ == "__main__":

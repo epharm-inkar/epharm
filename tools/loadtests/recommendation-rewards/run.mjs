@@ -3,7 +3,7 @@ import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
 import { setTimeout as delay } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
-import { failureKind, lineChange, offerValid, percentile, runConfig, salePayload, shownPayload, validateFixture } from './contract.mjs'
+import { failureKind, lineChange, offerValid, percentile, recommendPayload, runConfig, salePayload, shownPayload, validateFixture } from './contract.mjs'
 
 // 1500 waiting actors use timers, not 1500 simultaneous sockets or operating-system threads.
 export class Gate {
@@ -123,9 +123,7 @@ export async function run(fixturePath, output, env = process.env) {
       }
     })()
     try {
-      const body = await http(a, 'recommend', 'POST', '/api/posm/recommend', { pharmacistId: a.rawUserId, pharmacistName: a.name,
-        pharmacyId: a.pharmacyId, sessionId: a.sessionId, scannedBarcode: f.triggerBarcode,
-        cart: [{ sku: f.triggerSku, barcode: f.triggerBarcode, name: 'Synthetic trigger', qty: 1 }] })
+      const body = await http(a, 'recommend', 'POST', '/api/posm/recommend', recommendPayload(f, a))
       semantic(offerValid(body, f, a.sessionId), 'positive_offer_and_evidence_protocol')
       authenticated = true; metrics.authenticatedActive++
       metrics.peakAuthenticatedActors = Math.max(metrics.peakAuthenticatedActors, metrics.authenticatedActive)
@@ -166,6 +164,7 @@ export async function run(fixturePath, output, env = process.env) {
         metrics.minAddToPayMs = Math.min(metrics.minAddToPayMs ?? ms, ms)
       }
       evidence.push({ actor: index, pharmacistId: a.pharmacistId, scenario: a.scenario, eventId,
+        identityMode: f.identityMode ?? 'hq', ...(f.identityMode === 'source-bound' ? { proofMethod: a.proofMethod } : {}),
         shownAt, addedAt: changes[0]?.observedAt ?? null, completedAt, expectedBonus: a.expectedBonus })
       if (backgroundFailure) throw backgroundFailure
       metrics.completed++
@@ -198,6 +197,9 @@ export async function run(fixturePath, output, env = process.env) {
   }
   if (percentile(metrics.queueMs, .99) > config.queueP99Ms) violations.push('generator_queue_pressure')
   const report = { state: violations.length ? 'failed' : 'http_complete_requires_database_oracle', runId: f.runId,
+    identityMode: f.identityMode ?? 'hq', offeredIdentityProofs: f.identityMode === 'source-bound'
+      ? { IIN: f.actors.filter(a => a.proofMethod === 'IIN').length, NAME: f.actors.filter(a => a.proofMethod === 'NAME').length }
+      : { HQ: f.actors.length },
     fixtureDatabase: f.expectedDatabase, config, elapsedSeconds: (performance.now() - started) / 1000,
     offeredActors: f.actors.length, completedActors: metrics.completed, peakActiveActors: metrics.peakActiveActors,
     peakAuthenticatedActors: metrics.peakAuthenticatedActors,

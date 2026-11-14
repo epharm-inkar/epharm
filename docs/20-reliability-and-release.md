@@ -241,6 +241,30 @@ The normal transaction cannot substitute an unpromoted development build as its 
 predecessor; review the archive forward-recovery procedure and exact recovery pins before
 the first switch. Never restore a pre-release database over newly received cash-desk sales.
 
+V102 adds a separate source-identity recovery boundary. Persistent conflicts and proof lifetimes
+in `posm_source_staff_bindings` remain authoritative even with empty tables, disabled automatic
+credit and no newly created employee. A V100 reward-capable image alone is not eligible after
+V102: it can ignore a later source conflict and accept an older HQ mapping. The shared verifier
+therefore probes source-binding tables and proof columns and requires the actual password-grant
+observation, namespace-aware identity resolution, payment-time authorization, audited HQ exception
+and source-aware manual review calls in the recovery artifact. Install that verifier before the
+first V102 switch; packaged V102 also activates its artifact checks before migration. Offline
+rehearsals may explicitly add `--source-binding-protected` alongside all earlier protected flags.
+Use a pinned source-binding-capable roll-forward, retaining all earlier financial, access, session
+and recommendation safeguards. Exercise cross-device/database/native-session replay, conflicting
+IIN/FIO, proof established after payment, grant expiry/revocation, employee transfer and the explicit
+HQ review path against the forward schema. A healthy boot, a class name alone or switching off the
+new money flag does not authorize a source-identity-ignorant predecessor.
+
+V103 preserves that history and orders distinct conflict transitions. The source-binding fence
+also requires the shared native-account advisory lock in both proof/paid authorization and HQ
+mapping writers, with the recipient row locked first. A new contradiction must advance the
+conflict instant beyond an earlier HQ exception; repeating the same claim must not manufacture
+another transition. Recoveries after V102/V103 therefore require these actual shared-lock and
+ordered-transition calls as well. A pre-race V102-aware build is not a valid forward recovery
+merely because it recognizes the binding table. Rehearse concurrent HQ remap/revoke versus paid
+authorization and a new conflict after a prior HQ exception before promotion.
+
 The actual v0.1.47 artifact is wallet-capable; its isolated forward-schema financial rehearsal is
 not an authorization recovery approval. Once the V066 managed-access schema exists, a recovery
 artifact must also contain the reviewed scope and fresh-revocation implementation.

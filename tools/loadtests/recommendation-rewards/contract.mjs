@@ -19,6 +19,16 @@ export function validateFixture(f) {
   if (f?.kind !== 'epharm-isolated-reward-load-v1' || !/^[a-z0-9_]{1,16}$/.test(f.runId || '') ||
       f.expectedDatabase !== `epharm_reward_load_${f.runId}` || !Array.isArray(f.actors) || f.actors.length < 8 || f.actors.length > 1500 ||
       f.bonus !== 200 || f.packages !== 2 || f.price !== 2000 || f.unitSemantics !== 'full_package') throw new Error('Invalid synthetic monetary fixture')
+  const identityMode = f.identityMode === undefined ? 'hq' : f.identityMode
+  if (!['hq', 'source-bound'].includes(identityMode)) throw new Error('Unknown synthetic identity mode')
+  const sourceName = name => typeof name === 'string' && name.length <= 255 &&
+    /^\p{L}{2,}(?:[-'’]\p{L}{2,})?(?:\s+\p{L}{2,}(?:[-'’]\p{L}{2,})?)+$/u.test(name.trim())
+      ? name.trim().toLowerCase().split(/\s+/u).sort().join(' ') : null
+  const namesByPharmacy = new Map()
+  if (identityMode === 'source-bound') for (const a of f.actors) {
+    const key = `${a.pharmacyId}:${sourceName(a.name)}`
+    namesByPharmacy.set(key, (namesByPharmacy.get(key) || 0) + 1)
+  }
   for (const key of ['deviceKey', 'pharmacistId', 'sessionId', 'saleId', 'sourceDocumentId']) {
     if (new Set(f.actors.map(a => a[key])).size !== f.actors.length) throw new Error(`Duplicate ${key}`)
   }
@@ -27,8 +37,20 @@ export function validateFixture(f) {
         !/^[A-Za-z0-9_-]{32,128}$/.test(a.deviceKey || '') || !/^[0-9a-f]{64}$/.test(a.sourceNamespace || '') ||
         !/^[A-Za-z0-9_-]{1,64}$/.test(a.deviceId || '') || !a.rawUserId || !a.nativeSessionId ||
         a.scenario !== scenario(i) || a.expectedBonus !== expectedCredit(a.scenario)) throw new Error('Invalid actor / expectation')
+    if (identityMode === 'source-bound' && (a.proofMethod !== (i % 2 === 0 ? 'IIN' : 'NAME') ||
+        !sourceName(a.name) || !/^[0-9]{12}$/.test(a.iin || '') ||
+        !Number.isSafeInteger(a.nativeSessionId) || a.nativeSessionId <= 0 ||
+        a.proofMethod === 'NAME' && namesByPharmacy.get(`${a.pharmacyId}:${sourceName(a.name)}`) !== 1))
+      throw new Error('Invalid or ambiguous source-bound identity fixture')
   })
   return f
+}
+
+export function recommendPayload(f, a) {
+  return { pharmacistId: a.rawUserId, pharmacistName: a.name,
+    pharmacyId: a.pharmacyId, sessionId: a.sessionId, scannedBarcode: f.triggerBarcode,
+    ...(f.identityMode === 'source-bound' ? { sourceNamespace: a.sourceNamespace } : {}),
+    cart: [{ sku: f.triggerSku, barcode: f.triggerBarcode, name: 'Synthetic trigger', qty: 1 }] }
 }
 
 export function sourceIdentity(a) {
