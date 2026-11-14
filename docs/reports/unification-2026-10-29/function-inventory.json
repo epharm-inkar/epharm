@@ -1405,6 +1405,156 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H07.07",
+    "group": "H07",
+    "name": "Очередь начислений по рекомендациям с фильтрами и пагинацией",
+    "source": {
+      "repo": "sabirovv17/epharm",
+      "revision": "c91492c0a862281f02a7cfb9e03d7caaf22194e2",
+      "ui": ["admin-panel/frontend/src/features/reconcile/RecommendationRewardsQueue.tsx"],
+      "api": ["GET /api/admin/reconcile/recommendation-rewards"],
+      "jobs": [],
+      "data": [
+        "recommendation_sale_rewards",
+        "recommendation_reward_receipts",
+        "pos_sales",
+        "pharmacists",
+        "pharmacies"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/controller/RecommendationRewardReviewController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/service/RecommendationRewardReviewService.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/RecommendationRewardFlowIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Проверка продаж / Продажи по рекомендациям",
+      "actions": ["Просмотр начислений по рекомендациям"],
+      "scope": "Явное motivation/sales_review/view и разрешённые аптеки; роли SYSTEM_ADMIN, HQ_HEAD, FINANCE_REVIEWER"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Состояния ожидания доказательств, проверки HQ, зачисления и возврата различаются; фильтры периода и серверная пагинация сохранены",
+      "Ограниченный администратор не получает начисления чужих аптек; отсутствие view закрывает API и интерфейс"
+    ],
+    "risks": ["Расчётный бонус и реально зачисленная сумма не являются одним показателем"],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H07.08",
+    "group": "H07",
+    "name": "Детали доказательств начисления и история решений HQ",
+    "source": {
+      "repo": "sabirovv17/epharm",
+      "revision": "c91492c0a862281f02a7cfb9e03d7caaf22194e2",
+      "ui": ["admin-panel/frontend/src/features/reconcile/RecommendationRewardsQueue.tsx"],
+      "api": ["GET /api/admin/reconcile/recommendation-rewards/{id}"],
+      "jobs": [],
+      "data": [
+        "recommendation_sale_rewards",
+        "recommendation_reward_audit",
+        "recommendation_reward_shows",
+        "pos_sales"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/controller/RecommendationRewardReviewController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/service/RecommendationRewardReviewService.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Проверка продаж / Продажи по рекомендациям",
+      "actions": ["Просмотр исходной продажи, доказательств и аудита начисления"],
+      "scope": "Явное motivation/sales_review/view и проверка аптеки конкретного начисления, включая прямой запрос по ID"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Сохраняются исходные sale/event/receipt IDs, количество упаковок, источник получателя и причины проверки",
+      "Прямой ID чужого начисления не открывает доказательства или список его фармацевтов"
+    ],
+    "risks": [],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H07.09",
+    "group": "H07",
+    "name": "Отдельная Excel-выгрузка продаж по рекомендациям",
+    "source": {
+      "repo": "sabirovv17/epharm",
+      "revision": "c91492c0a862281f02a7cfb9e03d7caaf22194e2",
+      "ui": ["admin-panel/frontend/src/features/reconcile/RecommendationRewardsQueue.tsx"],
+      "api": ["GET /api/admin/reconcile/recommendation-rewards/export.xlsx"],
+      "jobs": [],
+      "data": [
+        "recommendation_sale_rewards",
+        "recommendation_reward_receipts",
+        "pos_sales",
+        "pharmacists",
+        "pharmacies"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/controller/RecommendationRewardReviewController.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/RecommendationRewardFlowIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Проверка продаж / Продажи по рекомендациям",
+      "actions": ["Скачать отдельную XLSX-сводку выбранных начислений"],
+      "scope": "Отдельное явное motivation/sales_review/export; выгрузка ограничена теми же разрешёнными аптеками и фильтрами"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "XLSX содержит отдельную сводку, ID, состояния, суммы, период и методику; текстовые значения не исполняются как формулы",
+      "Более 10 000 строк требуют сузить фильтры; ошибка не заменяется молча обрезанной выгрузкой; без export скачивание закрыто"
+    ],
+    "risks": [],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H07.10",
+    "group": "H07",
+    "name": "Решение HQ по спорному начислению и возврату",
+    "source": {
+      "repo": "sabirovv17/epharm",
+      "revision": "c91492c0a862281f02a7cfb9e03d7caaf22194e2",
+      "ui": ["admin-panel/frontend/src/features/reconcile/RecommendationRewardsQueue.tsx"],
+      "api": ["POST /api/admin/reconcile/recommendation-rewards/{id}/decision"],
+      "jobs": [],
+      "data": [
+        "recommendation_sale_rewards",
+        "recommendation_reward_audit",
+        "pending_bonuses",
+        "receipts",
+        "pharmacist_wallet_entries",
+        "promos"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/controller/RecommendationRewardReviewController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/service/RecommendationRewardReviewService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/receipts/service/RecommendationRewardCreditPolicy.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/RecommendationRewardFlowIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Проверка продаж / Продажи по рекомендациям",
+      "actions": ["Одобрить или отклонить спорный бонус; зафиксировать решение по возврату"],
+      "scope": "Отдельное явное финансовое motivation/sales_review/approve; действующий администратор и аптека проверяются в транзакции"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Причина обязательна; одобрение проверяет оплату, целые упаковки, канонический чек, подтверждённого HQ получателя и бюджет",
+      "Конфликт исходных доказательств не обходится кнопкой одобрения; повтор решения не создаёт второй бонус",
+      "Возврат сохраняет исходное зачисление и аудит без автоматического списания; уже зачисленный бонус не отклоняется обычной кнопкой"
+    ],
+    "risks": [
+      "Ручное решение не разрешает автоматически переносить деньги другому сотруднику или списывать возврат"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H08.01",
     "group": "H08",
     "name": "Список ожидающих и история пакетов выплат",
