@@ -73,6 +73,7 @@ internal static class Program
                 await Run("known-source-errors-and-pending-requests-never-trap-cashier", NonblockingErrorsAndPendingRequests);
                 await Run("registration-local-and-api-errors-retain-passwords-until-success", RegistrationPasswordRetention);
                 await Run("initial-registration-never-offers-sms-for-any-capability", RegistrationNeverSms);
+                await Run("registration-visible-copy-never-mentions-sms-including-errors", RegistrationCopyNeverSms);
                 await Run("activation-is-distinct-from-sms-free-registration-in-ru-and-kk", ActivationRegistrationNavigation);
                 await Run("registration-grant-closes-after-parent-check", RegisterAndClose);
                 await Run("wrong-registration-context-does-not-authenticate", WrongContext);
@@ -132,7 +133,7 @@ internal static class Program
                 watchdog.Stop();
                 foreach (var window in Windows) if (window.IsVisible) window.Dismiss();
                 foreach (var window in RecommendationWindows) if (window.IsVisible) window.Close();
-                var success = Results.Count == 54 && Results.All(result => result.Passed);
+                var success = Results.Count == 55 && Results.All(result => result.Passed);
                 WriteProof(success, null);
                 application.Shutdown(success ? 0 : 1);
             }
@@ -654,6 +655,43 @@ internal static class Program
         }
     }
 
+    private static IEnumerable<string> VisibleCopy(DependencyObject root)
+    {
+        if (root is UIElement element && !element.IsVisible) yield break;
+        if (root is TextBlock text) yield return text.Text;
+        if (root is FrameworkElement control)
+            yield return System.Windows.Automation.AutomationProperties.GetName(control);
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+            foreach (var copy in VisibleCopy(VisualTreeHelper.GetChild(root, index))) yield return copy;
+    }
+
+    private static async Task RegistrationCopyNeverSms(Dictionary<string, bool> proof)
+    {
+        foreach (var required in new[] { false, true })
+        {
+            var state = DeviceState();
+            using var handler = new FakeHandler { DeviceContext = state.Context };
+            using var client = new StaffAuthClient(Config(), handler);
+            var window = DeviceWindow(client, state, registrationSmsRequired: required);
+            RegistrationFields(window); await Idle();
+            var setError = typeof(StaffAuthWindow).GetMethod("SetError", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            foreach (var code in new[] { "", "REGISTRATION_UNAVAILABLE", "SESSION_REQUIRED", "SMS_REQUIRED", "CODE_REQUIRED", "INVALID_DATA", "RATE_LIMITED", "UNAVAILABLE" })
+            {
+                if (code.Length > 0) setError.Invoke(window, [new StaffApiException(code)]);
+                foreach (var kazakh in new[] { false, true })
+                {
+                    Click(Field<Button>(window, kazakh ? "_languageKk" : "_languageRu")); await Idle();
+                    Check(proof, $"policy-{required}-{code}-kk-{kazakh}-no-sms-copy",
+                        VisibleCopy(window).All(text => !text.Contains("SMS", StringComparison.OrdinalIgnoreCase) && !text.Contains("СМС", StringComparison.OrdinalIgnoreCase)));
+                }
+            }
+            window.SetRegistrationSmsRequired(!required); await Idle();
+            Check(proof, $"policy-{required}-refresh-copy-and-controls-safe", VisibleCopy(window).All(text => !text.Contains("SMS", StringComparison.OrdinalIgnoreCase)) &&
+                !Field<Button>(window, "_request").IsVisible && !Field<StackPanel>(window, "_codeRow").IsVisible && handler.TotalCalls == 0);
+            window.Dismiss();
+        }
+    }
+
     private static async Task RegistrationNeverSms(Dictionary<string, bool> proof)
     {
         foreach (var device in new[] { false, true })
@@ -676,7 +714,7 @@ internal static class Program
                 if (!device || required)
                 {
                     Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
-                    Check(proof, prefix + "unsupported-registration-keeps-data-and-work", window.IsVisible && window.WindowStyle != WindowStyle.None && Field<PasswordBox>(window, "_password").Password == FixturePassword && Field<PasswordBox>(window, "_passwordConfirmation").Password == FixturePassword && Field<TextBlock>(window, "_status").Text.Contains("Регистрация без SMS пока недоступна", StringComparison.Ordinal));
+                    Check(proof, prefix + "unsupported-registration-keeps-data-and-work", window.IsVisible && window.WindowStyle != WindowStyle.None && Field<PasswordBox>(window, "_password").Password == FixturePassword && Field<PasswordBox>(window, "_passwordConfirmation").Password == FixturePassword && Field<TextBlock>(window, "_status").Text.Contains("Регистрация пока недоступна", StringComparison.Ordinal));
                     Check(proof, prefix + "unsupported-does-not-call-any-registration-or-otp", handler.TotalCalls == 0 && state.Grant == null);
                 }
                 Click(Field<Button>(window, "_back")); await Idle();
@@ -711,7 +749,7 @@ internal static class Program
             Click(Field<Button>(window, "_newStaff")); await Idle();
             Check(proof, prefix + "new-staff-route-is-labelled-registration", Field<ComboBox>(window, "_mode").SelectedIndex == 1 &&
                 Field<TextBlock>(window, "_heading").Text == (kazakh ? "Жаңа қызметкер" : "Новый сотрудник") &&
-                Field<TextBlock>(window, "_intro").Text.Contains(kazakh ? "SMS қажет емес" : "SMS не требуется", StringComparison.Ordinal));
+                Field<TextBlock>(window, "_intro").Text.Contains(kazakh ? "Телефон нөмірі расталмай сақталады" : "Номер телефона сохраняется без подтверждения", StringComparison.Ordinal));
             Check(proof, prefix + "registration-never-inherits-activation-sms", Field<Button>(window, "_request").Visibility == Visibility.Collapsed &&
                 !Field<Button>(window, "_request").IsEnabled && Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Collapsed);
             Click(Field<Button>(window, "_back")); await Idle();
@@ -763,7 +801,7 @@ internal static class Program
         var window = DeviceWindow(client, state, registrationSmsRequired: false); RegistrationFields(window); await Idle();
         Check(proof, "direct-registration-hides-sms-controls", Field<Button>(window, "_request").Visibility == Visibility.Collapsed &&
             !Field<Button>(window, "_request").IsEnabled && Field<StackPanel>(window, "_codeRow").Visibility == Visibility.Collapsed);
-        Check(proof, "phone-is-explicitly-unverified", Field<TextBlock>(window, "_intro").Text.Contains("номер телефона пока не подтверждён", StringComparison.Ordinal));
+        Check(proof, "phone-is-explicitly-unverified", Field<TextBlock>(window, "_intro").Text.Contains("Номер телефона сохраняется без подтверждения", StringComparison.Ordinal));
         var accepted = false;
         window.AuthenticationStarted += () => generation = state.Generation;
         window.Authenticated += response => { accepted = state.Accept(generation, context, response, DateTimeOffset.UtcNow); if (accepted) window.Dismiss(); };
@@ -933,7 +971,7 @@ internal static class Program
         window.SetRegistrationSmsRequired(true);
         Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
         Check(proof, "unavailable-registration-retains-input-and-never-offers-otp", handler.TotalCalls == 0 && PasswordsRetained(window) &&
-            Field<Button>(window, "_request").Visibility == Visibility.Collapsed && Field<TextBlock>(window, "_status").Text.Contains("Регистрация без SMS пока недоступна", StringComparison.Ordinal));
+            Field<Button>(window, "_request").Visibility == Visibility.Collapsed && Field<TextBlock>(window, "_status").Text.Contains("Регистрация пока недоступна", StringComparison.Ordinal));
         RecoveryFields(window);
         Click(Field<Button>(window, "_submit")); await Until(() => !Busy(window));
         Check(proof, "reset-missing-sms-retains-passwords-without-http", handler.TotalCalls == 0 && PasswordsRetained(window));

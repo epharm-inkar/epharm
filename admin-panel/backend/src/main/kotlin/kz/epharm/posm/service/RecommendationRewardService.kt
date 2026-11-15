@@ -90,6 +90,7 @@ class RecommendationRewardService(
             replay.map { it.pharmacistId }.filter(String::isNotBlank).distinct().sorted().forEach {
                 jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "reward-pharmacist:$it")
             }
+            lockActors(replay)
             replay.flatMap { receiptKeys(it, it.rewardEvidence!!) }.distinct().sorted().forEach(::lockReceipt)
             val promos = jdbc.queryForList("""SELECT DISTINCT s.promo_id FROM recommendation_reward_shows s
                 JOIN recommendation_events e ON e.id=s.event_id WHERE e.pharmacy_id=? AND e.session_id=?
@@ -120,10 +121,8 @@ class RecommendationRewardService(
         }
         val sessionEvents = events.findAllBySessionId(sale.sessionId!!).filter { it.pharmacyId == sale.pharmacyId }
         val candidates = sessionEvents.map { it.recommendSku }.toSet()
-        val automaticActor = sale.pharmacistSource == "standardn_rps_binding" && sourceBindings.authorizes(
-            sale.pharmacistId,sale.pharmacyId,sale.deviceId,evidence.completion.identity.sourceNamespace,
-            evidence.completion.identity.rawUserId,evidence.completion.completedAt,
-            evidence.completion.identity.nativeSessionId.toString(),evidence.completion.identity.workstationId)
+        lockActors(listOf(sale))
+        val verifiedActor = actorAuthorized(sale, evidence.completion)
         // Preserve known receipt-conflict fences even when an alias has no recommendation events.
         // Ordinary checkouts stay in the raw sale journal and can be replayed after a late shown ACK.
         val canonical = canonical(sale, evidence, createIfMissing = candidates.isNotEmpty()) ?: return
@@ -151,7 +150,7 @@ class RecommendationRewardService(
             val existing = rows("SELECT * FROM recommendation_sale_rewards WHERE id=?", caseId).singleOrNull()
             if (existing != null && existing["state"] != "waiting_evidence") continue
             val show = decision.eventId?.let(snapshots::get)
-            val actorValid = (sale.pharmacistSource == "standardn_explicit_mapping" || automaticActor) &&
+            val actorValid = verifiedActor &&
                 sale.reportedPharmacistId == evidence.completion.identity.rawUserId &&
                 pharmacists.findById(sale.pharmacistId).orElse(null)?.let {
                     it.status == PharmacistStatus.active && it.pharmacyId == sale.pharmacyId
@@ -310,6 +309,40 @@ class RecommendationRewardService(
     private fun originalFiscalKey(sale: PosSaleEntity, c: RewardCompletionEvidence): String? =
         if (!c.originalDeviceNumber.isNullOrBlank() && (c.originalFiscalNumber ?: 0) > 0 && (c.originalFiscalShift ?: 0) > 0)
             hash(listOf("fiscal", sale.pharmacyId, c.originalDeviceNumber.trim().uppercase(), c.originalFiscalShift, c.originalFiscalNumber)) else null
+
+    /** Replays must take the whole actor lock set before receipt/funding locks, just like a new sale. */
+    private fun lockActors(sales: List<PosSaleEntity>) {
+        val financial = sales.filter { it.pharmacistId.isNotBlank() &&
+            it.pharmacistSource in setOf("standardn_explicit_mapping", "standardn_rps_binding") }
+        financial.map { it.pharmacistId }.distinct().sorted().forEach {
+            jdbc.queryForList("SELECT id FROM pharmacists WHERE id=? FOR UPDATE", it)
+        }
+        financial.mapNotNull { sale -> sale.rewardEvidence?.completion?.identity?.rawUserId
+            ?.takeIf(String::isNotBlank)?.let { sale.pharmacyId to it } }
+            .distinct().sortedWith(compareBy({ it.first }, { it.second })).forEach { (pharmacy, user) ->
+                kz.epharm.posm.staff.SourceStaffBindingService.lockAccount(jdbc, pharmacy, user)
+            }
+    }
+
+    /** A journaled identity is history, not permission to credit after HQ revokes or changes its mapping. */
+    private fun actorAuthorized(sale: PosSaleEntity, complete: RewardCompletionEvidence): Boolean {
+        if (sale.pharmacistId.isBlank() || sale.reportedPharmacistId != complete.identity.rawUserId) return false
+        val source = complete.identity
+        return when (sale.pharmacistSource) {
+            "standardn_explicit_mapping" -> {
+                // The controller may have loaded a JPA mapping before waiting on our locks: read fresh SQL.
+                val mapping = rows("SELECT pharmacist_id,active FROM posm_pharmacist_mappings WHERE pharmacy_id=? AND external_user_id=?",
+                    sale.pharmacyId, source.rawUserId).singleOrNull()
+                mapping?.get("active") == true && mapping["pharmacist_id"] == sale.pharmacistId &&
+                    !sourceBindings.resolve(sale.pharmacyId, sale.deviceId, source.sourceNamespace, source.rawUserId,
+                        complete.completedAt, source.nativeSessionId.toString(), source.workstationId).blocksHq
+            }
+            "standardn_rps_binding" -> sourceBindings.authorizes(sale.pharmacistId, sale.pharmacyId, sale.deviceId,
+                source.sourceNamespace, source.rawUserId, complete.completedAt,
+                source.nativeSessionId.toString(), source.workstationId)
+            else -> false
+        }
+    }
 
     /** Negative-only safeguard. RPS has no namespace field and is never positive seller/payment proof. */
     private fun knownStaffMismatch(sale: PosSaleEntity, complete: RewardCompletionEvidence): Boolean {

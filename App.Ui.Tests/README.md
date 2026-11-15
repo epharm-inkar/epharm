@@ -54,7 +54,7 @@ focus theft, window activation or lost passwords. Countdown ticks do not trigger
 product error-reveal path.
 A 90-second WPF watchdog closes test windows and returns exit code 3 on timeout.
 
-Exit code 0 means all 54 cases passed; 1 is a test failure; 2 is a missing
+Exit code 0 means all 55 cases passed; 1 is a test failure; 2 is a missing
 interactive session or invalid arguments. Output defaults to `proof` beside the
 executable and includes `qa-proof.json` and fourteen renders of its own WPF content.
 Error screenshots scroll the form to the actual status; they do not imply all fields

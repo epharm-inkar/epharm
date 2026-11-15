@@ -1403,6 +1403,36 @@ namespace CustomerDisplay.Core.Tests
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
+        public void ReusedNativeLineIdUpdatesProductAndNeverInheritsAnotherProductsIdentity(bool missingIdentity)
+        {
+            using var window = new MainWindow();
+            var receipt = Receipt(100, 10);
+            window.Observe(receipt);
+            var rendered = Assert.Single(window.ReceiptItems);
+            var replacement = receipt.Lines.Single() with
+            {
+                PartId = 20,
+                Barcode = missingIdentity ? null : receipt.Lines.Single().Barcode,
+                Name = missingIdentity ? "" : receipt.Lines.Single().Name,
+            };
+            var updated = receipt with { Lines = [replacement], Documents = [receipt.Documents!.Single() with { Lines = [replacement] }] };
+
+            window.Observe(updated);
+
+            var current = Assert.Single(window.ReceiptItems);
+            Assert.NotSame(rendered, current);
+            Assert.Equal(10, rendered.PartId);
+            Assert.Equal(20, current.PartId);
+            Assert.Equal(replacement.Barcode, current.Barcode);
+            Assert.Equal(replacement.Name, current.Name);
+            Assert.Equal(100m, window.DisplayTotal);
+            Assert.Equal(new[] { 10, 20 }, window.ScannedProducts.Select(item => item.PartId));
+            Assert.Empty(window.Sales);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
         public void RealUpdateOfSecondExistingItemRebindsItsRowWithoutLosingOtherItems(bool database)
         {
             using var window = new MainWindow();
@@ -1503,6 +1533,7 @@ namespace CustomerDisplay
         private bool _pharmacistFromDb;
         private string? _activeReceiptDraftId;
         internal ObservableCollection<ReceiptItem> ReceiptItems { get; } = new();
+        internal List<ReceiptItem> ScannedProducts { get; } = new();
         internal List<(long? DocumentId, int[] PartIds)> Sales => _testOutbox.DequeueReady(100)
             .Where(item => item.Kind == "sale")
             .Select(item => JsonSerializer.Deserialize<SaleReport>(item.Payload, EpharmJson.Options)!)
@@ -1689,7 +1720,7 @@ namespace CustomerDisplay
         private void RefreshCurrentPharmacistFromStandardNDb() { }
         private void CaptureCurrentSellerForSession() =>
             _session.CaptureSeller(_currentPharmacistId, _currentPharmacistName, _currentStandardNSessionId);
-        private void OnProductScanned(ReceiptItem item) { }
+        private void OnProductScanned(ReceiptItem item) => ScannedProducts.Add(item);
         private void OnCartChangedLocalOnly(bool cancelPendingRecommendation) { }
         private void LogScannedItemContext(ReceiptItem item, string source) { }
         private sealed class ImmediateDispatcher

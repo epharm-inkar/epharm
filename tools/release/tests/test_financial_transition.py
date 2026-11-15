@@ -533,6 +533,20 @@ class FinancialTransitionTests(unittest.TestCase):
             jar.writestr('BOOT-INF/classes/db/migration/V102__source_staff_bindings.sql','source binding schema')
         with self.assertRaisesRegex(ValueError,'source-binding'): guard.verify(self.jar,False)
 
+    def test_source_binding_capable_predecessor_without_late_ack_identity_revalidation_is_denied(self):
+        # v0.2.18 has source-binding authorization, but trusts a stored HQ mapping on replay.
+        reward_service='kz/epharm/posm/service/RecommendationRewardService.class'
+        previous_symbols=('kz/epharm/posm/staff/SourceStaffBindingService', 'authorizes',
+                          'standardn_rps_binding', 'getSourceNamespace', 'getNativeSessionId', 'getWorkstationId')
+        with patch.dict(guard.SOURCE_BINDING_CLASSES,{reward_service:previous_symbols}):
+            self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        for protected in (False,True):
+            with self.subTest(source_binding_protected=protected):
+                with self.assertRaisesRegex(ValueError,'source-binding'):
+                    guard.verify(self.jar,True,True,True,True,True,protected)
+        self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        self.assertTrue(guard.verify(self.jar,True,True,True,True,True,True))
+
     def test_every_source_binding_component_and_enforcement_marker_is_required(self):
         for name,markers in guard.SOURCE_BINDING_CLASSES.items():
             with self.subTest(component=name):

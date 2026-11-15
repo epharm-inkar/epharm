@@ -1,5 +1,16 @@
 # Backend
 
+## Delayed reward authority candidate — 2026-11-15
+
+A stored `standardn_explicit_mapping` identity is historical attribution, not permission
+to credit later. Before financial processing (including a late shown acknowledgement),
+the reward service rechecks the current active HQ mapping and source-binding conflict
+under the same recipient/account locks used by identity writers. Revoked or reassigned
+recipients go to HQ review without spending budget or creating a wallet credit. A
+multi-sale replay locks its full sorted recipient/account set before receipt and funding
+locks. Existing valid payouts are not reversed, and real auto-credit gates remain off
+until a funded campaign and scoped pilot are approved.
+
 ## Local candidate: recommendation sale rewards
 
 Optional evidence protocol 1 extends the existing POSM recommend/shown/sales routes;

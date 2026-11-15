@@ -214,6 +214,39 @@ public sealed class ReceiptReplaySafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task UnsupportedEventKindsSurviveRestartAndReconnectWithoutAcknowledgementOrBlockingCurrentEvents()
+    {
+        var queue = new OfflineOutbox(DbPath);
+        for (var i = 0; i < 45; i++)
+            queue.Enqueue("future-" + i, "future-sale-evidence", "{\"proof\":\"preserve-me\"}");
+        var originals = Enumerable.Range(0, 45).ToDictionary(i => "future-" + i, i => ReadQueueRow("future-" + i));
+        queue.Enqueue("supported-sale", "sale", SaleJson("supported-sale", "standardn-print-log"));
+        queue.Enqueue("supported-shown", "shown", JsonSerializer.Serialize(new OutboxShownPayload
+        { EventId = "supported-event", ShownAt = DateTimeOffset.UtcNow }, EpharmJson.Options));
+        using var server = new LoopbackEndpoint();
+        using var api = new EpharmApiClient(new EpharmConfig { BackendBaseUrl = server.BaseUrl, DeviceKey = "synthetic-key" });
+        var delivered = new List<string>();
+        var restarted = new OfflineOutbox(DbPath);
+        using var flusher = new OutboxFlusher(restarted, api, onDelivered: item => delivered.Add(item.Id), startBackground: false);
+
+        await flusher.FlushAsync();
+
+        Assert.Equal(new[] { "supported-sale", "supported-shown" }, delivered.Order());
+        Assert.Equal(2, server.Requests.Count);
+        foreach (var row in originals) Assert.Equal(row.Value, ReadQueueRow(row.Key));
+        await flusher.FlushNowAsync();
+        Assert.Equal(2, server.Requests.Count);
+        Assert.Equal(2, delivered.Count);
+        Assert.Empty(restarted.DequeueReady());
+        foreach (var row in originals)
+        {
+            var preserved = ReadQueueRow(row.Key);
+            // Reconnect may update next_retry_at; it must preserve evidence and attempts.
+            Assert.Equal(row.Value.Take(5), preserved.Take(5));
+        }
+    }
+
+    [Fact]
     public async Task ControlledReplayWaitsForExplicitFlushWithoutTheStartupBackgroundRace()
     {
         var queue = new OfflineOutbox(DbPath);

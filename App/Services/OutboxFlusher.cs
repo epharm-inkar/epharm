@@ -120,7 +120,9 @@ namespace CustomerDisplay.Services
                             .MarkShownAsync(sh.EventId, sh.ShownAt, sh.RewardEvidence)
                             .ConfigureAwait(false);
                     default:
-                        return true; // неизвестный тип — выкидываем, чтобы не копился
+                        // A rollback can reopen an outbox written by a newer client. Unsupported
+                        // evidence is preserved by DequeueReady, never acknowledged or discarded.
+                        return false;
                 }
             }
             catch

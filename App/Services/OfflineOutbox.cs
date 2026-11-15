@@ -133,6 +133,7 @@ namespace CustomerDisplay.Services
         /// <summary>
         /// Готовые записи, старые первыми. Известные неподтверждённые legacy sale сохраняются,
         /// но исключаются ДО LIMIT: они не должны отправляться или задерживать остальную очередь.
+        /// Unsupported event kinds are also preserved before LIMIT for rollback compatibility.
         /// </summary>
         public IReadOnlyList<OutboxItem> DequeueReady(int limit = 20)
         {
@@ -143,6 +144,7 @@ namespace CustomerDisplay.Services
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"SELECT id, kind, payload, attempts FROM outbox
                     WHERE next_retry_at <= $now
+                      AND kind IN ('sale', 'fiscal-sale', 'outcome', 'shown')
                       AND NOT (kind = 'sale' AND EXISTS (
                         SELECT 1 FROM json_each(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END)
                         WHERE key COLLATE NOCASE = 'captureSource' AND type = 'text'
