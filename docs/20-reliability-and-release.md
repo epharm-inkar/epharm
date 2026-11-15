@@ -265,6 +265,15 @@ ordered-transition calls as well. A pre-race V102-aware build is not a valid for
 merely because it recognizes the binding table. Rehearse concurrent HQ remap/revoke versus paid
 authorization and a new conflict after a prior HQ exception before promotion.
 
+Late shown-ACK replay belongs to this same source-binding boundary. A stored sale's HQ mapping
+must be reread and checked for the same active recipient and current source conflicts under the
+recipient-row and native-account locks. The artifact verifier requires the `actorAuthorized` and
+`lockActors` helpers, fresh mapping SQL and source-conflict checks in `RecommendationRewardService`.
+The v0.2.18 backend lacks this replay protection and is not an eligible automatic or ordinary
+explicit rollback, even when money flags are off. Preserve its backup as evidence; rehearse a pinned
+capable exact-main forward recovery before switching. This strengthens the existing V102/V103
+contract without a new schema marker or migration.
+
 The actual v0.1.47 artifact is wallet-capable; its isolated forward-schema financial rehearsal is
 not an authorization recovery approval. Once the V066 managed-access schema exists, a recovery
 artifact must also contain the reviewed scope and fresh-revocation implementation.

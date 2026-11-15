@@ -5,6 +5,23 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.19] - 2026-11-16
+
+### Fixed
+
+- Revalidate the current HQ cashier mapping and source conflicts before a late
+  shown acknowledgement can credit a previously journaled sale. Lock all replay
+  recipients and native accounts before receipt and campaign-budget locks.
+- Reject pre-fix financial recovery artifacts that lack late-ACK identity
+  revalidation, preserving the existing V102/V103 forward-recovery boundary.
+- Refresh the customer display and recommendation when Standard-N reuses a native
+  line ID for another product; never inherit the previous product's identity.
+- Preserve unsupported outbox events through restart, reconnect and rollback,
+  without acknowledging them or blocking supported sales and shown events.
+- POSM 1.0.88 removes SMS wording and legacy-code prompts from new-employee
+  registration in Russian and Kazakh. Existing login, recovery, activation and
+  separate `/learn` contracts remain; automatic monetary activation stays off.
+
 ## [0.2.18] - 2026-11-15
 
 ### Added

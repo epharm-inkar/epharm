@@ -85,7 +85,12 @@ SOURCE_BINDING_CLASSES = {
         ('lockAccount', 'pg_advisory_xact_lock', 'hashtextextended(?,729182)'),
     'kz/epharm/posm/service/RecommendationRewardService.class':
         ('kz/epharm/posm/staff/SourceStaffBindingService', 'authorizes', 'standardn_rps_binding',
-         'getSourceNamespace', 'getNativeSessionId', 'getWorkstationId'),
+         'getSourceNamespace', 'getNativeSessionId', 'getWorkstationId',
+         # Late shown ACK replay must recheck HQ identity under recipient/account locks.
+         'actorAuthorized', 'lockActors', 'standardn_explicit_mapping', 'resolve', 'getBlocksHq',
+         'SELECT pharmacist_id,active FROM posm_pharmacist_mappings WHERE pharmacy_id=? AND external_user_id=?',
+         'SELECT id FROM pharmacists WHERE id=? FOR UPDATE',
+         'kz/epharm/posm/staff/SourceStaffBindingService$Companion', 'lockAccount'),
     'kz/epharm/posm/service/PosmPharmacistIdentityService.class':
         ('kz/epharm/posm/staff/SourceStaffBindingService', 'resolve', 'getBlocksHq',
          'STANDARDN_RPS_BINDING', 'STANDARDN_EXPLICIT_MAPPING'),
