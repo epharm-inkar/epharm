@@ -5,14 +5,16 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.18] - 2026-11-15
+
 ### Added
 
-- Recommendation-sale reward candidate: immutable visible-show baselines, exact
+- Recommendation-sale rewards: immutable visible-show baselines, exact
   product barcode aliases, new full packages added within 120 seconds, confirmed
-  later payment, explicit same-pharmacy cashier mapping, atomic campaign budget
+  later payment, source-scoped IIN/full-name cashier binding, atomic campaign budget
   and one common-wallet credit. Uncertain evidence goes to HQ; returns create a
   review without automatic debit. The separate `/learn` reads the same balance.
-- POSM 1.0.87 candidate: server-negotiated evidence/refund capture on explicitly
+- POSM 1.0.87: server-negotiated evidence/refund capture on explicitly
   selected devices, preserved local opt-outs, durable native refund observation
   and exact print batches. Existing RPS fixes, customer display, QR and queues
   remain. Automatic money defaults off; Windows and production pilot acceptance
@@ -21,6 +23,12 @@ All notable production changes to Epharm are recorded here. The format follows
   backend cannot process the new reservations through legacy financial writers.
 
 ### Fixed
+
+- Preserve disappeared unpaid native sources in immutable private archives before
+  releasing hot receipt/journal capacity. Suspended, printed, posted and queued
+  evidence is retained; archived checkouts cannot revive after restart.
+- Keep an idle connectivity gap from poisoning a future unobserved checkout,
+  without healing observation gaps in an already open receipt.
 
 - Recover a confirmed created POSM profile into explicit manual sign-in when fresh
   local process confirmation rejects the login handoff. Preserve form-only credentials,
