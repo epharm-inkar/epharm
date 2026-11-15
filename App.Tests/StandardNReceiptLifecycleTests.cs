@@ -92,6 +92,20 @@ namespace CustomerDisplay.Core.Tests
         }
 
         [Fact]
+        public async Task FailedNativeReadCannotArchiveAGroupEvenIfItsOutValueWasAssignedBeforeFailure()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.Observe(RewardReceipt(100, 1));
+            long transaction = 0;
+            window.SetUnpaidAbsenceReader((group, ns) => new(ns, StandardNUnpaidGroupAbsenceProof.Fingerprint(group),
+                Interlocked.Increment(ref transaction), window.ReceiptNow.UtcDateTime));
+            window.SetUnpaidAbsenceFailure();
+            window.Observe(null); window.Observe(null); await window.WaitForUnpaidProbeAsync();
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(2)); window.ProbeUnpaidGroups(); await window.WaitForUnpaidProbeAsync();
+            Assert.Single(window.Artifacts.ReadObservedGroups()); Assert.Empty(window.Reports);
+        }
+
+        [Fact]
         public async Task LegacyGroupUsesOnlyItsRecordedJournalNamespaceWithoutRewritingOriginalMetadata()
         {
             using var window = new MainWindow(); window.EnableRewardEvidence();
@@ -1591,6 +1605,7 @@ namespace CustomerDisplay
         internal void CloseReceiptObservers() => Dispatcher.Invoke(StopPhysicalReceiptObservers);
         internal void AdvanceReceiptTime(TimeSpan time) => _testReceiptNow += time;
         internal void SetUnpaidAbsenceReader(Func<StandardNObservedReceiptGroup, string, StandardNUnpaidGroupAbsenceProof?> reader) => _standardNDb.AbsenceReader = reader;
+        internal void SetUnpaidAbsenceFailure() => _standardNDb.AbsenceReadSucceeded = false;
         internal Task WaitForUnpaidProbeAsync() => _unpaidGroupProbeTask.WaitAsync(TimeSpan.FromSeconds(5));
         internal void ProbeUnpaidGroups() => Dispatcher.Invoke(() => { _nextUnpaidGroupProbe = DateTimeOffset.MinValue; ReconcileUnresolvedReceiptGroups(); });
         internal void KeepDraft(string id) { SavedDrafts.Add(id); _activeReceiptDraftId = id; }
@@ -1711,8 +1726,9 @@ namespace CustomerDisplay
             public bool TryReadNativeRefunds(string sourceNamespace, NativeRefundScan scan, out NativeRefundBatch? batch) { batch = null; return false; }
             public string? RewardSourceNamespace => new('a', 64);
             public Func<StandardNObservedReceiptGroup, string, StandardNUnpaidGroupAbsenceProof?>? AbsenceReader { get; set; }
+            public bool AbsenceReadSucceeded { get; set; } = true;
             public bool TryGetUnpaidGroupAbsenceProof(StandardNObservedReceiptGroup group, string sourceNamespace, out StandardNUnpaidGroupAbsenceProof? proof)
-            { proof = AbsenceReader?.Invoke(group, sourceNamespace); return proof != null; }
+            { proof = AbsenceReader?.Invoke(group, sourceNamespace); return proof != null && AbsenceReadSucceeded; }
             public IReadOnlyList<StandardNReceiptSnapshot>? States { get; set; }
             private ReceiptProbeBlock? _block;
             private ReceiptProbeBlock? _active;

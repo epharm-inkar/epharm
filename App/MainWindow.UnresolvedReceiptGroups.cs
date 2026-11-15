@@ -53,7 +53,7 @@ public partial class MainWindow
                 try
                 {
                     if (namespaces.TryGetValue(ObservedGroupKey(group.Snapshot), out var ns))
-                        _standardNDb?.TryGetUnpaidGroupAbsenceProof(group, ns, out proof);
+                        if (_standardNDb?.TryGetUnpaidGroupAbsenceProof(group, ns, out proof) != true) proof = null;
                 }
                 catch { /* UNKNOWN retains every original observation. */ }
                 results.Add((group, proof));

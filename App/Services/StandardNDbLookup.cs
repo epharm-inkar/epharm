@@ -274,6 +274,7 @@ namespace CustomerDisplay.Services
             }
             catch
             {
+                proof = null;
                 LogErrorRateLimited("Отсутствие неоплаченной группы Standard-N не подтверждено; данные сохранены для проверки.");
                 return false;
             }
