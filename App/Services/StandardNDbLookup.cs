@@ -229,6 +229,127 @@ namespace CustomerDisplay.Services
             StandardNReceiptSnapshot? knownCurrent = null) =>
             TryReadCurrentReceiptGroup(out receipt, out posting, knownCurrent);
 
+        public bool TryGetUnpaidGroupAbsenceProof(StandardNObservedReceiptGroup? group,
+            out StandardNUnpaidGroupAbsenceProof? proof) =>
+            TryGetUnpaidGroupAbsenceProof(group, group?.SourceNamespace ?? "", out proof);
+
+        /// <summary>The explicit namespace must come from original persisted provenance, never a current-source guess.</summary>
+        public bool TryGetUnpaidGroupAbsenceProof(StandardNObservedReceiptGroup? group, string originalNamespace,
+            out StandardNUnpaidGroupAbsenceProof? proof)
+        {
+            proof = null;
+            if (!_cfg.StandardNDbEnabled) return false;
+            try
+            {
+                if (group == null || !CanInspectUnpaidGroup(group, originalNamespace, _cfg.PharmacyId, _machineName)) return false;
+                using var connection = OpenConnection();
+                var source = new FbConnectionStringBuilder(connection.ConnectionString);
+                var actualNamespace = RecommendationRewardJournal.SourceNamespace(source.DataSource, source.Port, source.Database, _machineName);
+                if (!UnpaidGroupSourceMatches(group, originalNamespace, actualNamespace)) return false;
+                using var transaction = connection.BeginTransaction(new FbTransactionOptions
+                { TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.Wait });
+                var sessions = new List<StandardNReceiptSessionRow>(2);
+                using (var command = connection.CreateCommand())
+                {
+                    command.Transaction = transaction;
+                    command.CommandTimeout = Math.Clamp(TimeoutSec(), 1, 3);
+                    command.CommandText = UnpaidGroupOriginalSessionSql;
+                    command.Parameters.AddWithValue("@sessionId", group.Snapshot.SessionId);
+                    using var reader = command.ExecuteReader();
+                    while (reader.Read()) sessions.Add(StandardNReceiptProjection.Session(reader));
+                }
+                if (!UnpaidGroupSessionMatches(group, _machineName, sessions)) return false;
+                var documents = group.Snapshot.Documents!.Select(document => document.DocumentId).OrderBy(id => id).ToArray();
+                using var observation = connection.CreateCommand();
+                observation.Transaction = transaction;
+                observation.CommandTimeout = Math.Clamp(TimeoutSec(), 1, 3);
+                observation.CommandText = UnpaidGroupAbsenceSql(documents.Length);
+                for (var index = 0; index < documents.Length; index++) observation.Parameters.AddWithValue("@doc" + index, documents[index]);
+                using var observed = observation.ExecuteReader();
+                if (!observed.Read()) return false;
+                var candidate = ReadUnpaidGroupAbsenceProof(group, originalNamespace, observed);
+                if (candidate == null || observed.Read()) return false;
+                proof = candidate;
+                return true;
+            }
+            catch
+            {
+                LogErrorRateLimited("Отсутствие неоплаченной группы Standard-N не подтверждено; данные сохранены для проверки.");
+                return false;
+            }
+        }
+
+        internal static bool UnpaidGroupSourceMatches(StandardNObservedReceiptGroup group, string? originalNamespace, string? actualNamespace) =>
+            originalNamespace is { Length: 64 } && originalNamespace.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f') &&
+            (group.SourceNamespace == null || group.SourceNamespace == originalNamespace) && actualNamespace == originalNamespace;
+
+        internal static bool CanInspectUnpaidGroup(StandardNObservedReceiptGroup? group, string originalNamespace, string pharmacy, string machine)
+        {
+            if (group == null || group.SchemaVersion != 1 || string.IsNullOrWhiteSpace(pharmacy) || group.PharmacyId != pharmacy ||
+                !UnpaidGroupSourceMatches(group, originalNamespace, originalNamespace) || group.PrintObserved || group.PendingPrint != null ||
+                group.QueuedDocumentIds is not { Count: 0 } || group.ResolvedEmptyDocumentIds is not { Count: 0 } ||
+                group.PrintDocumentTimes is not { Count: 0 } || group.AnchoredPrintCueIds is not { Count: 0 } ||
+                group.InitiallyPostedDocumentIds is not { Count: 0 }) return false;
+            var snapshot = group.Snapshot;
+            if (snapshot == null || snapshot.SessionId <= 0 || snapshot.DocumentId <= 0 || snapshot.Pharmacist == null ||
+                snapshot.Pharmacist.SessionId != snapshot.SessionId || string.IsNullOrWhiteSpace(group.PharmacistId) ||
+                snapshot.Pharmacist.Id != group.PharmacistId || string.IsNullOrWhiteSpace(snapshot.WorkstationId) ||
+                StaffSessionResolver.CanonicalComputer(machine).Length == 0 ||
+                StaffSessionResolver.CanonicalComputer(snapshot.WorkstationName) != StaffSessionResolver.CanonicalComputer(machine) ||
+                snapshot.Documents is not { Count: > 0 and <= StandardNReceiptProjection.MaxDocuments } documents ||
+                snapshot.Lines == null || snapshot.Lines.Count > StandardNReceiptProjection.MaxLines ||
+                group.ObservedActiveDocumentIds == null || string.IsNullOrWhiteSpace(group.CheckoutSessionId)) return false;
+            var ids = documents.Select(document => document.DocumentId).OrderBy(id => id).ToArray();
+            if (ids.Any(id => id <= 0) || ids.Distinct().Count() != ids.Length || !ids.Contains(snapshot.DocumentId) ||
+                !ids.SequenceEqual(group.ObservedActiveDocumentIds.OrderBy(id => id)) ||
+                documents.Any(document => document.SessionId != snapshot.SessionId || document.DocumentType != 3 ||
+                    document.Status != 0 || document.FinalDetailsRead || (snapshot.LinkId is > 0
+                        ? document.LinkId != snapshot.LinkId : document.DocumentId != snapshot.DocumentId || document.LinkId is > 0)) ||
+                snapshot.LinkId is > 0 && snapshot.LinkId != snapshot.DocumentId ||
+                snapshot.Lines.Any(line => !line.SourceDocumentId.HasValue || !ids.Contains(line.SourceDocumentId.Value))) return false;
+            return true;
+        }
+
+        internal static bool UnpaidGroupSessionMatches(StandardNObservedReceiptGroup group, string machine,
+            IReadOnlyList<StandardNReceiptSessionRow> sessions) =>
+            sessions.Count == 1 && sessions[0].SessionId == group.Snapshot.SessionId && sessions[0].UserId == group.PharmacistId &&
+            sessions[0].WorkstationId?.ToString(CultureInfo.InvariantCulture) == group.Snapshot.WorkstationId &&
+            StaffSessionResolver.CanonicalComputer(machine) is { Length: > 0 } local &&
+            StaffSessionResolver.CanonicalComputer(sessions[0].WorkstationName) == local &&
+            StaffSessionResolver.CanonicalComputer(group.Snapshot.WorkstationName) == local &&
+            sessions[0].Program is { } program && (program.Contains("zkassa", StringComparison.OrdinalIgnoreCase) ||
+                program.Contains("kassir", StringComparison.OrdinalIgnoreCase));
+
+        internal const string UnpaidGroupOriginalSessionSql = @"select first 2 s.ID as SESSION_ID,s.USER_ID,s.WS_ID,s.PROG,w.COMPNAME
+            from SESSIONS s join WORKSTATIONS w on w.ID=s.WS_ID where s.ID=@sessionId";
+
+        internal static string UnpaidGroupAbsenceSql(int documents)
+        {
+            if (documents is < 1 or > StandardNReceiptProjection.MaxDocuments) throw new InvalidDataException("Unpaid group bound exceeded.");
+            var ids = string.Join(",", Enumerable.Range(0, documents).Select(index => "@doc" + index));
+            return $@"select CURRENT_TRANSACTION as TRANSACTION_ID,cast(CURRENT_TIMESTAMP as timestamp) as DB_NOW,
+                (select first 1 d.ID from DOCS d where d.ID in ({ids}) or d.LINK_ID in ({ids}) or d.PARENT_ID in ({ids})) as HEADER_ID,
+                (select first 1 l.ID from DOC_DETAIL_ACTIVE l where l.DOC_ID in ({ids})) as ACTIVE_DETAIL_ID,
+                (select first 1 l.ID from DOC_DETAIL l where l.DOC_ID in ({ids})) as FINAL_DETAIL_ID
+                from RDB$DATABASE";
+        }
+
+        internal static StandardNUnpaidGroupAbsenceProof? ReadUnpaidGroupAbsenceProof(StandardNObservedReceiptGroup group,
+            string originalNamespace, IDataRecord observation)
+        {
+            try
+            {
+                if (!UnpaidGroupSourceMatches(group, originalNamespace, originalNamespace) ||
+                    new[] { "HEADER_ID", "ACTIVE_DETAIL_ID", "FINAL_DETAIL_ID" }.Any(column => !observation.IsDBNull(observation.GetOrdinal(column)))) return null;
+                var rawTransaction = observation.GetValue(observation.GetOrdinal("TRANSACTION_ID"));
+                var nativeTime = StaffSessionResolver.ReadDatabaseTimestamp(observation.GetValue(observation.GetOrdinal("DB_NOW")));
+                if (rawTransaction is not (int or long) || Convert.ToInt64(rawTransaction, CultureInfo.InvariantCulture) <= 0 || !nativeTime.HasValue) return null;
+                return new(originalNamespace, StandardNUnpaidGroupAbsenceProof.Fingerprint(group),
+                    Convert.ToInt64(rawTransaction, CultureInfo.InvariantCulture), nativeTime.Value);
+            }
+            catch { return null; } // A missing/unsupported probe column is unknown, never native absence.
+        }
+
         /// <summary>
         /// Read-only report for a pharmacy workstation. It intentionally prints table/column
         /// shapes and active-user rows, but never prints database credentials.

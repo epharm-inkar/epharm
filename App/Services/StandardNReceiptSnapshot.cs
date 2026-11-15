@@ -80,6 +80,8 @@ public sealed record StandardNObservedReceiptGroup(
     bool PrintObserved,
     IReadOnlyList<long> QueuedDocumentIds)
 {
+    // Captured once; legacy observations without source provenance are never auto-archived.
+    public string? SourceNamespace { get; init; }
     public StandardNReceiptPrintCue? PendingPrint { get; init; }
     public IReadOnlyDictionary<long, DateTimeOffset> PrintDocumentTimes { get; init; } = new Dictionary<long, DateTimeOffset>();
     public IReadOnlyList<long> ResolvedEmptyDocumentIds { get; init; } = Array.Empty<long>();

@@ -330,7 +330,8 @@ public partial class MainWindow
         var group = previous == null
             ? new StandardNObservedReceiptGroup(1, _posmConfig?.PharmacyId ?? "", effective, _session.SessionId,
                 receipt.Pharmacist.Id, receipt.Pharmacist.Name, false, Array.Empty<long>())
-                { ObservedActiveDocumentIds = documents.Where(document => document.Status == 0).Select(document => document.DocumentId).ToArray(),
+                { SourceNamespace = _standardNDb?.RewardSourceNamespace,
+                    ObservedActiveDocumentIds = documents.Where(document => document.Status == 0).Select(document => document.DocumentId).ToArray(),
                     InitiallyPostedDocumentIds = documents.Where(StandardNReceiptProjection.HasPostedFiscalHeader).Select(document => document.DocumentId).ToArray() }
             : previous with { Snapshot = effective, ObservedActiveDocumentIds = previous.ObservedActiveDocumentIds.Concat(
                 documents.Where(document => document.Status == 0).Select(document => document.DocumentId)).Distinct().ToArray() };

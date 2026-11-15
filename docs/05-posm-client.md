@@ -603,6 +603,19 @@ off the UI thread; stale/expired first results cannot create a sale or replace a
 A deterministic id based on `pharmacyId + DOCS.ID` deduplicates confirmed print and retry signals.
 The exact fiscal original is captured independently of the structured sale.
 
+The bounded hot journal must not fill indefinitely with cancelled/deleted unpaid sources.
+The background reconciler reads the exact original Firebird source, historical session, user,
+workstation, document family and both active/final details twice in distinct transactions at
+least one native second apart. Only proven absence of every original member can free a slot;
+an inactive/suspended UI cart, timeout, partial posting, print cue or queued sale cannot.
+Absence is archived as `source_disappeared_unresolved`, never as payment/cancellation proof:
+the immutable, checksummed private archives retain the complete original group, reward journal
+and both readings. Permanent checkout/physical-identity tombstones prevent revival after restart
+or source restoration. Archives are bounded at 4096 entries/64 MiB per store and never pruned
+to manufacture eligibility. Missing legacy provenance is recovered only from the original durable
+reward identity; otherwise evidence remains unresolved. Idle connectivity changes do not mark
+an unused future checkout incomplete; a gap in an already observed checkout remains sticky.
+
 The candidate also withholds the two known unsafe legacy sources (`standardn-document-switch`
 and `standardn-firebird-close`) from raw-sale replay, without deleting their rows or starving other
 queued events. A later real print of the same physical document preserves the old pending files

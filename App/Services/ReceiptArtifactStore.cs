@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Text;
 using CustomerDisplay.Models.Posm;
@@ -62,6 +64,11 @@ namespace CustomerDisplay.Services
         private readonly string _quarantineRoot;
         private readonly string _legacyUnconfirmedRoot;
         private readonly string _observedGroupsRoot;
+        private readonly string _receiptRoot;
+        private readonly string _unresolvedGroupsRoot;
+        private const int MaximumUnresolvedArchives = 4096;
+        private const long MaximumUnresolvedArchiveBytes = 64 * 1024 * 1024;
+        private const int MaximumUnresolvedEntryBytes = 8 * 1024 * 1024;
         private readonly IFiscalReceiptSource _source;
         private readonly Action<string>? _log;
         private readonly TimeSpan _activeRetention;
@@ -90,6 +97,8 @@ namespace CustomerDisplay.Services
             _quarantineRoot = Path.Combine(rootPath, "quarantine");
             _legacyUnconfirmedRoot = Path.Combine(rootPath, "legacy-unconfirmed");
             _observedGroupsRoot = Path.Combine(rootPath, "observed-groups");
+            _receiptRoot = Path.GetFullPath(rootPath);
+            _unresolvedGroupsRoot = Path.Combine(_receiptRoot, "unresolved-observed-groups");
             Directory.CreateDirectory(_activeRoot);
             Directory.CreateDirectory(_pendingRoot);
             Directory.CreateDirectory(_quarantineRoot);
@@ -120,15 +129,68 @@ namespace CustomerDisplay.Services
                 throw new InvalidDataException("Duplicate observed receipt identities.");
             lock (_gate)
             {
-                var groups = ReadObservedGroupsLocked().ToDictionary(ObservedStorageKey, StringComparer.Ordinal);
+                using var mutation = LockObservedMutations();
+                var archiveIndex = ReadUnresolvedArchiveIndexLocked();
+                var groups = ReadObservedGroupsLocked(archiveIndex: archiveIndex).ToDictionary(ObservedStorageKey, StringComparer.Ordinal);
                 foreach (var group in changes)
                 {
+                    if (FindUnresolvedArchivesLocked(group, archiveIndex).Count != 0) return false;
                     var key = ObservedStorageKey(group);
                     if (groups.TryGetValue(key, out var original)) ValidateObservedTransition(original, group);
                     else if (groups.Count >= 32) return false;
                     groups[key] = group;
                 }
                 WriteObservedGroupsLocked(groups.Values.ToArray());
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// The caller has already preserved the reward journal and twice verified source absence.
+        /// Absence is NOT cancellation/payment proof. Preserve that unresolved state permanently
+        /// before freeing its hot slot; the physical identity and checkout must never be revived.
+        /// </summary>
+        public bool ArchiveUnresolvedObservedGroup(StandardNObservedReceiptGroup expected, string confirmationAuditJson)
+        {
+            ValidateObservedGroup(expected);
+            var audit = CanonicalUnresolvedAudit(confirmationAuditJson);
+            lock (_gate)
+            {
+                using var mutation = LockObservedMutations();
+                var expectedJson = JsonSerializer.Serialize(expected, EpharmJson.Options);
+                // Deserialize a private copy: mutable caller collections cannot change the archived proof.
+                expected = JsonSerializer.Deserialize<StandardNObservedReceiptGroup>(expectedJson, EpharmJson.Options)!;
+                ValidateUnresolvedCandidate(expected);
+                ValidateUnresolvedAudit(expected, audit);
+                var groups = ReadObservedGroupsLocked(includeArchived: true);
+                var key = ObservedStorageKey(expected);
+                var original = groups.SingleOrDefault(group => ObservedStorageKey(group) == key);
+                if (original != null && JsonSerializer.Serialize(original, EpharmJson.Options) != expectedJson)
+                    throw new InvalidDataException("Observed group changed before unresolved preservation.");
+                var previous = FindUnresolvedArchivesLocked(expected, ReadUnresolvedArchiveIndexLocked());
+                if (previous.Count > 0)
+                {
+                    if (previous.Count != 1 || previous[0].OriginalGroupJson != expectedJson)
+                        throw new InvalidDataException("Conflicting unresolved archive retained without replacement.");
+                }
+                else
+                {
+                    if (original == null) return false;
+                    var archive = new UnresolvedGroupArchive
+                    {
+                        OriginalGroupJson = expectedJson, ConfirmationAuditJson = audit, ArchivedAt = _utcNow(),
+                    };
+                    WriteUnresolvedArchiveLocked(expected, archive);
+                }
+                // Re-read after the durable immutable archive. Never remove a changed hot group.
+                groups = ReadObservedGroupsLocked(includeArchived: true);
+                original = groups.SingleOrDefault(group => ObservedStorageKey(group) == key);
+                if (original != null)
+                {
+                    if (JsonSerializer.Serialize(original, EpharmJson.Options) != expectedJson)
+                        throw new InvalidDataException("Observed group changed during unresolved preservation.");
+                    WriteObservedGroupsLocked(groups.Where(group => ObservedStorageKey(group) != key).ToArray());
+                }
                 return true;
             }
         }
@@ -140,6 +202,7 @@ namespace CustomerDisplay.Services
                 throw new InvalidDataException("An unconfirmed observed group cannot be retired.");
             lock (_gate)
             {
+                using var mutation = LockObservedMutations();
                 var groups = ReadObservedGroupsLocked();
                 var key = ObservedStorageKey(group);
                 var original = groups.FirstOrDefault(old => ObservedStorageKey(old) == key);
@@ -152,6 +215,7 @@ namespace CustomerDisplay.Services
         private static void ValidateObservedTransition(StandardNObservedReceiptGroup original, StandardNObservedReceiptGroup group)
         {
             if (original.CheckoutSessionId != group.CheckoutSessionId || original.PharmacistId != group.PharmacistId ||
+                original.SourceNamespace != group.SourceNamespace ||
                 original.PharmacistName != group.PharmacistName || original.PrintObserved && !group.PrintObserved ||
                 original.QueuedDocumentIds.Except(group.QueuedDocumentIds).Any() ||
                 original.ResolvedEmptyDocumentIds.Except(group.ResolvedEmptyDocumentIds).Any() ||
@@ -168,7 +232,8 @@ namespace CustomerDisplay.Services
             group.PharmacyId + "\0" + group.Snapshot.SessionId + ":" + group.Snapshot.DocumentId + ":" +
             group.Snapshot.LinkId + ":" + StaffSessionResolver.CanonicalComputer(group.Snapshot.WorkstationName);
 
-        private List<StandardNObservedReceiptGroup> ReadObservedGroupsLocked()
+        private List<StandardNObservedReceiptGroup> ReadObservedGroupsLocked(bool includeArchived = false,
+            UnresolvedArchiveIndex? archiveIndex = null)
         {
             if (!Directory.Exists(_observedGroupsRoot)) return new();
             RejectLink(_observedGroupsRoot);
@@ -194,7 +259,16 @@ namespace CustomerDisplay.Services
             if (groups.Count > 32 || groups.Select(ObservedStorageKey).Distinct().Count() != groups.Count)
                 throw new InvalidDataException("Observed receipt identities or bound are invalid.");
             foreach (var group in groups) ValidateObservedGroup(group);
-            return groups;
+            if (includeArchived) return groups;
+            archiveIndex ??= ReadUnresolvedArchiveIndexLocked();
+            return groups.Where(group =>
+            {
+                var archives = FindUnresolvedArchivesLocked(group, archiveIndex);
+                if (archives.Count == 0) return true;
+                if (archives.Count != 1 || archives[0].OriginalGroupJson != JsonSerializer.Serialize(group, EpharmJson.Options))
+                    throw new InvalidDataException("An archived observed identity conflicts with hot evidence; files retained.");
+                return false; // Archive committed before a crash: never restore this checkout as fresh.
+            }).ToList();
         }
 
         private void WriteObservedGroupsLocked(IReadOnlyList<StandardNObservedReceiptGroup> groups)
@@ -222,6 +296,7 @@ namespace CustomerDisplay.Services
                 string.IsNullOrWhiteSpace(group.PharmacistId) || group.PharmacistId != snapshot.Pharmacist.Id ||
                 string.IsNullOrWhiteSpace(group.CheckoutSessionId) || group.CheckoutSessionId.Length > 128 ||
                 group.CheckoutSessionId.Any(char.IsControl) || snapshot.Documents == null ||
+                group.SourceNamespace != null && (group.SourceNamespace.Length != 64 || group.SourceNamespace.Any(ch => !IsLowerHex(ch))) ||
                 snapshot.Documents.Count is < 1 or > StandardNReceiptProjection.MaxDocuments ||
                 snapshot.Lines == null || snapshot.Lines.Count > StandardNReceiptProjection.MaxLines ||
                 group.QueuedDocumentIds == null || group.PrintDocumentTimes == null || group.ResolvedEmptyDocumentIds == null ||
@@ -253,6 +328,213 @@ namespace CustomerDisplay.Services
                     !Guid.TryParseExact(cue.CueId, "N", out _) || cue.CandidateDocumentIds.Any(id => !group.ObservedActiveDocumentIds.Contains(id)) ||
                     cue.CandidateDocumentIds.Distinct().Count() != cue.CandidateDocumentIds.Count))
                 throw new InvalidDataException("Observed receipt physical membership is invalid.");
+        }
+
+        private void ValidateUnresolvedCandidate(StandardNObservedReceiptGroup group)
+        {
+            if (group.PrintObserved || group.PendingPrint != null || group.PrintDocumentTimes.Count != 0 ||
+                group.AnchoredPrintCueIds.Count != 0 || group.QueuedDocumentIds.Count != 0 ||
+                group.ResolvedEmptyDocumentIds.Count != 0 || group.InitiallyPostedDocumentIds.Count != 0 ||
+                group.Snapshot.Documents!.Any(document => document.Status != 0 || document.DocumentType != 3 ||
+                    document.FinalDetailsRead || document.PostedAt != null || document.OriginalReceipt != null ||
+                    !string.IsNullOrWhiteSpace(document.DeviceNumber) || document.FiscalNumber is > 0 || document.FiscalShift is > 0))
+                throw new InvalidDataException("Print, posted, unknown or queued receipt evidence cannot be archived as unresolved absence.");
+            var saleIds = group.Snapshot.Documents!.Select(document => ReceiptSaleId.Create(group.PharmacyId, document.DocumentId, group.CheckoutSessionId))
+                .Append(ReceiptSaleId.Create(group.PharmacyId, null, group.CheckoutSessionId));
+            foreach (var id in saleIds)
+            {
+                foreach (var root in new[] { _pendingRoot, _quarantineRoot, _legacyUnconfirmedRoot })
+                    if (Directory.Exists(Path.Combine(root, SafeId(id))) || File.Exists(Path.Combine(root, SafeId(id))))
+                        throw new InvalidDataException("Preserved sale/queue evidence prevents unresolved archival.");
+                var active = Path.Combine(_activeRoot, SafeId(id));
+                if (Directory.Exists(active) && (File.Exists(Path.Combine(active, MetadataFileName)) ||
+                    File.Exists(Path.Combine(active, DeliveryFileName)) || File.Exists(Path.Combine(active, FiscalQueuedFileName)) ||
+                    File.Exists(Path.Combine(active, FiscalDeliveryFileName)) || File.Exists(Path.Combine(active, PayloadFileName)) &&
+                    ReceiptFinalizationRules.IsConfirmedPrint(ReadSale(active).CaptureSource)))
+                    throw new InvalidDataException("Active fiscal/paid receipt evidence prevents unresolved archival.");
+            }
+        }
+
+        private static bool IsLowerHex(char ch) => ch is >= '0' and <= '9' or >= 'a' and <= 'f';
+        private FileStream LockObservedMutations()
+        {
+            RejectLink(_receiptRoot);
+            var path = Path.Combine(_receiptRoot, "observed-groups.lock");
+            if (File.Exists(path)) RejectLink(path);
+            var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            try
+            {
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                return stream;
+            }
+            catch { stream.Dispose(); throw; }
+        }
+        private static string UnresolvedArchiveName(StandardNObservedReceiptGroup group) =>
+            HashBytes(Encoding.UTF8.GetBytes(ObservedStorageKey(group))) + "-" + HashBytes(Encoding.UTF8.GetBytes(group.CheckoutSessionId)) + ".json";
+        private static bool IsUnresolvedArchiveName(string name) => name.Length == 134 && name[64] == '-' &&
+            name.EndsWith(".json", StringComparison.Ordinal) && name[..64].All(IsLowerHex) && name.Substring(65, 64).All(IsLowerHex);
+
+        private IReadOnlyList<string> UnresolvedArchiveFilesLocked(bool validateAll = false)
+        {
+            if (!Directory.Exists(_unresolvedGroupsRoot))
+            {
+                if (File.Exists(_unresolvedGroupsRoot) || new DirectoryInfo(_unresolvedGroupsRoot).LinkTarget != null)
+                    throw new InvalidDataException("Unresolved archive root is not a physical directory.");
+                return Array.Empty<string>();
+            }
+            RejectLink(_receiptRoot); RejectLink(_unresolvedGroupsRoot);
+            var files = Directory.EnumerateFileSystemEntries(_unresolvedGroupsRoot).Take(MaximumUnresolvedArchives + 1).ToArray();
+            long bytes = 0;
+            if (files.Length > MaximumUnresolvedArchives) throw new InvalidDataException("Unresolved archive count bound exceeded; files retained.");
+            foreach (var path in files)
+            {
+                var name = Path.GetFileName(path);
+                var split = name.IndexOf(".tmp-", StringComparison.Ordinal);
+                var temporary = split > 0 && IsUnresolvedArchiveName(name[..split]) && Guid.TryParseExact(name[(split + 5)..], "N", out _);
+                if (!IsUnresolvedArchiveName(name) && !temporary)
+                    throw new InvalidDataException("Unknown or oversized unresolved archive retained without replacement.");
+                if (validateAll)
+                {
+                    RejectLink(path);
+                    if (Directory.Exists(path) || new FileInfo(path).Length > MaximumUnresolvedEntryBytes)
+                        throw new InvalidDataException("Linked or oversized unresolved archive retained without replacement.");
+                    bytes += new FileInfo(path).Length;
+                }
+            }
+            if (bytes > MaximumUnresolvedArchiveBytes) throw new InvalidDataException("Unresolved archive byte bound exceeded; files retained.");
+            return files;
+        }
+
+        private UnresolvedArchiveIndex ReadUnresolvedArchiveIndexLocked()
+        {
+            var index = new UnresolvedArchiveIndex();
+            foreach (var path in UnresolvedArchiveFilesLocked())
+            {
+                var name = Path.GetFileName(path);
+                if (!IsUnresolvedArchiveName(name)) continue;
+                foreach (var key in new[] { "p:" + name[..64], "c:" + name.Substring(65, 64) })
+                {
+                    if (!index.Paths.TryGetValue(key, out var paths)) index.Paths[key] = paths = new();
+                    paths.Add(path);
+                }
+            }
+            return index;
+        }
+
+        private static List<UnresolvedGroupArchive> FindUnresolvedArchivesLocked(StandardNObservedReceiptGroup group,
+            UnresolvedArchiveIndex index)
+        {
+            var name = UnresolvedArchiveName(group);
+            var paths = new[] { "p:" + name[..64], "c:" + name.Substring(65, 64) }
+                .Where(index.Paths.ContainsKey).SelectMany(key => index.Paths[key]).Distinct(StringComparer.Ordinal);
+            return paths.Select(path =>
+            {
+                if (!index.Verified.TryGetValue(path, out var archive)) index.Verified[path] = archive = ReadUnresolvedArchive(path);
+                return archive;
+            }).ToList();
+        }
+
+        private sealed class UnresolvedArchiveIndex
+        {
+            public Dictionary<string, List<string>> Paths { get; } = new(StringComparer.Ordinal);
+            public Dictionary<string, UnresolvedGroupArchive> Verified { get; } = new(StringComparer.Ordinal);
+        }
+
+        private static string CanonicalUnresolvedAudit(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || Encoding.UTF8.GetByteCount(value) > 64 * 1024)
+                throw new InvalidDataException("Unresolved confirmation audit is missing or oversized.");
+            using var document = JsonDocument.Parse(value);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("Unresolved confirmation audit must be an object.");
+            return JsonSerializer.Serialize(document.RootElement, EpharmJson.Options);
+        }
+
+        private static UnresolvedGroupArchive ReadUnresolvedArchive(string path)
+        {
+            RejectLink(path);
+            if (Directory.Exists(path) || new FileInfo(path).Length > MaximumUnresolvedEntryBytes)
+                throw new InvalidDataException("Unresolved archive entry is invalid or oversized.");
+            var envelope = JsonSerializer.Deserialize<ObservedGroupEnvelope>(File.ReadAllText(path), EpharmJson.Options)
+                ?? throw new InvalidDataException("Unresolved archive is unavailable.");
+            if (envelope.SchemaVersion != 1 || envelope.PayloadJson == null || HashBytes(Encoding.UTF8.GetBytes(envelope.PayloadJson)) != envelope.Sha256)
+                throw new InvalidDataException("Unresolved archive checksum is invalid.");
+            var archive = JsonSerializer.Deserialize<UnresolvedGroupArchive>(envelope.PayloadJson, EpharmJson.Options)
+                ?? throw new InvalidDataException("Unresolved archive payload is unavailable.");
+            if (archive.SchemaVersion != 1 || archive.Reason != "source_disappeared_unresolved" || archive.ArchivedAt == default ||
+                CanonicalUnresolvedAudit(archive.ConfirmationAuditJson) != archive.ConfirmationAuditJson)
+                throw new InvalidDataException("Unresolved archive identity or audit is invalid.");
+            var original = JsonSerializer.Deserialize<StandardNObservedReceiptGroup>(archive.OriginalGroupJson, EpharmJson.Options)
+                ?? throw new InvalidDataException("Unresolved archive original group is unavailable.");
+            ValidateObservedGroup(original);
+            ValidateUnresolvedAudit(original, archive.ConfirmationAuditJson);
+            if (Path.GetFileName(path) != UnresolvedArchiveName(original) || JsonSerializer.Serialize(original, EpharmJson.Options) != archive.OriginalGroupJson)
+                throw new InvalidDataException("Unresolved archive does not match its immutable physical/checkout identity.");
+            return archive;
+        }
+
+        private static void ValidateUnresolvedAudit(StandardNObservedReceiptGroup original, string auditJson)
+        {
+            using var audit = JsonDocument.Parse(auditJson);
+            if (!audit.RootElement.TryGetProperty("reason", out var reason) || reason.GetString() != "source_disappeared_unresolved" ||
+                !audit.RootElement.TryGetProperty("first", out var firstValue) || !audit.RootElement.TryGetProperty("second", out var secondValue))
+                throw new InvalidDataException("Unresolved archive requires two original-source observations.");
+            var first = firstValue.Deserialize<StandardNUnpaidGroupAbsenceProof>(EpharmJson.Options);
+            var second = secondValue.Deserialize<StandardNUnpaidGroupAbsenceProof>(EpharmJson.Options);
+            var fingerprint = StandardNUnpaidGroupAbsenceProof.Fingerprint(original);
+            if (first == null || second == null || first.SourceNamespace == null || first.SourceNamespace.Length != 64 ||
+                first.SourceNamespace.Any(ch => !IsLowerHex(ch)) || second.SourceNamespace != first.SourceNamespace ||
+                original.SourceNamespace != null && original.SourceNamespace != first.SourceNamespace ||
+                first.GroupFingerprint != fingerprint || second.GroupFingerprint != fingerprint ||
+                first.DatabaseTransactionId <= 0 || second.DatabaseTransactionId <= 0 || first.DatabaseTransactionId == second.DatabaseTransactionId ||
+                first.DatabaseObservedAt == default || second.DatabaseObservedAt - first.DatabaseObservedAt < TimeSpan.FromSeconds(1))
+                throw new InvalidDataException("Unresolved observations do not prove the same unchanged original source/group.");
+        }
+
+        private void WriteUnresolvedArchiveLocked(StandardNObservedReceiptGroup group, UnresolvedGroupArchive archive)
+        {
+            RejectLink(_receiptRoot);
+            Directory.CreateDirectory(_unresolvedGroupsRoot); RejectLink(_unresolvedGroupsRoot);
+            if (OperatingSystem.IsWindows())
+            {
+                var acl = new DirectorySecurity(); acl.SetAccessRuleProtection(true, false);
+                foreach (var sid in new[] { WindowsIdentity.GetCurrent().User!, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+                    acl.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(_unresolvedGroupsRoot).SetAccessControl(acl);
+            }
+            else File.SetUnixFileMode(_unresolvedGroupsRoot, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            var payload = JsonSerializer.Serialize(archive, EpharmJson.Options);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(new ObservedGroupEnvelope
+            { SchemaVersion = 1, PayloadJson = payload, Sha256 = HashBytes(Encoding.UTF8.GetBytes(payload)) }, EpharmJson.Options);
+            var files = UnresolvedArchiveFilesLocked(validateAll: true);
+            if (bytes.Length > MaximumUnresolvedEntryBytes || files.Count >= MaximumUnresolvedArchives ||
+                files.Sum(path => new FileInfo(path).Length) + bytes.Length > MaximumUnresolvedArchiveBytes)
+                throw new InvalidDataException("Unresolved archive capacity exhausted; hot evidence retained.");
+            var target = Path.Combine(_unresolvedGroupsRoot, UnresolvedArchiveName(group));
+            var temporary = target + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                    stream.Write(bytes); stream.Flush(flushToDisk: true);
+                }
+                File.Move(temporary, target); // Never replace an existing immutable archive.
+                var stored = ReadUnresolvedArchive(target);
+                if (stored.OriginalGroupJson != archive.OriginalGroupJson || stored.ConfirmationAuditJson != archive.ConfirmationAuditJson)
+                    throw new InvalidDataException("Unresolved archive read-back differs; hot evidence retained.");
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+
+        private sealed class UnresolvedGroupArchive
+        {
+            public int SchemaVersion { get; set; } = 1;
+            public string Reason { get; set; } = "source_disappeared_unresolved";
+            public DateTimeOffset ArchivedAt { get; set; }
+            public string OriginalGroupJson { get; set; } = "";
+            public string ConfirmationAuditJson { get; set; } = "";
         }
 
         private static string HashBytes(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();

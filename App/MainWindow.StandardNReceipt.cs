@@ -75,7 +75,11 @@ namespace CustomerDisplay
                 ConfirmPhysicalReceiptPrints();
                 return;
             }
-            if (_receiptObservations.Admit(readRevision, receipt != null)) ApplyStandardNReceipt(receipt);
+            if (_receiptObservations.Admit(readRevision, receipt != null))
+            {
+                ApplyStandardNReceipt(receipt);
+                ReconcileUnresolvedReceiptGroups();
+            }
         }
 
         private void ApplyStandardNReceipt(StandardNReceiptSnapshot? receipt)

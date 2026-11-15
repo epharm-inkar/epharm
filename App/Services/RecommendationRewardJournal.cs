@@ -112,7 +112,9 @@ public sealed class RecommendationRewardJournal
         lock (_gate)
         {
             State? state = null;
-            try { state = Read(checkout, create: false); } catch { Fail(checkout); }
+            try { state = Read(checkout, create: false); }
+            catch (ArchivedCheckoutException) { /* Permanent ineligibility is already durable, not a new observation failure. */ }
+            catch { Fail(checkout); }
             var paid = StandardNReceiptProjection.IsPostedPhysicalSale(document);
             var completion = new RewardCompletionEvidence {
                 Status = paid ? "paid" : "unknown", Source = paid ? "standardn-posted-print" : "",
@@ -150,6 +152,122 @@ public sealed class RecommendationRewardJournal
             catch { /* A retained bounded file is safer than forgetting unqueued evidence. */ }
             _failed.Remove(checkout);
         }
+    }
+
+    // Stable source absence is not proof of cancellation/payment. Preserve the full journal,
+    // permanently disqualify this checkout, then release only its hot slot.
+    public bool ArchiveUnresolved(string checkout, string groupFingerprint, string confirmationAuditJson)
+    {
+        lock (_gate)
+        {
+            try
+            {
+                if (groupFingerprint.Length != 64 || groupFingerprint.Any(c => !Uri.IsHexDigit(c)) ||
+                    Encoding.UTF8.GetByteCount(confirmationAuditJson) > 32768) return false;
+                using var audit = JsonDocument.Parse(confirmationAuditJson);
+                if (audit.RootElement.ValueKind != JsonValueKind.Object) return false;
+                RejectLink(_root);
+                var directory = Path.Combine(_root, "unresolved");
+                Directory.CreateDirectory(directory); RejectLink(directory);
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                var archivedPath = UnresolvedPath(checkout);
+                var path = PathFor(checkout);
+                string? original = null;
+                if (File.Exists(path))
+                {
+                    RejectLink(path);
+                    if (new FileInfo(path).Length > MaximumFileBytes) return false;
+                    original = File.ReadAllText(path);
+                }
+                if (File.Exists(archivedPath))
+                {
+                    var archived = ReadUnresolved(checkout);
+                    if (archived.GroupFingerprint != groupFingerprint ||
+                        original != null && archived.JournalJson != original) return false;
+                }
+                else
+                {
+                    var files = Directory.EnumerateFileSystemEntries(directory).Take(4097).ToArray();
+                    if (files.Length >= 4096) return false;
+                    foreach (var file in files) RejectLink(file);
+                    var payload = JsonSerializer.Serialize(new UnresolvedArchive { Checkout = checkout,
+                        GroupFingerprint = groupFingerprint, JournalJson = original, AuditJson = confirmationAuditJson }, EpharmJson.Options);
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(new Envelope { Payload = payload,
+                        Hash = Hash(Encoding.UTF8.GetBytes(payload)) }, EpharmJson.Options);
+                    if (bytes.Length > 4 * 1024 * 1024 || files.Sum(file => new FileInfo(file).Length) + bytes.Length > 64 * 1024 * 1024) return false;
+                    var temporary = archivedPath + ".tmp-" + Id();
+                    try
+                    {
+                        using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                        { file.Write(bytes); file.Flush(true); }
+                        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                        File.Move(temporary, archivedPath, false);
+                    }
+                    finally { if (File.Exists(temporary)) File.Delete(temporary); }
+                    if (ReadUnresolved(checkout).GroupFingerprint != groupFingerprint) return false;
+                }
+                if (File.Exists(path)) File.Delete(path);
+                _failed.Remove(checkout);
+                // _unavailable remains sticky: an overflowed, unrecorded checkout must not heal.
+                return true;
+            }
+            catch { return false; }
+        }
+    }
+
+    public bool TryGetRecordedSourceNamespace(string checkout, StandardNReceiptSnapshot snapshot, out string sourceNamespace)
+    {
+        sourceNamespace = "";
+        lock (_gate)
+        {
+            try
+            {
+                RejectLink(_root);
+                string? json;
+                if (Directory.Exists(Path.Combine(_root, "unresolved")) && File.Exists(UnresolvedPath(checkout)))
+                    json = ReadUnresolved(checkout).JournalJson;
+                else
+                {
+                    var path = PathFor(checkout); RejectLink(path);
+                    if (new FileInfo(path).Length > MaximumFileBytes) return false;
+                    json = File.ReadAllText(path);
+                }
+                if (json == null) return false;
+                var envelope = JsonSerializer.Deserialize<Envelope>(json, EpharmJson.Options);
+                if (envelope == null || envelope.Version != 1 || envelope.Hash != Hash(Encoding.UTF8.GetBytes(envelope.Payload))) return false;
+                var state = JsonSerializer.Deserialize<State>(envelope.Payload, EpharmJson.Options);
+                var identity = state?.LastIdentity;
+                if (state?.Checkout != checkout || identity == null || !ValidIdentity(identity) ||
+                    identity.SourceNamespace.Length != 64 || identity.SourceNamespace.Any(c => c is not (>= 'a' and <= 'f') and not (>= '0' and <= '9')) ||
+                    identity.RawUserId != snapshot.Pharmacist.Id || identity.NativeSessionId != snapshot.SessionId ||
+                    string.IsNullOrWhiteSpace(snapshot.WorkstationId) || identity.WorkstationId != snapshot.WorkstationId ||
+                    state.Offers.Count > MaximumOffers || state.Changes.Count > MaximumChanges ||
+                    state.Offers.Any(offer => offer.Evidence.Identity.SourceNamespace != identity.SourceNamespace) ||
+                    state.Changes.Any(change => change.Identity.SourceNamespace != identity.SourceNamespace)) return false;
+                sourceNamespace = identity.SourceNamespace;
+                return true;
+            }
+            catch { return false; }
+        }
+    }
+
+    private string UnresolvedPath(string checkout) => Path.Combine(_root, "unresolved", Path.GetFileName(PathFor(checkout)));
+
+    private UnresolvedArchive ReadUnresolved(string checkout)
+    {
+        var directory = Path.Combine(_root, "unresolved"); RejectLink(directory);
+        var path = UnresolvedPath(checkout); RejectLink(path);
+        if (new FileInfo(path).Length > 4 * 1024 * 1024) throw new InvalidDataException("Unresolved archive bound exceeded.");
+        var envelope = JsonSerializer.Deserialize<Envelope>(File.ReadAllBytes(path), EpharmJson.Options)
+            ?? throw new InvalidDataException("Missing unresolved archive.");
+        if (envelope.Version != 1 || envelope.Hash != Hash(Encoding.UTF8.GetBytes(envelope.Payload)))
+            throw new InvalidDataException("Invalid unresolved archive checksum.");
+        var archive = JsonSerializer.Deserialize<UnresolvedArchive>(envelope.Payload, EpharmJson.Options)
+            ?? throw new InvalidDataException("Missing unresolved archive payload.");
+        if (archive.Checkout != checkout || archive.Reason != "source_disappeared_unresolved")
+            throw new InvalidDataException("Invalid unresolved archive identity.");
+        return archive;
     }
 
     private void Observe(State state, RewardSourceIdentity identity, IReadOnlyList<RewardCartLine> cart,
@@ -231,6 +349,7 @@ public sealed class RecommendationRewardJournal
             if (_unavailable || _failed.Contains(checkout)) state.Complete = false;
             Write(checkout, state);
         }
+        catch (ArchivedCheckoutException) { /* Reappearing archived IDs cannot consume fresh-checkout failure slots. */ }
         catch { Fail(checkout); }
     }
 
@@ -243,6 +362,15 @@ public sealed class RecommendationRewardJournal
     private State? Read(string checkout, bool create)
     {
         RejectLink(_root);
+        if (Directory.Exists(Path.Combine(_root, "unresolved")))
+        {
+            RejectLink(Path.Combine(_root, "unresolved"));
+            if (File.Exists(UnresolvedPath(checkout)))
+            {
+                ReadUnresolved(checkout);
+                throw new ArchivedCheckoutException();
+            }
+        }
         var path = PathFor(checkout);
         if (!File.Exists(path)) return create ? new State { Checkout = checkout, ObserverInstance = _instance } : null;
         RejectLink(path);
@@ -284,6 +412,12 @@ public sealed class RecommendationRewardJournal
     { if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new InvalidDataException("Reward evidence link is not accepted."); }
 
     public sealed class Envelope { public int Version { get; set; } = 1; public string Payload { get; set; } = ""; public string Hash { get; set; } = ""; }
+    private sealed class ArchivedCheckoutException : Exception { }
+    public sealed class UnresolvedArchive {
+        public string Checkout { get; set; } = ""; public string GroupFingerprint { get; set; } = "";
+        public string Reason { get; set; } = "source_disappeared_unresolved";
+        public string? JournalJson { get; set; } public string AuditJson { get; set; } = "";
+    }
     public sealed class ObservedLine { public RewardCartLine Line { get; set; } = new(); public string Generation { get; set; } = ""; }
     public sealed class Offer {
         public string EventId { get; set; } = ""; public string? Barcode { get; set; } public string? Sku { get; set; }
