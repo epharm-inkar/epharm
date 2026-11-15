@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.2.18",
+  "status": "application_and_signed_posm_released_production_money_disabled",
+  "observedAtUtc": "2026-11-15T03:25:05.467731+00:00",
+  "provenance": {
+    "repository": "https://github.com/sabirovv17/epharm",
+    "commit": "d03a68618ea1ed99f030ba9c451109c46bd8e9e1",
+    "sourceTag": {
+      "name": "v0.2.18",
+      "signatureVerified": true,
+      "datedChangelogContractVerified": true
+    },
+    "mainCi": {
+      "runId": 43664187399,
+      "url": "https://github.com/sabirovv17/epharm/actions/runs/43664187399",
+      "conclusion": "success"
+    },
+    "officialImages": {
+      "runId": 43665695223,
+      "url": "https://github.com/sabirovv17/epharm/actions/runs/43665695223",
+      "conclusion": "success",
+      "manifestSha256": "5a96de53c6ef441f7c30cc5ef42cb4b9cb28b7a3d28fa94bf87ca374e1a6bcb0",
+      "backendConfigSha256": "6b70d2a4b818a9e23d06ed515dad3ac94348a3bd4a978b120b63ae359ea2307c",
+      "frontendConfigSha256": "2cb1381ecce8550f10fee7bb0133f40f7847c5a610d82d41c6769375f939dd6a",
+      "allSixFinancialArtifactBoundaries": "PASS"
+    }
+  },
+  "production": {
+    "domain": "epharm.inkar.kz",
+    "deploymentStartedUtc": "2026-11-15T03:21:54.295226+00:00",
+    "deploymentFinishedUtc": "2026-11-15T03:24:02.334214+00:00",
+    "deploymentHelperExit": 0,
+    "backend": {
+      "release": "v0.2.18",
+      "commit": "d03a68618ea1ed99f030ba9c451109c46bd8e9e1",
+      "imageId": "sha256:b8f91592f6e4bac9bf262011f4993bc0d34ee7278590ce9eebd71c902e080645",
+      "running": true,
+      "restartsAtAcceptance": 0,
+      "oomKilled": false,
+      "maxHeapBytes": 1342177280,
+      "cgroupMemoryBytes": 2147483648
+    },
+    "frontend": {
+      "release": "v0.2.18",
+      "commit": "d03a68618ea1ed99f030ba9c451109c46bd8e9e1",
+      "imageId": "sha256:85c55838083e71486dfc72053646ec40f40cfaf89ea53cf536f451dfa293f2fc",
+      "running": true,
+      "restartsAtAcceptance": 0,
+      "oomKilled": false
+    },
+    "existingEnvironmentAndCaddyUnchanged": true,
+    "infrastructureUnchanged": true,
+    "database": {
+      "lastMigration": 103,
+      "successfulMigrations": 102,
+      "failedMigrations": 0,
+      "pharmacistProfiles": 609,
+      "salesRows": 1918323,
+      "recommendationRewardCases": 0,
+      "recommendationWalletEntries": 0,
+      "sourceBindings": 0
+    },
+    "preservedFlows": {
+      "separateLearnerPath": "/learn",
+      "posmStaffAuthenticationEnabled": true,
+      "registrationSmsRequired": false,
+      "posmOrderFulfillmentEnabled": false,
+      "legacyFleetCredentialEnabled": false
+    },
+    "freshPredeploymentBackup": {
+      "finishedUtc": "2026-11-15T02:29:26.392834+00:00",
+      "exit": 0,
+      "bytes": 561969513,
+      "manifestSha256": "833e31872ca0688e15793617d9fc222a035567a8b7cdd197ce485823eecdd402",
+      "reviewedComposeSha256": "c2f936908aac6d776aa1fbda542fc57a48bf5266506d62f8d5c2bba00a0f5ea4"
+    }
+  },
+  "posm": {
+    "version": "1.0.87",
+    "platform": "win-x64",
+    "sourceCommit": "d03a68618ea1ed99f030ba9c451109c46bd8e9e1",
+    "package": "epharm-posm-1.0.87-d03a68618ea1-compat.zip",
+    "packageBytes": 593928,
+    "packageSha256": "97c63384cd77c7118dbb05c4126ced0ab11a8706d3abbc5bd5c3420b97c4c596",
+    "signedManifest": {
+      "format": "epharm-posm-update-v1",
+      "platform": "win-x64",
+      "version": "1.0.87",
+      "url": "https://cdn.jsdelivr.net/gh/sabirovv17/epharm-posm-releases@52203a526aa5580d8cf5256dd02a117600694fc8/downloads/epharm-posm-1.0.87-d03a68618ea1-compat.zip",
+      "sha256": "97c63384cd77c7118dbb05c4126ced0ab11a8706d3abbc5bd5c3420b97c4c596",
+      "mandatory": false,
+      "canonicalSha256": "bbaf52a3fff84c6b717b819e33b39c80539225f05a64337b6badba15b164a75c",
+      "signatureDerSha256": "c18163b8c5c2bff8cadc83fdb4ed078e05eb747ddfcc2243dc07379a4468e9bc",
+      "signatureVerified": true,
+      "trustedPublicSpkiSha256": "8a0f475b25e7d3b2691b04446133f14ada5d69484ec1140724a639970d5220b2"
+    },
+    "artifactRepositoryCommit": "52203a526aa5580d8cf5256dd02a117600694fc8",
+    "anonymousDelivery": {
+      "cdnStatus": 200,
+      "githubRecoveryAssetStatus": 200,
+      "rangeStatus": 206,
+      "rangeBytes": 1024,
+      "contentRange": "bytes 0-1023/593928",
+      "bothDownloadsMatchSignedSizeAndSha256": true
+    },
+    "registration": {
+      "state": "PASS",
+      "normalHqApi": true,
+      "postAndUpdaterReadbackMatchSignedManifest": true,
+      "previousReleaseRowsRetained": true,
+      "releaseRowsBefore": 35,
+      "releaseRowsAfter": 36
+    },
+    "compatibility": {
+      "exactFiveApprovedFiles": true,
+      "noConfigurationCredentialsOrSqliteInPackage": true,
+      "runtimeConfigByteIdenticalToActualVersion186": true,
+      "nonApplicationDependencyGraphsIdenticalToActualVersion186": true,
+      "nonApplicationLibraryCount": 13,
+      "configurationDeviceIdentityAndLocalQueuesPreservedByUpdate": true
+    },
+    "fleetObservation": {
+      "observedAtUtc": "2026-11-15T03:27:34.185649+00:00",
+      "freshnessWindowSeconds": 90,
+      "storedDevices": 286,
+      "freshDevices": 286,
+      "freshReportedVersions": {
+        "1.0.87.0": 160,
+        "1.0.86.0": 126
+      },
+      "freshReportedTargetVersionDevices": 160,
+      "normalUpdatePollIntervalAtMostSeconds": 300,
+      "completeFleetRolloutConfirmed": false,
+      "limitation": "This bounded fresh-presence observation confirms 160 of 286 recently reporting devices at 1.0.87.0. It does not establish a completed rollout or coverage of offline and unreported cash desks."
+    }
+  },
+  "productionMoneyRollout": {
+    "state": "not_enabled",
+    "nativeRewardEvidenceEnabled": false,
+    "automaticWalletCreditEnabled": false,
+    "deviceAllowlistEmpty": true,
+    "eligibilityCutoffUtc": null,
+    "fundingSnapshot": {
+      "observedAtUtc": "2026-11-15T01:34:38.644666+00:00",
+      "activeCampaigns": 0,
+      "fundedActiveCampaigns": 0
+    },
+    "businessCampaignCreatedForAcceptance": false,
+    "productionRecommendationCreditCreatedForAcceptance": false,
+    "productionEndToEndMoneyPilotCompleted": false,
+    "remainingGates": [
+      "HQ-approved active campaign and finite positive budget; do not invent campaign conditions or funding.",
+      "Controlled authenticated-device pilot with an explicit future UTC cutoff and approved activation settings.",
+      "Verify actual shown/add/paid evidence, exactly one source-bound credit in the separate /learn account, replay safety and refund review without automatic debit.",
+      "Expand the device allowlist only after pilot acceptance; verify fresh version and heartbeat evidence rather than package availability."
+    ],
+    "interpretation": "The production code and signed POSM update are released. Real automatic recommendation bonuses remain disabled; lab results are not production payouts."
+  },
+  "acceptance": {
+    "exactMainCi": {
+      "backend": {
+        "passed": 1740,
+        "failed": 0,
+        "skipped": 0,
+        "classReports": 181,
+        "reportFormat": "Gradle HTML; JUnit XML is not included in the CI artifact"
+      },
+      "frontend": {
+        "passed": 1173,
+        "testFiles": 123,
+        "lintTypecheckAndProductionBuild": "PASS"
+      },
+      "windowsCore": {
+        "passed": 965,
+        "failed": 0,
+        "skipped": 0
+      },
+      "mobileApplicationBuildsAndTests": "not_run_as_requested"
+    },
+    "restoredProductionClone": {
+      "state": "PASS",
+      "commit": "d03a68618ea1ed99f030ba9c451109c46bd8e9e1",
+      "backendImageId": "sha256:b8f91592f6e4bac9bf262011f4993bc0d34ee7278590ce9eebd71c902e080645",
+      "officialManifestSha256": "5a96de53c6ef441f7c30cc5ef42cb4b9cb28b7a3d28fa94bf87ca374e1a6bcb0",
+      "continuationProofSha256": "99c35a35522ccb367d24065acdc5c57389de9d079c6209f461cbdcab32a47bda",
+      "httpActors": 8,
+      "creditedActors": 6,
+      "walletEntries": 6,
+      "totalSyntheticKzt": 2400,
+      "negativeControlsCreditedKzt": 0,
+      "rewardCases": 8,
+      "rawSales": 10,
+      "hqMappings": 0,
+      "refundHolds": 1,
+      "sharedBudgetSpentKzt": 400,
+      "historicalTablesPreserved": 153,
+      "originalSalesRowsPreserved": 1918323,
+      "originalProfilesPreserved": 609,
+      "historicalViolations": [],
+      "sameContainerAndImageStopStartVerified": true,
+      "newSyntheticCreditAfterRestartKzt": 400,
+      "oomKillCount": 0,
+      "backendStoppedDataRetained": true,
+      "oldFailedAttemptAndOriginalBaselineRetained": true,
+      "twoImageArchiveDisasterRecoveryRehearsed": false,
+      "legacyVersion217RollbackPermitted": false,
+      "scope": "Isolated restored production data, eight explicitly synthetic actors; not production financial traffic."
+    },
+    "freshSyntheticLoad": {
+      "state": "HTTP_and_read_only_SQL_oracles_PASS",
+      "environment": "isolated fresh database on local laptop",
+      "sourceBoundActors": 1500,
+      "syntheticIinProofs": 750,
+      "syntheticNameProofs": 750,
+      "peakLogicalAuthenticatedActors": 1500,
+      "peakConcurrentHttpRequests": 32,
+      "httpRequests": 15045,
+      "httpStatus200": 15045,
+      "httpTransportSemanticAndThresholdErrors": 0,
+      "realPaymentDelaySeconds": 125,
+      "durationSeconds": 184.997,
+      "creditedActors": 1440,
+      "negativeControlActors": 60,
+      "totalSyntheticKzt": 576000,
+      "negativeControlCreditKzt": 0,
+      "readOnlyFinancialSqlOraclePasses": 2,
+      "postgresDeadlocks": 0,
+      "scope": "This is distinct from the restored-data eight-actor trial. Logical actors are not simultaneous HTTP requests, real employee registrations, or proof of production-host capacity."
+    }
+  },
+  "sentry": {
+    "state": "deferred_missing_credentials",
+    "deferredByUser": true,
+    "workflowRunId": 43671812818,
+    "url": "https://github.com/sabirovv17/epharm/actions/runs/43671812818",
+    "configuredOrVerified": false,
+    "scope": "Separate deferred observability setup; not represented as a green Sentry release."
+  },
+  "evidenceSha256": {
+    "deploymentProof": "31a7afdd532cf22e2ab45436c5e0d083cd74ac1fbc593ba5216cb0ccbf9e9184",
+    "liveAcceptanceProof": "b9936913920dd439425c2c520cb0fdac74719f8ab9099225e2335fd75e2c3fab",
+    "normalHqPosmRegistrationProof": "07d610267c7a13109577fbfb5ba51738d580de7709d3429a5393f1afdafa1023",
+    "signedPosmRegistrationDto": "d8a622485e196e970fce7c6929c5cf84fa756d1e0fe0f32145891d3f1199963b",
+    "anonymousPosmDeliveryProof": "da69f879c1627d20f2665936d6781a0ea2ab196ebd186ffb192f5ce6ee177129",
+    "signedSourceTagProof": "29eca380a9930d707a9cd30f2a97e878025616591305025627c04216369aa096",
+    "exactMainAdmissionProof": "535db30c8f097d1f95b3c08cc9f580e3551edb808ea259347f0e3dad157eecb5",
+    "exactMainTestsAggregate": "7d6d2dc91c7c31d97cd4f3f8a56e766479158c281f578fb0d92e1f853d0d39f8",
+    "officialImagesVerificationProof": "f5965f9e2406868cee53b2c45b11e536e07ff939e085bad0aee253fe76cda299",
+    "restoredCloneManifest": "7a5170a1aefa91513eb68dda3df50ad553e07f74d8fc8715b5450bd0da05e1a9",
+    "restoredCloneContinuation": "99c35a35522ccb367d24065acdc5c57389de9d079c6209f461cbdcab32a47bda",
+    "restoredCloneMoneyOracle": "3c4f9f1b7da5e86c42a4d4d629e2ce5017c788975b9ab7b12289cb1e25e09f3a",
+    "restoredClonePreservation": "cd98b616f0dc68c0c79205ff693e078ee6e29846dd900d164ec595d08c68f7c0",
+    "syntheticLoadSummary": "f093c96b696f05b7590fd29b1d12b3dbb6598d9910ec54de18adefef60d1a307",
+    "syntheticLoadSqlOracle": "61b6f633af46fce7488f33f56881862580269c631d3806455733275b43c94ccf",
+    "freshFleetSnapshotSummary": "53d516f244742b61e4ac5e92f36f47fe0a9f8424c398350ea6145f29228decbd"
+  }
+}

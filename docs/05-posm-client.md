@@ -5,6 +5,16 @@ Path: `App/` and `Models/`.
 Current client is C#/WPF/.NET 10. Older Electron references are historical and no longer describe the
 implementation.
 
+## Release status — 2026-11-15
+
+Backend/frontend `v0.2.18` and signed POSM `1.0.87` contain the implementation below.
+The production application switch and updater-manifest readback passed; deployment does
+not prove installation on every offline cash desk. Actual recommendation-money flags remain
+off pending a scoped pilot with an approved funded campaign. No historical campaign was
+activated and no synthetic credit was written to production. See the
+[release evidence](reports/recommendation-rewards-2026-11-15/production-release.json).
+Earlier dated candidate notes record preparation history, not the current release status.
+
 ## Native reward observation corrections — 2026-11-15
 
 Repeating an already recorded display returns its original evidence without observing
@@ -228,7 +238,7 @@ The resulting receipt goes to HQ moderation, never automatic credit or Excel heu
 After approval the bonus uses the same ePharm wallet as training and verified merchandising.
 The bridge defaults to disabled; blank cashier identity does not prevent recommendation display.
 
-### Local candidate: recommendation reward evidence v1
+### Recommendation reward evidence v1
 
 The new optional evidence chain is separate from the legacy 30-minute show-to-sale moderation
 bridge. It records the **first actual visible show**, not the recommendation HTTP response or a
@@ -275,8 +285,9 @@ aliases from creating another credit. Complete eligible evidence may credit the 
 wallet automatically; uncertainty is routed to HQ. A refund is an HQ review/hold case, including
 after credit, and never automatically debits the pharmacist.
 
-This remains **local-only candidate work**, not an enabled production rollout. Local
-`RecommendationRewardsEnabled` / `EPHARM_RECOMMENDATION_REWARDS_ENABLED` defaults to `false`.
+The implementation is shipped, but production monetary activation remains separate. Missing local
+`RecommendationRewardsEnabled` / `NativeRefundCaptureEnabled` settings are server-managed;
+explicit `false` opts out, while explicit `true` cannot bypass authenticated server capability.
 Server `POSM_SALE_BONUS_ENABLED` and `POSM_SALE_BONUS_AUTO_CREDIT_ENABLED` also default to `false`;
 automatic credit additionally requires an explicit `POSM_SALE_BONUS_ELIGIBLE_AFTER` cutoff.
 Legacy DTOs, recommendation display, receipts, customer screen, QR, RPS and separate `/learn`
