@@ -1,0 +1,146 @@
+{
+  "status": "released",
+  "releasedAtUtc": "2026-11-15T23:12:32.346476+00:00",
+  "sourceCommit": "a860eb027c6f69e099cefb12887e8acfd34e01e3",
+  "releaseId": "v0.2.19",
+  "posmVersion": "1.0.88",
+  "sourcePullRequest": 171,
+  "domain": "epharm.inkar.kz",
+  "learnRemainsSeparate": true,
+  "mainCi": {
+    "runId": 43769773406,
+    "state": "success",
+    "backendTests": 1742,
+    "frontendTests": 1173,
+    "windowsCoreTests": 968,
+    "nativeWpfScenarios": 55,
+    "nativeWpfAssertions": 446,
+    "nativeWpfUsesSyntheticHttp": true,
+    "backendBrowserTests": 121,
+    "nginxBrowserTests": 72,
+    "mobileAppJobsPaused": true
+  },
+  "additionalChecks": {
+    "reviewBackendRewardTests": 51,
+    "reviewPosmTargetedTests": 106,
+    "artifactGuardTests": 57,
+    "isolatedUnifiedFlows": 8,
+    "isolatedOtpProvider": "synthetic HTTPS protocol fixture",
+    "productionBrowserBefore": {
+      "phase": "before",
+      "visits": 40,
+      "jsErrorCount": 0,
+      "failedSameOriginCount": 0,
+      "blockedWrites": 0,
+      "failure": null
+    },
+    "productionBrowserAfter": {
+      "phase": "after",
+      "visits": 40,
+      "jsErrorCount": 0,
+      "failedSameOriginCount": 0,
+      "blockedWrites": 0,
+      "failure": null
+    },
+    "productionApiChecks": 15
+  },
+  "officialArtifacts": {
+    "runId": 43771533243,
+    "artifactId": 14184820331,
+    "sourceFileCount": 1233,
+    "sourceMatchesGit": true,
+    "jarSha256": "330ab4340528a4468dd49bae51edf2989d4de5764276535bbcc8bd58c41a4240",
+    "allSixFinancialBoundaries": "PASS",
+    "rootfsRuntimeAndImageJarVerifiedOnBothHosts": true,
+    "posmSha256": "309d804b8b50fd3d64371136e3e8bfc280598d9b203720e6cd865b2911456634",
+    "posmSameRuntimeAnd13NonAppLibraries": true,
+    "posmExistingSpkiSignatureVerified": true,
+    "anonymousCdnAndGitHubBytesAndRangeVerified": true
+  },
+  "preservation": {
+    "configurationAndCaddyUnchanged": true,
+    "infrastructureContainersUnchanged": true,
+    "database": {
+      "profiles": 611,
+      "sales": 1935919,
+      "successfulMigrations": 102,
+      "lastMigration": 103,
+      "failedMigrations": 0,
+      "rewardCases": 0,
+      "rewardWalletEntries": 0,
+      "sourceBindings": 2,
+      "activeCampaigns": 0,
+      "fundedActiveCampaigns": 0,
+      "activeRules": 0
+    },
+    "migrationFilesUnchanged": true,
+    "dataRestoredOverLiveSales": false,
+    "sourceConfigAndOutboxNotInClientZip": true,
+    "previousAppReleaseRowsRetained": true,
+    "previousReleaseRecords": 36,
+    "currentReleaseRecords": 37
+  },
+  "recoveryRehearsal": {
+    "state": "PASS",
+    "mode": "isolated retained database; backend forward recovery, not a real cashier pilot",
+    "originalHistoricalTablesPreserved": 153,
+    "strictFinancialTables": 17,
+    "existingCredits": 6,
+    "existingAmountKzt": 2400,
+    "additionalCreditsOrBudgetDelta": 0,
+    "exactStoredRequestsBeforeAndAfterSameContainerRestart": true,
+    "originalEvidenceUnchanged": true,
+    "ownedTrialContainersStoppedDataRetained": true,
+    "oldV018ReplayVulnerableRollbackDenied": true,
+    "newMigrationAdded": false
+  },
+  "backup": {
+    "localBundleCreatedUtc": "2026-11-15T22:21:45Z",
+    "localManifestSha256": "212a1d78189320ef5049b3e9a7e14fabdc67196c354c878d661f1edd0b17cf7e",
+    "localBundleBytes": 565667802,
+    "encryptedOffsiteRequired": true,
+    "nativeFilesAndKeysRequired": true,
+    "latestAutomatedBackupAndRestoreSucceeded": true
+  },
+  "liveRuntime": {
+    "heapMaxBytes": 1342177280,
+    "cgroupMemoryBytes": 2147483648,
+    "backendRestarts": 0,
+    "oomKilled": false,
+    "flags": {
+      "POSM_STAFF_AUTH_ENABLED": "true",
+      "POSM_STAFF_REGISTRATION_SMS_REQUIRED": "false",
+      "POSM_SALE_BONUS_ENABLED": "false",
+      "POSM_SALE_BONUS_AUTO_CREDIT_ENABLED": "false",
+      "FULFILLMENT_POSM_ENABLED": "false",
+      "MERCH_NATIVE_DELIVERY_ENABLED": "true",
+      "MERCH_NATIVE_EXECUTOR_ENABLED": "true",
+      "LEARNER_CREDENTIALS_ENABLED": "true"
+    }
+  },
+  "initialRolloutWitness": {
+    "observedUtc": "2026-11-15T23:15:39.459145+00:00",
+    "totalStored": 121,
+    "freshAtMost90Seconds": 121,
+    "freshVersions": {
+      "1.0.87.0": 103,
+      "1.0.88.0": 18
+    },
+    "allReportedVersions": {
+      "1.0.87.0": 103,
+      "1.0.88.0": 18
+    }
+  },
+  "acceptedOpenBoundaries": {
+    "productionMoneyFlagsRemainOff": true,
+    "activeCampaignsAtVerification": 0,
+    "ownerWillAddCampaignsAndBudgetsLater": true,
+    "realNativeCashierMoneyPilotNotProvenBySyntheticChecks": true,
+    "historical401409QueuesNotDiscardedOrRewritten": true,
+    "sentrySetupPreviouslyDeferred": true,
+    "sentryTagWorkflowRun": 43771520198,
+    "sentryTagWorkflowState": "failure",
+    "sentryFailureStep": "Build and upload hidden source maps",
+    "mobileAppTestingNotResumed": true
+  }
+}
