@@ -28,6 +28,7 @@ class StaffAuthService(
     private val provider: OtpProvider,
     private val phoneLock: StaffPhoneLock,
     private val credentialVault: kz.epharm.learnercredentials.LearnerPasswordVault,
+    private val sourceBindings: SourceStaffBindingService,
     @Value("\${app.otp.dev-mode:true}") private val devMode: Boolean,
     @Value("\${app.otp.dev-fixed:5445}") private val devCode: String,
 ) {
@@ -57,10 +58,10 @@ class StaffAuthService(
         revokeDeviceGrants(device,c.processInstanceId)
         jdbc.update("""INSERT INTO posm_staff_sessions(token_hash,pharmacist_id,device_id,pharmacy_id,password_fingerprint,
             standard_n_user_id,standard_n_session_id,workstation_id,process_instance_id,expires_at,standard_n_iin,standard_n_iin_status,
-            standard_n_full_name,standard_n_full_name_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            standard_n_full_name,standard_n_full_name_status,source_namespace) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             hash(token),person.id,device.deviceId,device.pharmacyId,hash(person.password!!),
             c.standardNUserId,c.standardNSessionId,c.workstationId,c.processInstanceId,Timestamp.from(expires),c.standardNIin,c.standardNIinStatus,
-            c.standardNFullName,c.standardNFullNameStatus)
+            c.standardNFullName,c.standardNFullNameStatus,c.sourceNamespace)
         return StaffSessionResponse("authenticated",token,expires,StaffPerson(person.id,person.name),c)
     }
 
@@ -176,8 +177,8 @@ class StaffAuthService(
             WHERE s.token_hash=? AND s.device_id=? AND s.pharmacy_id=? AND s.revoked_at IS NULL AND s.expires_at>now()""",
             {rs,_->
                 val storedContext=StaffContext(rs.getString("standard_n_user_id"),rs.getString("standard_n_session_id"),rs.getString("workstation_id"),rs.getString("process_instance_id"),rs.getString("standard_n_iin"),rs.getString("standard_n_iin_status"),
-                    rs.getString("standard_n_full_name"),rs.getString("standard_n_full_name_status"))
-                val expectedContext=if(legacy) storedContext.copy(standardNIin=null,standardNIinStatus="unavailable",standardNFullName=null,standardNFullNameStatus="unavailable") else storedContext
+                    rs.getString("standard_n_full_name"),rs.getString("standard_n_full_name_status"),rs.getString("source_namespace"))
+                val expectedContext=if(legacy) storedContext.copy(standardNIin=null,standardNIinStatus="unavailable",standardNFullName=null,standardNFullNameStatus="unavailable",sourceNamespace=null) else storedContext
                 if(rs.getString("status")!="active" || rs.getString("current_pharmacy")!=device.pharmacyId || expectedContext!=context ||
                     rs.getString("password_hash")?.let(::hash)!=rs.getString("password_fingerprint")) unauthorized()
                 StaffSessionResponse("authenticated",null,rs.getTimestamp("expires_at").toInstant(),StaffPerson(rs.getString("pharmacist_id"),rs.getString("name")),expectedContext)
@@ -234,10 +235,11 @@ class StaffAuthService(
         val source=c.standardNContext
         jdbc.update("""INSERT INTO posm_device_staff_sessions(token_hash,pharmacist_id,device_id,pharmacy_id,password_fingerprint,
             process_instance_id,standard_n_user_id,standard_n_session_id,workstation_id,standard_n_iin,standard_n_iin_status,
-            standard_n_full_name,standard_n_full_name_status,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            standard_n_full_name,standard_n_full_name_status,source_namespace,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             hash(token),person.id,device.deviceId,device.pharmacyId,hash(person.password!!),c.processInstanceId,
             source?.standardNUserId,source?.standardNSessionId,source?.workstationId,source?.standardNIin,source?.standardNIinStatus ?: "unavailable",
-            source?.standardNFullName,source?.standardNFullNameStatus ?: "unavailable",Timestamp.from(expires))
+            source?.standardNFullName,source?.standardNFullNameStatus ?: "unavailable",source?.sourceNamespace,Timestamp.from(expires))
+        sourceBindings.observe(device,person.id,source,hash(token))
         return StaffDeviceSessionResponse("authenticated",token,expires,StaffPerson(person.id,person.name),c)
     }
 
@@ -255,24 +257,27 @@ class StaffAuthService(
         val stored=jdbc.query("""SELECT * FROM posm_device_staff_sessions WHERE token_hash=? AND device_id=? AND pharmacy_id=?
             AND revoked_at IS NULL AND expires_at>now() FOR UPDATE""",{rs,_-> DeviceGrant(
                 rs.getString("process_instance_id"),rs.getString("password_fingerprint"),rs.getString("standard_n_user_id"),
-                rs.getString("standard_n_session_id"),rs.getString("workstation_id"),rs.getTimestamp("expires_at").toInstant())},
+                rs.getString("standard_n_session_id"),rs.getString("workstation_id"),rs.getTimestamp("expires_at").toInstant(),rs.getString("source_namespace"))},
             tokenHash,device.deviceId,device.pharmacyId).singleOrNull() ?: unauthorized()
         val source=context.standardNContext
         if(person.status!="active" || person.pharmacy!=device.pharmacyId ||
             person.password?.let(::hash)!=stored.passwordFingerprint || stored.process!=context.processInstanceId ||
             (source!=null && stored.user!=null && (stored.user!=source.standardNUserId ||
-                stored.session!=source.standardNSessionId || stored.workstation!=source.workstationId))) {
+                stored.session!=source.standardNSessionId || stored.workstation!=source.workstationId ||
+                stored.namespace!=null && source.sourceNamespace!=null && stored.namespace!=source.sourceNamespace))) {
             jdbc.update("UPDATE posm_device_staff_sessions SET revoked_at=now() WHERE token_hash=?",tokenHash)
             unauthorized()
         }
         if(source!=null) {
             // Null intervals preserve the first reliable binding; only observations may be refreshed.
             jdbc.update("""UPDATE posm_device_staff_sessions SET standard_n_user_id=?,standard_n_session_id=?,workstation_id=?,
-                standard_n_iin=?,standard_n_iin_status=?,standard_n_full_name=?,standard_n_full_name_status=? WHERE token_hash=?""",
+                standard_n_iin=?,standard_n_iin_status=?,standard_n_full_name=?,standard_n_full_name_status=?,
+                source_namespace=COALESCE(?,source_namespace) WHERE token_hash=?""",
                 source.standardNUserId,source.standardNSessionId,source.workstationId,source.standardNIin,source.standardNIinStatus,
-                source.standardNFullName,source.standardNFullNameStatus,tokenHash)
+                source.standardNFullName,source.standardNFullNameStatus,source.sourceNamespace,tokenHash)
         }
         recordObservation(person,person.iin ?: unauthorized(),source)
+        sourceBindings.observe(device,person.id,source,tokenHash)
         return StaffDeviceSessionResponse("authenticated",null,stored.expires,StaffPerson(person.id,person.name),context)
     }
 
@@ -335,7 +340,7 @@ class StaffAuthService(
         "SELECT id,name,phone,status,pharmacy_id,password_hash,iin FROM pharmacists WHERE $column=?"+if(lock) " FOR UPDATE" else "",
         {rs,_->Person(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7))},value).singleOrNull()
     private data class Person(val id:String,val name:String,val phone:String,val status:String,val pharmacy:String?,val password:String?,val iin:String?)
-    private data class DeviceGrant(val process:String,val passwordFingerprint:String,val user:String?,val session:String?,val workstation:String?,val expires:Instant)
+    private data class DeviceGrant(val process:String,val passwordFingerprint:String,val user:String?,val session:String?,val workstation:String?,val expires:Instant,val namespace:String?)
     private data class Challenge(val purpose:String,val device:String,val pharmacy:String,val iin:String,val phone:String,val person:String?,val eligible:Boolean,val provider:String,val codeHash:String?,val attempts:Int,val expires:Instant,val consumed:Boolean)
     private fun limit(scope:String,max:Int,seconds:Long) {
         val attempt=kz.epharm.mobile.auth.service.takeFixedWindowAttempt(jdbc,hash(scope),seconds)

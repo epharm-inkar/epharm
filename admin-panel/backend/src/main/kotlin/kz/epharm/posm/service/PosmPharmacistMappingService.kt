@@ -68,7 +68,12 @@ class PosmPharmacistMappingService(
                MAX(s.printed_at) AS last_seen_at
         FROM pos_sales s
         LEFT JOIN pharmacies p ON p.id = s.pharmacy_id
-        WHERE s.pharmacist_source = 'standardn_unmapped'
+        WHERE (s.pharmacist_source = 'standardn_unmapped'
+          OR (s.pharmacist_source IN ('standardn_name_match', 'posm_internal')
+              AND s.capture_source = 'standardn-print-log'
+              AND s.source_document_id > 0
+              AND NULLIF(BTRIM(s.device_id), '') IS NOT NULL
+              AND s.reported_pharmacist_id ~ '^-?[0-9]+$'))
           AND NULLIF(s.reported_pharmacist_id, '') IS NOT NULL
           AND NOT EXISTS (
               SELECT 1 FROM posm_pharmacist_mappings m
@@ -107,12 +112,17 @@ class PosmPharmacistMappingService(
             invalid("Фармацевт должен быть назначен в ту же аптеку, что и Standard-N USER_ID")
         }
 
+        val current = jdbc.queryForList("SELECT status,pharmacy_id FROM pharmacists WHERE id=? FOR UPDATE",pharmacist.id).singleOrNull()
+        if (current?.get("status") != "active" || current["pharmacy_id"] != pharmacyId) invalid("Фармацевт должен быть активен в этой аптеке")
+        kz.epharm.posm.staff.SourceStaffBindingService.lockAccount(jdbc,pharmacyId,externalUserId)
         val now = Instant.now()
         val existing = mappings.findByPharmacyIdAndExternalUserId(pharmacyId, externalUserId)
         val auditAction = when {
             existing == null -> "created"
             !existing.active -> "reactivated"
             existing.pharmacistId != pharmacist.id -> "remapped"
+            jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM posm_source_staff_bindings WHERE pharmacy_id=? AND native_user_id=? AND state='conflict')",
+                Boolean::class.java,pharmacyId,externalUserId) == true -> "reviewed"
             else -> null
         }
         val entity = existing
@@ -135,7 +145,7 @@ class PosmPharmacistMappingService(
                 createdAt = now,
                 updatedAt = now,
             )
-        val saved = mappings.save(entity)
+        val saved = mappings.saveAndFlush(entity)
         auditAction?.let { action -> audit(saved, action, actor.userId) }
         return PosmPharmacistMappingDto(
             id = saved.id.toString(), pharmacyId = pharmacy.id, pharmacyName = pharmacy.name,
@@ -152,6 +162,8 @@ class PosmPharmacistMappingService(
             AppException(ErrorCode.NOT_FOUND, "Сопоставление не найдено", HttpStatus.NOT_FOUND)
         }
         if (!mapping.active) return
+        jdbc.queryForList("SELECT id FROM pharmacists WHERE id=? FOR UPDATE",mapping.pharmacistId)
+        kz.epharm.posm.staff.SourceStaffBindingService.lockAccount(jdbc,mapping.pharmacyId,mapping.externalUserId)
         val now = Instant.now()
         mapping.active = false
         mapping.updatedBy = actor.userId

@@ -130,10 +130,15 @@ class InstructionIntegrationTest {
     }
     @Test fun `approval creates one available zero reward packet per branch and replay cannot duplicate`() {
         val second=shelf(B2);val p2=plan(producer,listOf(second));val id=body(upload(metadata(plans=listOf(plan,p2))))["id"].asText()
+        val reviewStarted=Instant.now()
         val result=review(id);assertThat(result.response.status).isEqualTo(200);assertThat(body(result)["status"].asText()).isEqualTo("approved")
         assertThat(count("merch_task_dispatches")).isEqualTo(2);assertThat(count("merch_task_items")).isEqualTo(2)
         assertThat(jdbc.queryForObject("SELECT sum(reward_amount_kzt) FROM merch_task_dispatches",Long::class.java)).isZero()
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM merch_task_items WHERE training_material_id=? AND required_photo_count=0 AND available_from<=now()",Int::class.java,UUID.fromString(id))).isEqualTo(2)
+        val reviewedAt=jdbc.queryForObject("SELECT reviewed_at FROM merch_instruction_materials WHERE id=?",Timestamp::class.java,UUID.fromString(id))!!.toInstant()
+        assertThat(reviewedAt).isBetween(reviewStarted,Instant.now())
+        // Availability uses the application approval instant, not the independently running database clock.
+        assertThat(jdbc.queryForObject("""SELECT count(*) FROM merch_task_items i JOIN merch_instruction_materials m ON m.id=i.training_material_id
+            WHERE m.id=? AND i.required_photo_count=0 AND i.available_from=m.reviewed_at AND i.due_at=m.due_at""",Int::class.java,UUID.fromString(id))).isEqualTo(2)
         assertThat(jdbc.queryForObject("SELECT count(*) FROM merch_task_dispatches WHERE source_mass_owner_id IS NOT NULL",Int::class.java)).isZero()
         assertThat(review(id).response.status).isEqualTo(409);assertThat(count("merch_task_dispatches")).isEqualTo(2)
     }

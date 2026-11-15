@@ -35,7 +35,7 @@ class RecommendationAttributionService(
      * @param soldProductIds  productId позиций чека, уже разрезолвленные (из PosSaleService).
      */
     fun attributeSale(sale: PosSaleEntity, soldProductIds: Set<String>) {
-        if (soldProductIds.isEmpty()) return
+        if (sale.rewardEvidence?.completion?.status == "refund" || soldProductIds.isEmpty()) return
         val sessionId = sale.sessionId
         if (sessionId.isNullOrBlank()) return // без сессии корреляции нет — не угадываем по аптеке
 

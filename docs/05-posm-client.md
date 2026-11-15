@@ -5,6 +5,45 @@ Path: `App/` and `Models/`.
 Current client is C#/WPF/.NET 10. Older Electron references are historical and no longer describe the
 implementation.
 
+## Native reward observation corrections — 2026-11-15
+
+Repeating an already recorded display returns its original evidence without observing
+the UI cart again. An unavailable UI snapshot cannot fabricate removals, additions or
+a new eligibility timer. A real native read failure, conflicting offer or changed source
+identity still makes the checkout incomplete.
+
+During posting, final `DOC_DETAIL` IDs must never replace live `DOC_DETAIL_ACTIVE`
+observations. A validated posting hold preserves the last observed group while paper/PDF
+printing finishes; only the real print cue plus independently checked final documents
+can enqueue sales. Existing proven active-to-final aliases survive retries. A first
+observation made after posting already began cannot establish a missing baseline.
+
+These are candidate corrections discovered by the Windows acceptance test; the earlier
+synthetic load result does not prove acceptance of the corrected native capture.
+
+## Reward evidence activation candidate — 2026-11-14
+
+A signed runtime update preserves pharmacy configuration and outbox. Missing local
+`RecommendationRewardsEnabled` / `NativeRefundCaptureEnabled` fields are server-managed;
+explicit `false` remains an opt-out. Explicit `true` never bypasses the server.
+Only a successful authenticated heartbeat with known `rewardEvidenceProtocol=1`
+admits capture. An old, disabled, malformed or unknown capability cannot enable it.
+Loss of capability invalidates the current reward baseline; later new checkouts
+start from fresh observations. Ordinary checkout, recommendations, RPS, QR and the
+customer screen continue. Once strict native print classification was admitted,
+it stays strict for ordinary queued receipts even while financial capture is off.
+
+The server independently limits the pilot by individual device ID and checks the
+same scope before money. Global auto-credit and activation cutoff remain separate.
+Refund observation resumes its durable cursor, without historical import or debit.
+Exact alternate EANs supplied for the same recommended product may link additions;
+an unknown EAN is never rescued by guessing a product from its name or local SKU.
+The first shown baseline and alias set remain immutable. Whole-package semantics
+are required for the rewarded product; an unrelated exact fractional line does not
+itself invalidate the cart. Uncertain rewarded units remain a case for HQ.
+
+This is candidate behavior, not evidence of completed Windows or fleet acceptance.
+
 ## Registration recovery candidate — 2026-11-14
 
 New-employee registration remains permanently SMS-free. Existing-profile activation
@@ -178,7 +217,7 @@ Only an offer with a positive individual reward is green; a zero-reward offer st
 it has no reward. Closing the popup does not accept or reject a recommendation, and the panel does
 not promise an Esc shortcut because it cannot take keyboard focus from Standard-N.
 
-The optional sale-bonus bridge does not invent an `accepted` action. With
+The legacy optional sale-bonus bridge does not invent an `accepted` action. With
 `POSM_SALE_BONUS_ENABLED=true` and an explicit UTC activation cutoff, only a real display ACK
 and a matching `standardn-print-log` sale may create one source-bound bonus reservation per
 sale/product. Both must identify the same pharmacy, session and trusted pharmacist. Exact,
@@ -188,6 +227,108 @@ or outside the 30-minute show-to-sale window fails closed. Historical events are
 The resulting receipt goes to HQ moderation, never automatic credit or Excel heuristic approval.
 After approval the bonus uses the same ePharm wallet as training and verified merchandising.
 The bridge defaults to disabled; blank cashier identity does not prevent recommendation display.
+
+### Local candidate: recommendation reward evidence v1
+
+The new optional evidence chain is separate from the legacy 30-minute show-to-sale moderation
+bridge. It records the **first actual visible show**, not the recommendation HTTP response or a
+click on the read-only popup. Its baseline and timestamp are immutable for that `eventId`;
+reopening the same offer cannot reset the timer or multiply rewards. Delayed delivery of the
+shown outbox item does not move the display time forward.
+
+A recommended product must be observed being added within **0–120 seconds inclusive** after
+that show, in the same logical `CheckoutSession.SessionId`. An ordered addition in the same
+clock tick is allowed. A product already present in the shown baseline is excluded from automatic
+credit. The client preserves all observed quantity transitions, including decreases and late
+increases; removing/readding a native line gives it a new local generation. Eligibility is limited
+to the remaining, actually sold full packages added in time. Late increases do not earn a reward,
+and decreases conservatively consume eligible quantity first. Multiple shows cannot reward the
+same sold units repeatedly.
+
+Payment can occur later than the 120-second addition window. It still requires the existing
+anchored print cue **and** `IsPostedPhysicalSale`: a freshly verified posted physical document,
+signed final details and fiscal device/number/shift. The logical checkout may contain linked
+documents, but each addition must match the physical document and native line of its completed
+sale. A print command, cart disappearance or UI-only line is not payment evidence; unproven
+line-ID migration cannot justify an automatic reward. Source identities at show/addition/completion must agree; the beneficiary comes
+from an active explicit HQ mapping or a source-bound RPS proof for that native user.
+After successful password login, exact IIN establishes the proof; only missing/unavailable
+source IIN permits an exact unique full-name match. The device, database namespace, USER,
+native SESSION and workstation must match and the grant must have been valid at payment.
+A body-supplied internal ID, fuzzy name or later login cannot authorize money. Known IIN
+mismatch, ambiguous names and conflicting/revoked mappings require HQ review.
+
+`App/Services/RecommendationRewardJournal.cs` stores a private atomic, checksummed observation
+journal, bounded to 32 checkouts / 8 MiB and 2,048 changes per checkout. Optional `rewardEvidence`
+travels on the existing shown and sale DTOs/outbox; there is no new addition HTTP request. Sale
+evidence is frozen before queueing. The local journal retires only after the group's nonempty
+sales have been durably queued and its other physical documents have been resolved; the offline
+outbox retains the sale evidence.
+Read gaps, corrupt/lost state, a restart interval, ambiguous log-only removal or exhausted bounds
+lower completeness and never block the cash desk. Source namespaces are 64-character SHA-256
+digests of the successful database source; raw paths, passwords and RPS tokens are not sent.
+
+The backend independently verifies the evidence, canonical physical/fiscal receipt and product,
+recipient, remaining quantity, immutable offer terms and budget. Canonical sale/product
+deduplication and the existing wallet credit path prevent repeated delivery or different sale
+aliases from creating another credit. Complete eligible evidence may credit the common ePharm
+wallet automatically; uncertainty is routed to HQ. A refund is an HQ review/hold case, including
+after credit, and never automatically debits the pharmacist.
+
+This remains **local-only candidate work**, not an enabled production rollout. Local
+`RecommendationRewardsEnabled` / `EPHARM_RECOMMENDATION_REWARDS_ENABLED` defaults to `false`.
+Server `POSM_SALE_BONUS_ENABLED` and `POSM_SALE_BONUS_AUTO_CREDIT_ENABLED` also default to `false`;
+automatic credit additionally requires an explicit `POSM_SALE_BONUS_ELIGIBLE_AFTER` cutoff.
+Legacy DTOs, recommendation display, receipts, customer screen, QR, RPS and separate `/learn`
+continue independently.
+
+The controlled Standard-N DEMO whole-pack sale confirms `HUMAN_QUANT="1"`, `QUANT=-1`
+and the whole-pack price. Posting preserves `HUMAN_QUANT`; `KOEF` is an inventory participation
+flag, not a pack coefficient. `StandardNQuantityUnits` accepts only a positive integer native
+human quantity agreeing with the absolute raw quantity. Fractions, absent/malformed human
+quantities and mismatches remain `unknown`; quantities/prices are never rounded or converted.
+Older schemas without the optional posted human-quantity column retain ordinary sale capture.
+
+Standard-N allocates a new posted `DOC_DETAIL.ID`. The real posted ID stays unchanged;
+`observedSourceLineId` is an optional, one-to-one link to the original ACTIVE ID, permitted only
+for a unique same-document signature of part, quantity, price, amount, discount and human quantity.
+Ambiguity cannot create money. Durable retry preserves the original link, including after a
+failed finalization and a snapshot already containing posted rows.
+
+`NativeRefundCaptureEnabled` / `EPHARM_NATIVE_REFUND_CAPTURE_ENABLED` defaults to `false`.
+Its separate read-only observer accepts posted cash return type **9**, positive native monetary
+signs, final details and fiscal identity. The UI-proven original sale is `DOCS.PARENT_ID`, never
+the return line's `PARENT_ID`. It emits `standardn-db-refund` / `standardn-posted-refund`, not a
+fabricated sale print cue. Original fiscal identity includes the original device number.
+Missing or conflicting original evidence goes to HQ without reserving an unrelated sale.
+Returns stay in the raw journal but are excluded from paid-sales/GMV/marketing attribution.
+
+The private refund cursor v2 keeps a fixed activation database time and rotating bounded scans:
+generator IDs are not commit order. It retains up to 256 pending and 16,384 completed return IDs;
+enqueue precedes checkpoint, replay is idempotent, and a full bound stops observation with a
+diagnostic before dropping an unretained return. Cash work continues. Historical postings before
+activation are not imported. An unreleased local v1 cursor is preserved/rejected, not silently reset.
+Deleting the highest unpaid draft may legitimately reduce live `MAX(DOCS.ID)`. This alone does
+not disable the observer or rewind its durable high watermark; cutoff and source-identity
+checks still apply. A maximum-ID decrease is not treated as proof of a database restore.
+The generic print guard cannot relabel an old held sale as a return or suppress a proven paid
+sale merely because an unrelated return draft remains open.
+A per-log bounded BeforeQueue/Destroy-ID/AfterQueue tracker permits a delayed paper dialog only
+for exact IDs from that completed print batch intersected with durable observed, not-yet-queued
+documents. The native classifier also reads unknown batch IDs to retain a mixed-return veto;
+those IDs cannot authorize a sale. Legacy/docless classification keeps its five-second POSTDT
+window, and the bounded five-second probe after the cue plus paid/source/session/fiscal checks
+remain unchanged. Rotation, interruption and overflow cannot enable the exact-ID exception.
+
+A server-observed RPS mismatch remains an HQ veto. V102 separately records source-bound
+positive proof and its audit, without rewriting the HQ mapping. SourceNamespace is sent only
+from a fresh successful native read and an exact current cart/source; stale, failed or log-only
+observations omit it. Changing a known namespace invalidates the native grant. Old clients
+and old server responses retain their existing behavior; they cannot invent the new proof.
+
+**Acceptance limits:** core/contract tests and a Windows-targeted WPF build do not constitute a
+complete real Windows/pharmacy acceptance test. The full current-candidate pilot is tracked in
+the root `PLAN.md`; production switches and the main branch remain unchanged.
 
 Merchandising tasks are accepted only while both the task deadline (when present) and QR-token
 expiration remain in the future. An already-open window hides its QR at expiry rather than waiting

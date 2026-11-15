@@ -79,6 +79,11 @@ class UnifiedAdminCatalog(mapper: ObjectMapper) {
             PermissionDefinition(campaignPublish),
             PermissionDefinition(recommendationPublish),
             PermissionDefinition(configureBonus, PermissionKind.FINANCIAL),
+            PermissionDefinition(key("motivation", "sales_review", "view")),
+            PermissionDefinition(key("motivation", "sales_review", "approve"), PermissionKind.FINANCIAL,
+                viewPermission = key("motivation", "sales_review", "view")),
+            PermissionDefinition(key("motivation", "sales_review", "export"), PermissionKind.EXPORT,
+                viewPermission = key("motivation", "sales_review", "view")),
             PermissionDefinition(inventoryView), PermissionDefinition(inventoryManage),
             PermissionDefinition(key("merchandising", "inventory", "edit_structure"), viewPermission = inventoryView),
             PermissionDefinition(key("merchandising", "inventory", "edit_passport"), viewPermission = inventoryView),
@@ -129,6 +134,8 @@ class UnifiedAdminCatalog(mapper: ObjectMapper) {
     fun supported(key: PermissionKey) = definitions.any { it.key == key }
 
     fun availableRoles(key: PermissionKey): Set<AdminRole> = when {
+        key.module == AdministrationModule.MOTIVATION && key.subsection == "sales_review" ->
+            setOf(AdminRole.SYSTEM_ADMIN, AdminRole.HQ_HEAD, AdminRole.FINANCE_REVIEWER)
         key in setOf(accountManage, producerBindingManage, placementBindProducer, credentialExport) -> setOf(AdminRole.SYSTEM_ADMIN, AdminRole.HQ_HEAD)
         key.module == AdministrationModule.TRAINING -> trainingRoleCeilings["${key.subsection}.${key.action}"].orEmpty()
         key.module == AdministrationModule.MERCHANDISING -> setOf(AdminRole.SYSTEM_ADMIN, AdminRole.HQ_HEAD,

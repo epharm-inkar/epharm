@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using CustomerDisplay.Models;
@@ -119,4 +120,45 @@ internal static class StandardNLogParser
             if (ch is < '0' or > '9') return false;
         return true;
     }
+}
+
+internal sealed class StandardNPrintLogBatch
+{
+    internal const int MaximumLines = 4096;
+    private readonly HashSet<long> _documents = new();
+    private static readonly Regex Script = new(@"^\s*(?:\d+\s+(?:\.\s*)+)?RunScriptByIndex\s*:\s*(?<name>Перед печатью очереди чеков|После печати очереди чеков)\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex Document = new(@"^\s*(?:\d+\s+(?:\.\s*)+)?Destroy\s+Cheque\s+ID\s*=\s*(?<id>-?\d+)\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private bool _collecting;
+    private int _lines;
+
+    internal IReadOnlySet<long>? Observe(string line)
+    {
+        if (line.Length > MaximumLines) { Reset(); return null; }
+        var script = Script.Match(line);
+        if (script.Success && script.Groups["name"].Value.Equals("Перед печатью очереди чеков", StringComparison.OrdinalIgnoreCase))
+        { Reset(); _collecting = true; return null; }
+        if (script.Success) {
+            IReadOnlySet<long>? result = _collecting && _documents.Count > 0 ? new HashSet<long>(_documents) : null;
+            Reset(); return result;
+        }
+        if (!_collecting) return null;
+        if (++_lines > MaximumLines ||
+            line.Contains("PrintChequeList stop end", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("PrintChequeList results:", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("PrintChequeList error", StringComparison.OrdinalIgnoreCase) ||
+            line.Contains("PrintChequeList exception", StringComparison.OrdinalIgnoreCase)) { Reset(); return null; }
+        if (line.Contains("Destroy Cheque", StringComparison.OrdinalIgnoreCase)) {
+            var match = Document.Match(line);
+            if (!match.Success || !long.TryParse(match.Groups["id"].Value, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var id)) { Reset(); return null; }
+            if (id > 0) _documents.Add(id);
+            else if (id != -1) { Reset(); return null; } // Only -1 is the proven temporary cheque object.
+            if (_documents.Count > StandardNReceiptProjection.MaxDocuments) Reset();
+        }
+        return null;
+    }
+
+    internal void Reset() { _collecting = false; _lines = 0; _documents.Clear(); }
 }

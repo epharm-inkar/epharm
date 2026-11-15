@@ -46,7 +46,7 @@ public partial class MainWindow
         }
     }
 
-    private void RecordPhysicalReceiptPrint()
+    private void RecordPhysicalReceiptPrint(IReadOnlySet<long>? permittedDocuments = null, DateTimeOffset? observedAt = null)
     {
         Interlocked.Increment(ref _physicalReceiptProbeGeneration);
         if (!LoadObservedReceiptGroups() || _observedReceiptGroups.Count == 0)
@@ -64,19 +64,20 @@ public partial class MainWindow
             }
             return;
         }
-        var markerAt = _receiptProofClock();
+        var markerAt = observedAt ?? _receiptProofClock();
         if (_standardNCurrentReceipt != null) _physicalReceiptRetryAfter.Remove(ObservedGroupKey(_standardNCurrentReceipt));
         var cueId = Guid.NewGuid().ToString("N");
+        long[] Candidates(StandardNObservedReceiptGroup group) => group.ObservedActiveDocumentIds.Except(group.PrintDocumentTimes.Keys)
+            .Except(group.QueuedDocumentIds).Except(group.ResolvedEmptyDocumentIds)
+            .Where(id => permittedDocuments == null || permittedDocuments.Contains(id)).ToArray();
         var changes = _observedReceiptGroups.Values.Select(group => group with
         {
             PendingPrint = group.PendingPrint != null && (!group.AnchoredPrintCueIds.Contains(group.PendingPrint.CueId) &&
                     markerAt - group.PendingPrint.ObservedAt <= TimeSpan.FromSeconds(5) ||
                     _standardNCurrentReceipt == null || ObservedGroupKey(group.Snapshot) != ObservedGroupKey(_standardNCurrentReceipt))
                 ? group.PendingPrint
-                : group.ObservedActiveDocumentIds.Except(group.PrintDocumentTimes.Keys)
-                .Except(group.QueuedDocumentIds).Except(group.ResolvedEmptyDocumentIds).Any()
-                ? new(markerAt, group.ObservedActiveDocumentIds.Except(group.PrintDocumentTimes.Keys)
-                    .Except(group.QueuedDocumentIds).Except(group.ResolvedEmptyDocumentIds).ToArray(), cueId)
+                : Candidates(group).Length > 0
+                ? new(markerAt, Candidates(group), cueId)
                 : null,
         }).ToArray();
         // One bounded journal replacement records the entire immutable candidate set, or none.
@@ -211,7 +212,7 @@ public partial class MainWindow
                 }
                 else if (StandardNReceiptProjection.IsPostedPhysicalSale(document))
                 {
-                    if (!OnReceiptFinalized("standardn-print-log", document, session, printedAt))
+                    if (!OnReceiptFinalized("standardn-print-log", document, session, printedAt, state))
                     {
                         _physicalReceiptRetryAfter[key] = now.AddSeconds(30);
                         continue;
@@ -230,6 +231,7 @@ public partial class MainWindow
             if (!SaveObservedReceiptGroup(group)) continue;
             if (state.Documents!.Any(document => !StandardNReceiptProjection.IsResolvedPhysicalDocument(group, document))) continue;
             _receiptArtifacts!.RetireObservedGroup(group);
+            _rewardJournal?.Retire(group.CheckoutSessionId);
             _observedReceiptGroups.Remove(key);
             _physicalReceiptRetryAfter.Remove(key);
             _receiptObservations.LogChanged();

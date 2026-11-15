@@ -20,6 +20,29 @@ public sealed class LegacyPosmCompatibilityTests
     private const string Origin = "https://epharm.inkar.kz";
 
     [Theory]
+    [InlineData("{\"ok\":true,\"deviceId\":\"cash\",\"rewardEvidenceProtocol\":1}", 1)]
+    [InlineData("{\"ok\":true,\"deviceId\":\"cash\"}", null)]
+    [InlineData("{\"ok\":true,\"rewardEvidenceProtocol\":2}", null)]
+    [InlineData("{\"ok\":false,\"rewardEvidenceProtocol\":1}", null)]
+    public async Task CurrentHeartbeatNegotiatesOnlyKnownExplicitCapability(string body, int? expected)
+    {
+        await using var server = new LoopbackServer([
+            (HttpStatusCode.OK, JsonNode.Parse("{\"ok\":true,\"rewardEvidenceProtocol\":1}")!),
+            (HttpStatusCode.OK, JsonNode.Parse(body)!),
+            (HttpStatusCode.ServiceUnavailable, JsonNode.Parse("{}")!),
+        ]);
+        using var api = new EpharmApiClient(new CustomerDisplay.Config.EpharmConfig { BackendBaseUrl = server.Origin });
+        var ct = TestContext.Current.CancellationToken;
+        Assert.True(await api.HeartbeatAsync("cash", "pharmacy", 1, "1.0.87", ct));
+        Assert.Equal(1, api.RewardEvidenceProtocol);
+        Assert.True(await api.HeartbeatAsync("cash", "pharmacy", 1, "1.0.87", ct));
+        Assert.Equal(expected, api.RewardEvidenceProtocol);
+        Assert.False(await api.HeartbeatAsync("cash", "pharmacy", 1, "1.0.87", ct));
+        Assert.Null(api.RewardEvidenceProtocol);
+    }
+
+
+    [Theory]
     [InlineData("1.0.57")]
     [InlineData("1.0.66")]
     public async Task HistoricalClientsPreserveFullOpaqueIdentifiersThroughShownAndOutcome(string version)

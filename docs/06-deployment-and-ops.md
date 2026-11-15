@@ -415,6 +415,38 @@ Release gate:
 The updater deliberately preserves `C:\Epharm\posm.json`, so the pharmacy ID and device configuration
 do not come from the shared release and are not overwritten by fleet updates.
 
+### Recommendation-sale reward activation
+
+The native evidence release and automatic money activation are separate operations. Production
+Compose forwards all four backend settings explicitly:
+
+```dotenv
+POSM_SALE_BONUS_ENABLED=false
+POSM_SALE_BONUS_AUTO_CREDIT_ENABLED=false
+POSM_SALE_BONUS_DEVICE_ALLOWLIST=
+POSM_SALE_BONUS_ELIGIBLE_AFTER=
+```
+
+After the Windows financial scenario, recipient mapping, budget limits and rollback rehearsal
+pass, set both flags to `true` and set `POSM_SALE_BONUS_ELIGIBLE_AFTER` to the explicitly approved
+UTC cutover instant (ISO-8601 ending in `Z`). An automatic-credit opt-in without the evidence gate
+or cutoff prevents backend startup. Retain the original cutoff across ordinary restarts; do not
+use a past instant to backfill historical sales. Setting only `POSM_SALE_BONUS_ENABLED=true`
+does not enable automatic wallet credit. Evidence recorded while automatic credit is disabled
+does not become automatically eligible merely because that flag is later enabled.
+
+An empty `POSM_SALE_BONUS_DEVICE_ALLOWLIST` admits no devices. Begin with the exact authenticated
+individual device ID of the pilot cash desk; multiple exact IDs are comma-separated. Only after
+pilot acceptance may the explicit `*` value admit the fleet. The server negotiates the native
+evidence capability on heartbeat; missing or unknown capability disables it. The same admission
+gate protects shown and paid evidence, so a client-side setting cannot bypass the pilot scope.
+The update preserves local `posm.json` and individual device credentials. Verify actual shown/cart/
+paid evidence from the selected cash desk and one source-bound wallet entry, then verify that
+the same balance appears in the employee's separate `/learn` account. Refunds enter HQ review
+without an automatic debit. Legacy clients continue their existing journal/reservation path;
+their traffic is not proof that the new financial protocol has passed on that cash desk.
+Do not report fleet coverage from a published ZIP or version alone.
+
 ## Health Checks
 
 ```bash

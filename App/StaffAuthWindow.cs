@@ -451,7 +451,7 @@ public sealed class StaffAuthWindow : Window
             // success response is a service failure, never proof of pending approval.
             if (result.Status is not ("authenticated" or "pending")) throw new StaffApiException("INVALID_RESPONSE");
             if (result.Status == "authenticated") {
-                if (_deviceContext != null && result.DeviceContext != _deviceContext) throw new StaffApiException("INVALID_RESPONSE");
+                if (_deviceContext != null && !_deviceContext.MatchesResponse(result.DeviceContext)) throw new StaffApiException("INVALID_RESPONSE");
                 SetStatus("Подтверждаем вход ePharm…", "ePharm жүйесіне кіруді растап жатырмыз…");
                 await CompleteAuthentication(result);
                 return;
@@ -523,7 +523,7 @@ public sealed class StaffAuthWindow : Window
 
     private bool IsValidAuthenticatedRegistration(StaffRegistrationResponse response) =>
         response.Status == "authenticated" &&
-        (_deviceContext != null ? response.DeviceContext == _deviceContext : response.Context == _context && _context != null) &&
+        (_deviceContext != null ? _deviceContext.MatchesResponse(response.DeviceContext) : _context != null && _context.MatchesResponse(response.Context)) &&
         !string.IsNullOrWhiteSpace(response.Pharmacist?.Id) && !string.IsNullOrWhiteSpace(response.SessionToken) &&
         response.ExpiresAt > DateTimeOffset.UtcNow;
 

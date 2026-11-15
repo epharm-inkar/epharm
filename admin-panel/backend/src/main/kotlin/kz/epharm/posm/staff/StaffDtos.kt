@@ -16,6 +16,7 @@ data class StaffContext(
     @field:Pattern(regexp="available|missing|invalid|unavailable|ambiguous") val standardNIinStatus: String = "unavailable",
     @field:Size(max=255) val standardNFullName: String? = null,
     @field:Pattern(regexp="available|missing|invalid|unavailable|ambiguous") val standardNFullNameStatus: String = "unavailable",
+    @field:Pattern(regexp="[a-f0-9]{64}") val sourceNamespace: String? = null,
 )
 data class StaffLoginRequest(
     @field:Iin @field:NotBlank @field:Size(min=12,max=12) val iin: String,

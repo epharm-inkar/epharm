@@ -2756,5 +2756,49 @@
       "kind": "ORDINARY"
     },
     "mode": "NOT_READY"
+  },
+  {
+    "api": "GET /api/admin/reconcile/recommendation-rewards",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_review",
+      "action": "view",
+      "kind": "ORDINARY"
+    },
+    "mode": "SCOPED",
+    "explicitAccess": true
+  },
+  {
+    "api": "GET /api/admin/reconcile/recommendation-rewards/{id}",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_review",
+      "action": "view",
+      "kind": "ORDINARY"
+    },
+    "mode": "SCOPED",
+    "explicitAccess": true
+  },
+  {
+    "api": "GET /api/admin/reconcile/recommendation-rewards/export.xlsx",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_review",
+      "action": "export",
+      "kind": "EXPORT"
+    },
+    "mode": "SCOPED",
+    "explicitAccess": true
+  },
+  {
+    "api": "POST /api/admin/reconcile/recommendation-rewards/{id}/decision",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_review",
+      "action": "approve",
+      "kind": "FINANCIAL"
+    },
+    "mode": "SCOPED",
+    "explicitAccess": true
   }
 ]

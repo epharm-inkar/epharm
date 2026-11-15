@@ -339,7 +339,7 @@ class UnifiedAdminAccessIntegrationTest {
     }
 
     @Test fun `catalog never advertises unmigrated routes as grantable and scope empty is invalid`() {
-        assertThat(catalog.routes).hasSize(265)
+        assertThat(catalog.routes).hasSize(269)
         val staffRoutes = catalog.routes.filter { it.permission.subsection == "staff_access" }
         assertThat(staffRoutes.map { it.api }).containsExactlyInAnyOrder(
             "GET /api/admin/merch/staff-access", "GET /api/admin/merch/staff-access/options",
@@ -350,6 +350,20 @@ class UnifiedAdminAccessIntegrationTest {
         }
         for (permission in listOf(catalog.staffAccessCreate, catalog.staffAccessRevoke)) {
             assertThat(catalog.definitions.single { it.key == permission }.viewPermission).isEqualTo(catalog.staffAccessView)
+        }
+        val reviewedSales = mapOf(
+            "GET /api/admin/reconcile/recommendation-rewards" to "view",
+            "GET /api/admin/reconcile/recommendation-rewards/{id}" to "view",
+            "GET /api/admin/reconcile/recommendation-rewards/export.xlsx" to "export",
+            "POST /api/admin/reconcile/recommendation-rewards/{id}/decision" to "approve",
+        )
+        val salesRoutes = catalog.routes.filter { it.permission.subsection == "sales_review" && it.mode != ScopeIntegration.NOT_READY }
+        assertThat(salesRoutes.map { it.api }).containsExactlyInAnyOrderElementsOf(reviewedSales.keys)
+        assertThat(salesRoutes).allSatisfy { route ->
+            assertThat(route.mode).isEqualTo(ScopeIntegration.SCOPED)
+            assertThat(route.explicitAccess).isTrue()
+            assertThat(route.permission.module).isEqualTo("motivation")
+            assertThat(route.permission.action).isEqualTo(reviewedSales.getValue(route.api))
         }
         val reviewedTraining = setOf(
             "GET /api/admin/training/assignments",
@@ -472,7 +486,8 @@ class UnifiedAdminAccessIntegrationTest {
         assertThat(catalog.routes.filter { it.mode == ScopeIntegration.SCOPED }.all {
             it.api.contains(" /api/admin/pharmacists") || it.api.contains(" /api/admin/pharmacies") ||
                 it.api in reviewedTraining || it.api == "GET /api/admin/training/pharmacists" || it.explicitAccess && it.api in setOf(
-                    "GET /api/admin/training/exports/assignments.xlsx", "GET /api/admin/training/exports/results.xlsx") || it.explicitAccess && it.api in reviewedNative
+                    "GET /api/admin/training/exports/assignments.xlsx", "GET /api/admin/training/exports/results.xlsx") ||
+                it.explicitAccess && (it.api in reviewedNative || it.api in reviewedSales)
         }).isTrue()
         org.junit.jupiter.api.assertThrows<IllegalArgumentException> { grant("pharmacies_products", "pharmacies", "view", emptySet()).toGrant() }
     }

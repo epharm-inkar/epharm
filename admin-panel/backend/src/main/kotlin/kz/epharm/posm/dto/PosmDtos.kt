@@ -44,6 +44,8 @@ data class RecommendRequest(
     @field:NotNull
     @field:Valid
     val cart: List<CartItemDto> = emptyList(),
+    @field:jakarta.validation.constraints.Pattern(regexp = "[a-f0-9]{64}")
+    val sourceNamespace: String? = null,
 )
 
 /** Строка таблицы «Сравнение» в карточке. Зеркалит C# ComparisonRow. */
@@ -85,6 +87,8 @@ data class RecommendationDto(
     val source: String = "epharm",
     /** Null means that no authoritative inventory snapshot exists; it never means zero stock. */
     val balance: ProductBalanceDto? = null,
+    /** Exact aliases of this same catalogue product; legacy clients retain recommendBarcode. */
+    val recommendBarcodes: List<String> = emptyList(),
 )
 
 /**
@@ -120,6 +124,7 @@ data class RecommendResponse(
     val sessionId: String,
     val recommendations: List<RecommendationDto>,
     val conflicts: List<ConflictDto> = emptyList(),
+    val rewardEvidenceProtocol: Int? = null,
 )
 
 /** Результат рекомендации: фармацевт принял замену/cross-sell или пропустил. */
@@ -145,6 +150,7 @@ data class OutcomeResponse(
 data class MarkShownRequest(
     @field:NotNull
     val shownAt: java.time.Instant,
+    @field:Valid val rewardEvidence: RewardShownEvidence? = null,
 )
 
 data class MarkShownResponse(val eventId: String, val ok: Boolean)
@@ -202,6 +208,7 @@ data class PosSaleRequest(
     @field:NotNull
     @field:Valid
     val items: List<PosSaleItemDto> = emptyList(),
+    @field:Valid val rewardEvidence: RewardSaleEvidence? = null,
     @field:NotNull
     val printedAt: java.time.Instant,
 )
@@ -209,4 +216,4 @@ data class PosSaleRequest(
 data class PosSaleResponse(val saleId: String, val accepted: Boolean)
 
 /** Пульс кассы (T4): подтверждение, что устройство учтено как онлайн. */
-data class HeartbeatResponse(val ok: Boolean, val deviceId: String)
+data class HeartbeatResponse(val ok: Boolean, val deviceId: String, val rewardEvidenceProtocol: Int? = null)

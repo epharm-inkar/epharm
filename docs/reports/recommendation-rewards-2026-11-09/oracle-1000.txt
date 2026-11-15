@@ -1,0 +1,20 @@
+BEGIN
+DO
+DO
+ actual_paid_actors | credited_employees | credited_kzt | noncredited_cases | per_person_wallet_verified | physical_fiscal_idempotency_verified | no_negative_control_money | campaign_budget_verified 
+--------------------+--------------------+--------------+-------------------+----------------------------+--------------------------------------+---------------------------+--------------------------
+               1000 |                960 |       384000 |                30 | t                          | t                                    | t                         | t
+(1 row)
+
+    scenario     | actors | expected_kzt | actual_credited_cases 
+-----------------+--------+--------------+-----------------------
+ duplicate_race  |     10 |         4000 |                    10
+ foreign_device  |     10 |            0 |                     0
+ late121         |     10 |            0 |                     0
+ offline_reorder |     10 |         4000 |                    10
+ positive        |    940 |       376000 |                   940
+ preexisting     |     10 |            0 |                     0
+ removed         |     10 |            0 |                     0
+(7 rows)
+
+ROLLBACK

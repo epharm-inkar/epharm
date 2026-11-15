@@ -27,6 +27,7 @@ import kz.epharm.posm.repository.RecommendationEventRepository
 import kz.epharm.receipts.service.PendingBonusService
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
+import kz.epharm.shared.validation.BarcodeNormalizer
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
@@ -124,6 +125,7 @@ class RecommendationService(
                 recommendVolume = m.recommend.volume.ifBlank { null },
                 recommendPrice = snapshotMoney(event.expectedAmount),
                 recommendBarcode = m.recommend.barcode?.ifBlank { null },
+                recommendBarcodes = m.recommend.scanBarcodes().take(BarcodeNormalizer.MAX_CODES),
                 partnerLabel = card?.partnerLabel?.ifBlank { null },
                 bonus = snapshotMoney(event.bonus),
                 script = m.rule.script,
@@ -336,6 +338,7 @@ class RecommendationService(
             recommendVolume = external.recommend.volume.ifBlank { null },
             recommendPrice = snapshotMoney(event.expectedAmount),
             recommendBarcode = external.recommend.barcode?.ifBlank { null },
+            recommendBarcodes = external.recommend.scanBarcodes().take(BarcodeNormalizer.MAX_CODES),
             partnerLabel = candidate.partnerLabel?.ifBlank { null } ?: "МЕРЧЕНДАЙЗИНГ",
             bonus = snapshotMoney(event.bonus),
             script = candidate.script,

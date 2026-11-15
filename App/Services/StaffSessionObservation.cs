@@ -11,10 +11,10 @@ public sealed record StaffCashSessionRow(long SessionId, string UserId, long? Wo
 public sealed record StaffObservedSession(string ProcessIdentity, string ExternalUserId,
     string ExternalSessionId, string WorkstationId, string? StandardNIin = null,
     string StandardNIinStatus = "unavailable", string? StandardNFullName = null,
-    string StandardNFullNameStatus = "unavailable")
+    string StandardNFullNameStatus = "unavailable", string? SourceNamespace = null)
 {
     public string Key => ProcessIdentity + ":" + WorkstationId + ":" + ExternalSessionId + ":" + ExternalUserId +
-        ":" + StandardNIinStatus + ":" + StandardNIin + ":" + StandardNFullNameStatus + ":" + StandardNFullName;
+        ":" + StandardNIinStatus + ":" + StandardNIin + ":" + StandardNFullNameStatus + ":" + StandardNFullName + ":" + SourceNamespace;
 }
 public sealed record StaffSessionObservation(string Status, StaffObservedSession? Session = null);
 public sealed record StaffIinObservation(string Status, string? Iin = null);

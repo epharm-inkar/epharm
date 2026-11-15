@@ -31,6 +31,7 @@ namespace CustomerDisplay.Services
 
         public string? LastPlaylistError { get; private set; }
         public string? LastHeartbeatError { get; private set; }
+        public int? RewardEvidenceProtocol { get; private set; }
         public Uri ActiveBackendBaseUri => _failover.ActiveEndpoint;
 
         private static readonly JsonSerializerOptions JsonOpts = new()
@@ -242,11 +243,19 @@ namespace CustomerDisplay.Services
                 using var resp = await _http.PostAsync(url, null, cts.Token).ConfigureAwait(false);
                 if (!resp.IsSuccessStatusCode)
                 {
+                    RewardEvidenceProtocol = null;
                     LastHeartbeatError = $"HTTP {(int)resp.StatusCode} {resp.StatusCode}";
                     _log?.Invoke($"heartbeat: HTTP {(int)resp.StatusCode} {resp.StatusCode}");
                     return false;
                 }
-                // тело ответа {ok, deviceId} нам не нужно — важен сам факт удара.
+                // Older/unknown/malformed capabilities never enable financial evidence.
+                RewardEvidenceProtocol = null;
+                try
+                {
+                    var capability = await resp.Content.ReadFromJsonAsync<HeartbeatResponse>(JsonOpts, cts.Token).ConfigureAwait(false);
+                    if (capability?.Ok == true && capability.RewardEvidenceProtocol == 1) RewardEvidenceProtocol = 1;
+                }
+                catch (JsonException) { }
                 LastHeartbeatError = null;
                 return true;
             }
@@ -256,6 +265,7 @@ namespace CustomerDisplay.Services
             }
             catch (Exception ex)
             {
+                RewardEvidenceProtocol = null;
                 var desc = Describe(ex);
                 LastHeartbeatError = desc;
                 if (ShouldLog(ref _lastHeartbeatErrorLog, ref _lastHeartbeatErrorKey, desc))
@@ -314,14 +324,17 @@ namespace CustomerDisplay.Services
         /// Фиксация фактического показа рекомендации (V032). false при ошибке — вызов уходит в
         /// OfflineOutbox для гарантированной доставки. shownAt — client-время показа попапа.
         /// </summary>
-        public async Task<bool> MarkShownAsync(string eventId, DateTimeOffset shownAt, CancellationToken ct = default)
+        public Task<bool> MarkShownAsync(string eventId, DateTimeOffset shownAt, CancellationToken ct = default) =>
+            MarkShownAsync(eventId, shownAt, null, ct);
+
+        public async Task<bool> MarkShownAsync(string eventId, DateTimeOffset shownAt, RewardShownEvidence? rewardEvidence, CancellationToken ct = default)
         {
             try
             {
                 using var resp = await _http
                     .PostAsJsonAsync(
                         $"/api/posm/recommendations/{eventId}/shown",
-                        new MarkShownRequest { ShownAt = shownAt }, JsonOpts, ct)
+                        new MarkShownRequest { ShownAt = shownAt, RewardEvidence = rewardEvidence }, JsonOpts, ct)
                     .ConfigureAwait(false);
                 return resp.IsSuccessStatusCode;
             }

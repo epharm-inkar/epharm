@@ -61,7 +61,7 @@ class StaffAuthDisabledTest {
         val provider=mockk<kz.epharm.mobile.auth.service.OtpProvider>()
         val phoneLock=mockk<StaffPhoneLock>()
         val vault=mockk<kz.epharm.learnercredentials.LearnerPasswordVault>()
-        val service=StaffAuthService(jdbc,encoder,provider,phoneLock,vault,false,"unused")
+        val service=StaffAuthService(jdbc,encoder,provider,phoneLock,vault,mockk(relaxed=true),false,"unused")
         assertEquals(503,assertThrows(AppException::class.java){
             service.requestOtp(PosmDeviceIdentity("device","pharmacy",false),StaffOtpRequest("register","951212500015","+77002223344"))
         }.status.value())

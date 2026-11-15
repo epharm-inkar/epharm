@@ -20,8 +20,10 @@ namespace CustomerDisplay.Services;
 public sealed class PendingShownPings : IDisposable
 {
     private const int Capacity = 4096;
+    private const int MaximumPayloadBytes = 256 * 1024;
+    private const int MaximumPendingBytes = 8 * 1024 * 1024;
     private readonly object _gate = new();
-    private readonly Dictionary<string, (OutboxShownPayload Payload, LinkedListNode<string> Node)> _pending = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (OutboxShownPayload Payload, LinkedListNode<string> Node, int Bytes)> _pending = new(StringComparer.Ordinal);
     private readonly LinkedList<string> _order = new();
     private readonly string _directory;
     private readonly Action<string, string, string> _enqueue;
@@ -32,6 +34,7 @@ public sealed class PendingShownPings : IDisposable
     private Task? _shutdown;
     private bool _closing;
     private int _recoveryOffset;
+    private int _pendingBytes;
 
     public PendingShownPings(string directory, Action<string, string, string> enqueue, Action<string>? log = null,
         bool autoStart = true, TimeSpan? shutdownGrace = null)
@@ -45,16 +48,37 @@ public sealed class PendingShownPings : IDisposable
 
     public int PendingCount { get { lock (_gate) return _pending.Count; } }
 
-    public bool Record(string eventId, DateTimeOffset shownAt)
+    public bool Record(string eventId, DateTimeOffset shownAt) => Record(eventId, shownAt, null);
+
+    public bool Record(string eventId, DateTimeOffset shownAt, RewardShownEvidence? rewardEvidence)
     {
         if (string.IsNullOrWhiteSpace(eventId) || eventId.Length > 256 || shownAt == default) return false;
         lock (_gate)
         {
             if (_closing) return false;
             if (_pending.ContainsKey(eventId)) return true;
+        }
+        // Freeze the caller's lists while still doing memory-only work on the dispatcher. The
+        // original baseline must survive later cart mutations, blocked SQLite and process restart.
+        byte[] bytes;
+        OutboxShownPayload payload;
+        try
+        {
+            bytes = JsonSerializer.SerializeToUtf8Bytes(new OutboxShownPayload {
+                EventId = eventId, ShownAt = shownAt, RewardEvidence = rewardEvidence }, EpharmJson.Options);
+            if (bytes.Length > MaximumPayloadBytes) return false;
+            payload = JsonSerializer.Deserialize<OutboxShownPayload>(bytes, EpharmJson.Options)!;
+        }
+        catch { return false; }
+        lock (_gate)
+        {
+            if (_closing) return false;
+            if (_pending.ContainsKey(eventId)) return true;
             if (_pending.Count >= Capacity) return false;
+            if (bytes.Length > MaximumPendingBytes - _pendingBytes) return false;
             var node = _order.AddLast(eventId);
-            _pending.Add(eventId, (new OutboxShownPayload { EventId = eventId, ShownAt = shownAt }, node));
+            _pending.Add(eventId, (payload, node, bytes.Length));
+            _pendingBytes += bytes.Length;
             return true;
         }
     }
@@ -90,7 +114,10 @@ public sealed class PendingShownPings : IDisposable
                     File.Delete(file); // SQLite is now the durable owner.
                     lock (_gate)
                     {
-                        if (_pending.Remove(payload.EventId, out var entry)) _order.Remove(entry.Node);
+                        if (_pending.Remove(payload.EventId, out var entry)) {
+                            _order.Remove(entry.Node);
+                            _pendingBytes -= entry.Bytes;
+                        }
                     }
                 }
                 catch (Exception error) { _log?.Invoke("shown-ping retained; will retry: " + error.GetType().Name); }
@@ -137,7 +164,7 @@ public sealed class PendingShownPings : IDisposable
     private OutboxShownPayload Read(string path)
     {
         RejectLinks(path);
-        if (new FileInfo(path).Length > 4096) throw new InvalidDataException("Shown journal is oversized.");
+        if (new FileInfo(path).Length > MaximumPayloadBytes) throw new InvalidDataException("Shown journal is oversized.");
         var payload = JsonSerializer.Deserialize<OutboxShownPayload>(File.ReadAllText(path), EpharmJson.Options);
         if (payload == null || string.IsNullOrWhiteSpace(payload.EventId) || payload.EventId.Length > 256 ||
             payload.ShownAt == default || !string.Equals(Path.GetFullPath(path), FileName(payload.EventId), StringComparison.OrdinalIgnoreCase))

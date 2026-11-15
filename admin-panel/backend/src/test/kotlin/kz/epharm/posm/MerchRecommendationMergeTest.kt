@@ -82,6 +82,7 @@ class MerchRecommendationMergeTest {
         assertThat(recommendation.source).isEqualTo("merchandising")
         assertThat(recommendation.ruleId).isEqualTo("merch:8ffafcf4-f0a0-4662-bcd2-1dd3c11bd888")
         assertThat(recommendation.recommendSku).isEqualTo(recommended.id)
+        assertThat(recommendation.recommendBarcodes).containsExactly(recommended.barcode)
         assertThat(recommendation.balance?.pharmacyAvailableQty).isEqualByComparingTo("4")
         assertThat(recommendation.balance?.networkAvailableQty).isNull()
         assertThat(recommendation.balance?.warehouseAvailableQty).isEqualByComparingTo("120")
@@ -311,7 +312,23 @@ class MerchRecommendationMergeTest {
         assertThat(row.triggerSku).isEqualTo(trigger.id)
         assertThat(row.triggerBarcode).isEqualTo(trigger.barcodes.last())
         assertThat(row.recommendSku).isEqualTo(recommended.id)
+        assertThat(row.recommendBarcodes).containsExactly(recommended.barcode, recommended.barcodes.single())
         assertThat(row.balance?.pharmacyAvailableQty).isEqualByComparingTo("4")
+    }
+
+    @Test
+    fun `local recommendation includes only its exact product aliases with a bounded wire list`() {
+        recommended.barcodes = listOf(recommended.barcode!!) + (1..110).map { "47000000" + it.toString().padStart(5, '0') }
+        val local = localMatch()
+        every { rulesEngine.match(any(), any()) } returns RuleMatchResult(listOf(local), emptyList())
+        every { merch.recommendationContext(any()) } returns MerchRecommendationContextEnvelope(available = false)
+
+        val row = service.recommend(request()).recommendations.single()
+
+        assertThat(row.recommendBarcodes).containsExactlyElementsOf(recommended.scanBarcodes().take(100))
+        assertThat(row.recommendBarcodes).hasSize(100).doesNotContain(trigger.barcode)
+        assertThat(row.recommendBarcode).isEqualTo(recommended.barcode)
+        assertThat(row.recommendSku).isEqualTo(recommended.id)
     }
 
     @Test

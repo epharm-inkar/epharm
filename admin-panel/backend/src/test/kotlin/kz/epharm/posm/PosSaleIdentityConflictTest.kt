@@ -15,6 +15,7 @@ import kz.epharm.posm.service.PosSaleService
 import kz.epharm.posm.service.PosmPharmacistIdentity
 import kz.epharm.posm.service.RecommendationAttributionService
 import kz.epharm.posm.service.RecommendationSaleBonusService
+import kz.epharm.posm.service.RecommendationRewardService
 import kz.epharm.posm.service.RulesEngineService
 import kz.epharm.receipts.service.ReconcileService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -36,7 +37,8 @@ class PosSaleIdentityConflictTest {
     private val rules = mockk<RulesEngineService>()
     private val attribution = mockk<RecommendationAttributionService>()
     private val bonuses = mockk<RecommendationSaleBonusService>(relaxed = true)
-    private val service = PosSaleService(repository, reconcile, rules, attribution, "standardn-kkm-sdk,ofd-api", bonuses)
+    private val rewards = mockk<RecommendationRewardService>()
+    private val service = PosSaleService(repository, reconcile, rules, attribution, "standardn-kkm-sdk,ofd-api", bonuses, rewards)
     private val identity = PosmPharmacistIdentity("", null, PharmacistIdentitySource.UNRESOLVED, null, null)
     private val request = PosSaleRequest(
         saleId = "DEV-SALE-NOT-REAL", pharmacyId = "DEV-PHARMACY-NOT-REAL", sessionId = "DEV-SESSION-NOT-REAL",

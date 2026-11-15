@@ -33,7 +33,8 @@ namespace CustomerDisplay.Services
             OfflineOutbox outbox,
             EpharmApiClient api,
             int periodSec = 5,
-            Action<OutboxItem>? onDelivered = null)
+            Action<OutboxItem>? onDelivered = null,
+            bool startBackground = true)
         {
             _outbox = outbox;
             _api = api;
@@ -41,14 +42,19 @@ namespace CustomerDisplay.Services
             var period = TimeSpan.FromSeconds(Math.Max(1, periodSec));
             // dueTime=2с — ранний первый flush на старте (drain backlog после оффлайна/перезапуска),
             // дальше — обычный период.
-            _timer = new Timer(_ => _ = FlushAsync(), null, TimeSpan.FromSeconds(2), period);
+            _timer = new Timer(_ => _ = FlushAsync(), null,
+                startBackground ? TimeSpan.FromSeconds(2) : Timeout.InfiniteTimeSpan, period);
 
             // Событие «сеть восстановилась» → мгновенный досыл со сбросом backoff (не ждём тик таймера
             // и не ждём окна экспоненциального backoff, накопленного за офлайн).
             _onNetAddr = (_, _) => _ = FlushNowAsync();
             _onNetAvail = (_, e) => { if (e.IsAvailable) _ = FlushNowAsync(); };
-            NetworkChange.NetworkAddressChanged += _onNetAddr;
-            NetworkChange.NetworkAvailabilityChanged += _onNetAvail;
+            // Controlled replay tests drive only explicit flushes, independent of host network changes.
+            if (startBackground)
+            {
+                NetworkChange.NetworkAddressChanged += _onNetAddr;
+                NetworkChange.NetworkAvailabilityChanged += _onNetAvail;
+            }
         }
 
         /// <summary>
@@ -111,7 +117,7 @@ namespace CustomerDisplay.Services
                     case "shown":
                         var sh = JsonSerializer.Deserialize<OutboxShownPayload>(item.Payload, EpharmJson.Options);
                         return sh != null && await _api
-                            .MarkShownAsync(sh.EventId, sh.ShownAt)
+                            .MarkShownAsync(sh.EventId, sh.ShownAt, sh.RewardEvidence)
                             .ConfigureAwait(false);
                     default:
                         return true; // неизвестный тип — выкидываем, чтобы не копился

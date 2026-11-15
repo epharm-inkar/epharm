@@ -26,6 +26,7 @@ import kz.epharm.posm.service.PosmDeviceAuthenticationService
 import kz.epharm.posm.service.PosmPharmacistIdentityService
 import kz.epharm.posm.service.PosSaleService
 import kz.epharm.posm.service.RecommendationService
+import kz.epharm.posm.service.RecommendationRewardService
 import kz.epharm.screens.dto.ActivePlaylistDto
 import kz.epharm.screens.service.ScreenService
 import org.slf4j.LoggerFactory
@@ -58,6 +59,7 @@ class PosmController(
     private val pharmacistIdentityService: PosmPharmacistIdentityService,
     private val deviceAuthentication: PosmDeviceAuthenticationService,
     private val merchTaskDelivery: MerchTaskDelivery,
+    private val rewards: RecommendationRewardService,
 ) {
     private val log = LoggerFactory.getLogger(PosmController::class.java)
 
@@ -66,13 +68,16 @@ class PosmController(
         @RequestHeader(name = "X-Posm-Key", required = false) key: String?,
         @Valid @RequestBody req: RecommendRequest,
     ): RecommendResponse {
-        deviceAuthentication.authenticate(key, claimedPharmacyId = req.pharmacyId)
+        val device = deviceAuthentication.authenticate(key, claimedPharmacyId = req.pharmacyId)
         val identity = pharmacistIdentityService.resolve(
             pharmacyId = req.pharmacyId,
             reportedPharmacistId = req.pharmacistId,
             reportedPharmacistName = req.pharmacistName,
+            deviceId = device.deviceId,
+            sourceNamespace = req.sourceNamespace,
         )
         return recommendationService.recommend(req.copy(pharmacistId = identity.pharmacistId))
+            .copy(rewardEvidenceProtocol = rewards.protocol(device))
     }
 
     @PostMapping("/recommendations/{eventId}/outcome")
@@ -97,6 +102,7 @@ class PosmController(
     ): MarkShownResponse {
         val device = deviceAuthentication.authenticate(key)
         recommendationService.markDisplayed(eventId, req.shownAt, device.pharmacyId)
+        rewards.shown(eventId, req.shownAt, req.rewardEvidence, device)
         return MarkShownResponse(eventId = eventId, ok = true)
     }
 
@@ -106,17 +112,22 @@ class PosmController(
         @RequestHeader(name = "X-Posm-Key", required = false) key: String?,
         @Valid @RequestBody req: PosSaleRequest,
     ): PosSaleResponse {
-        deviceAuthentication.authenticate(key, claimedPharmacyId = req.pharmacyId)
+        val device = deviceAuthentication.authenticate(key, claimedPharmacyId = req.pharmacyId)
         val identity = pharmacistIdentityService.resolve(
             pharmacyId = req.pharmacyId,
             reportedPharmacistId = req.pharmacistId,
             reportedPharmacistName = req.pharmacistName,
+            deviceId = device.deviceId,
+            sourceNamespace = req.rewardEvidence?.completion?.identity?.sourceNamespace,
+            at = req.rewardEvidence?.completion?.completedAt ?: req.printedAt,
+            nativeSession = req.rewardEvidence?.completion?.identity?.nativeSessionId?.toString(),
+            workstation = req.rewardEvidence?.completion?.identity?.workstationId,
         )
         val effective = req.copy(
             pharmacistId = identity.pharmacistId,
             pharmacistName = identity.pharmacistName,
         )
-        val accepted = posSaleService.record(effective, identity)
+        val accepted = posSaleService.record(effective, identity, device.deviceId)
         return PosSaleResponse(saleId = req.saleId, accepted = accepted)
     }
 
@@ -185,7 +196,7 @@ class PosmController(
                 ?.takeIf { it.matches(Regex("[0-9A-Za-z.+-]{1,32}")) },
             staffAuthStatus = staffAuthStatus,
         )
-        return HeartbeatResponse(ok = true, deviceId = id)
+        return HeartbeatResponse(ok = true, deviceId = id, rewardEvidenceProtocol = rewards.protocol(device))
     }
 
     /** Active merchandising task for the authenticated device's pharmacy. */

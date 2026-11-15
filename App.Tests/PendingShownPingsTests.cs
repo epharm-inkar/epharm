@@ -52,6 +52,60 @@ public sealed class PendingShownPingsTests : IDisposable
     }
 
     [Fact]
+    public async Task RewardBaselineIsFrozenAndRecoversPastLegacy4KiBLimitWithoutResettingFirstShow()
+    {
+        var first = DateTimeOffset.UtcNow;
+        var baseline = RewardBaseline(512);
+        var expectedIdentity = baseline.Identity;
+        using (var queue = new PendingShownPings(_directory, (_, _, _) => throw new IOException("SQLite busy"), autoStart: false))
+        {
+            Assert.True(queue.Record("reward-event", first, baseline));
+            baseline.Lines.Clear(); // The queued payload must not alias a mutable live cart.
+            await queue.FlushAsync();
+            Assert.Single(Directory.GetFiles(_directory, "*.json"));
+            Assert.True(new FileInfo(Directory.GetFiles(_directory, "*.json").Single()).Length > 4096);
+            Assert.Equal(1, queue.PendingCount);
+        }
+        OutboxShownPayload? restored = null;
+        using var restarted = new PendingShownPings(_directory, (_, _, json) =>
+            restored = JsonSerializer.Deserialize<OutboxShownPayload>(json, EpharmJson.Options), autoStart: false);
+        Assert.True(restarted.Record("reward-event", first.AddHours(1), RewardBaseline(1)));
+        await restarted.FlushAsync();
+        Assert.Equal(first, restored!.ShownAt);
+        Assert.Equal("checkout-original", restored.RewardEvidence!.CheckoutSessionId);
+        Assert.Equal(expectedIdentity, restored.RewardEvidence.Identity);
+        Assert.Equal(512, restored.RewardEvidence.Lines.Count);
+        Assert.Empty(Directory.GetFiles(_directory, "*.json"));
+        Assert.Equal(0, restarted.PendingCount);
+    }
+
+    [Fact]
+    public async Task LargeRewardBaselinesUseAnAggregateMemoryBoundAndOversizedRecordsAreRejected()
+    {
+        using var queue = new PendingShownPings(_directory, (_, _, _) => { }, autoStart: false,
+            shutdownGrace: TimeSpan.FromMilliseconds(1));
+        var first = DateTimeOffset.UtcNow;
+        var baseline = RewardBaseline(512);
+        var accepted = 0;
+        while (accepted < 4096 && queue.Record("reward-" + accepted, first, baseline)) accepted++;
+        Assert.InRange(accepted, 1, 4095); // Byte budget, not merely the legacy 4096 ID count.
+        Assert.Equal(accepted, queue.PendingCount);
+        Assert.True(queue.Record("reward-0", first.AddHours(1), baseline)); // A duplicate consumes no additional budget.
+        var oversized = baseline with { Lines = baseline.Lines.Select(line => line with { Sku = new string('x', 1024) }).ToList() };
+        Assert.False(queue.Record("oversized", first, oversized));
+        Assert.Equal(accepted, queue.PendingCount);
+        await queue.DrainAsync(); // Finish the owned background writer before removing its test directory.
+    }
+
+    private static RewardShownEvidence RewardBaseline(int count) => new() {
+        CheckoutSessionId = "checkout-original", ObservationId = "show-original", CartComplete = false,
+        Identity = new() { SourceNamespace = new string('a', 64), RawUserId = "native-user-17", NativeSessionId = 80, WorkstationId = "9" },
+        Lines = Enumerable.Range(1, count).Select(index => new RewardCartLine {
+            SourceDocumentId = 100, SourceLineId = index, Sku = "10", Barcode = "4600000000012", Qty = 1, UnitSemantics = "unknown",
+        }).ToList(),
+    };
+
+    [Fact]
     public async Task DiskFailureRetainsMemoryAndIsRetriedAfterRecovery()
     {
         File.WriteAllText(_directory, "storage unavailable");

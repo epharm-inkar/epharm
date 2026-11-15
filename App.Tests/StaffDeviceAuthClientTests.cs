@@ -49,6 +49,28 @@ public sealed class StaffDeviceAuthClientTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task FreshNativeSourceNamespaceIsSentAsOptionalBodyMetadataAndOldEchoRemainsCompatible(bool echoNamespace)
+    {
+        var observed = new StaffObservedSession(Device.ProcessInstanceId, "17", "80", "9", "000101500011", "available",
+            SourceNamespace: new string('a', 64));
+        var device = new StaffDeviceContext(Device.ProcessInstanceId, StaffDeviceSessionState.SourceContext(observed));
+        using var client = Client(new Handler(async (request, ct) => {
+            DeviceHeaders(request);
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+            var source = body.RootElement.GetProperty("deviceContext").GetProperty("standardNContext");
+            Assert.Equal(observed.SourceNamespace, source.GetProperty("sourceNamespace").GetString());
+            Assert.Equal("17", source.GetProperty("standardNUserId").GetString());
+            Assert.Equal("80", source.GetProperty("standardNSessionId").GetString());
+            var echo = echoNamespace ? device : device with { StandardNContext = device.StandardNContext! with { SourceNamespace = null } };
+            return Reply(Auth(echo));
+        }));
+        var response = await client.DeviceLoginAsync("000101500011", "A4x!", device, TestContext.Current.CancellationToken);
+        Assert.True(device.MatchesResponse(response.DeviceContext));
+    }
+
+    [Theory]
     [InlineData(null, null)]
     [InlineData("120", 120)]
     [InlineData("9999999", 86400)]

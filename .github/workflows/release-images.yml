@@ -117,7 +117,7 @@ jobs:
           [[ "$container" =~ ^[a-f0-9]{64}$ ]] || exit 1
           trap 'docker rm -v "$container" >/dev/null' EXIT
           docker cp "$container:/app/app.jar" "$output/app.jar"
-          python3 "$source_root/tools/release/verify-financial-transition.py" --jar "$output/app.jar" --schema-protected --access-protected
+          python3 "$source_root/tools/release/verify-financial-transition.py" --jar "$output/app.jar" --schema-protected --access-protected --reward-protected
           config_ids=()
           for component in backend frontend; do
             docker save "epharm/$component:$RELEASE_ID" | gzip -1 > "$output/$component.tar.gz"

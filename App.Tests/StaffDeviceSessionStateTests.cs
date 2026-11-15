@@ -24,6 +24,59 @@ public sealed class StaffDeviceSessionStateTests
     }
 
     [Fact]
+    public void FreshNamespaceEnrichesTheCurrentContextButUnavailableReadsCannotReuseItForNewBinding()
+    {
+        var observed = Source();
+        var state = State(observed); Login(state); var generation = state.Generation;
+        var namespaced = observed with { Session = observed.Session! with { SourceNamespace = new string('a', 64) } };
+        Assert.False(state.Observe(new("resolved", Process), namespaced));
+        Assert.Equal(generation, state.Generation);
+        Assert.True(state.IsAuthenticated(Now));
+        Assert.Equal(new string('a', 64), state.Context!.StandardNContext!.SourceNamespace);
+
+        state.Observe(new("resolved", Process), new("database_unavailable"));
+        Assert.Null(state.Context!.StandardNContext);
+        Assert.Equal(new string('a', 64), state.LastKnownSource!.SourceNamespace);
+    }
+
+    [Fact]
+    public void AChangedKnownDatabaseNamespaceInvalidatesTheGrantEvenAcrossAnUnknownMetadataInterval()
+    {
+        var observed = Source();
+        var first = observed with { Session = observed.Session! with { SourceNamespace = new string('a', 64) } };
+        var state = State(first); Login(state); var generation = state.Generation;
+        state.Observe(new("resolved", Process), observed);
+        Assert.Equal(new string('a', 64), state.LastKnownSource!.SourceNamespace);
+        var next = observed with { Session = observed.Session! with { SourceNamespace = new string('b', 64) } };
+        Assert.True(state.Observe(new("resolved", Process), next));
+        Assert.True(state.Generation > generation); Assert.Null(state.Grant);
+        Assert.False(state.IsAuthenticated(Now));
+    }
+
+    [Fact]
+    public void OptionalOldEchoNeverPermitsAnotherNamespaceOrAnyDifferentExistingIdentityField()
+    {
+        var observed = Source() with { Session = Source().Session! with { SourceNamespace = new string('a', 64) } };
+        var state = State(observed);
+        var sent = state.Context!;
+        var oldEcho = sent with { StandardNContext = sent.StandardNContext! with { SourceNamespace = null } };
+        Assert.True(state.Accept(state.Generation, sent, Response(oldEcho), Now));
+        Assert.True(state.BeginValidation(Now));
+        Assert.True(state.ConfirmValidation(state.Generation, state.Grant!, sent, Response(oldEcho), Now));
+        foreach (var source in new[] {
+            sent.StandardNContext! with { SourceNamespace = new string('b', 64) },
+            oldEcho.StandardNContext! with { StandardNUserId = "another-user" },
+            oldEcho.StandardNContext! with { StandardNSessionId = "another-session" },
+            oldEcho.StandardNContext! with { WorkstationId = "another-workstation" },
+            oldEcho.StandardNContext! with { ProcessInstanceId = "another-process" },
+            oldEcho.StandardNContext! with { StandardNIin = "000101500020" },
+            oldEcho.StandardNContext! with { StandardNFullName = "Different Name" },
+        }) Assert.False(state.Accept(state.Generation, sent, Response(sent with { StandardNContext = source }), Now));
+        Assert.False(sent.MatchesResponse(sent with { StandardNContext = null }));
+        Assert.False(sent.MatchesResponse(sent with { ProcessInstanceId = "another-process" }));
+    }
+
+    [Fact]
     public void BackgroundCapabilityFailureReleasesWorkWithoutCancellingAPendingRegistration()
     {
         var state = State(); var context = state.Context!; var generation = state.Generation;

@@ -311,7 +311,7 @@ public partial class MainWindow
     {
         var accepted = false;
         StaffProcessPresence? confirmationProcess = null;
-        var serverConfirmed = response.Status == "authenticated" && response.DeviceContext == context &&
+        var serverConfirmed = response.Status == "authenticated" && context.MatchesResponse(response.DeviceContext) &&
             !string.IsNullOrWhiteSpace(response.Pharmacist?.Id) && !string.IsNullOrWhiteSpace(response.SessionToken) &&
             response.ExpiresAt > _staffClock();
         bool Current() => _staffWindow == window && _staffEnabled && !_staffStop.IsCancellationRequested &&
@@ -431,7 +431,7 @@ public partial class MainWindow
         try
         {
             var response = await _staffClient.ValidateDeviceAsync(token, context, ct).ConfigureAwait(false);
-            if (response.Status != "authenticated" || response.DeviceContext != context) throw new StaffApiException("INVALID_SESSION");
+            if (response.Status != "authenticated" || !context.MatchesResponse(response.DeviceContext)) throw new StaffApiException("INVALID_SESSION");
             if (response.Pharmacist == null || string.IsNullOrWhiteSpace(response.Pharmacist.Id) || response.ExpiresAt == null)
                 throw new StaffApiException("INVALID_RESPONSE");
             // HTTP can outlive the process observation that preceded it. Never

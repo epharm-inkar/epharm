@@ -646,6 +646,48 @@ describe('learner training portal', () => {
     )
   })
 
+  it('refreshes the credited balance on focus without reloading courses or overlapping requests', async () => {
+    localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
+    let balanceCalls = 0
+    let releaseBalance: ((response: Response) => void) | undefined
+    const intervals = vi.spyOn(window, 'setInterval')
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const path = String(input)
+      if (path === '/api/mobile/auth/me')
+        return json({ id: 'ph-1', name: 'Айжан', status: 'active' })
+      if (path === '/api/mobile/training')
+        return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
+      if (path === '/api/mobile/me/balance') {
+        if (++balanceCalls === 1) return json({ balanceKzt: 42000, currency: 'KZT' })
+        return new Promise<Response>((resolve) => {
+          releaseBalance = resolve
+        })
+      }
+      return json({ items: [], total: 0 })
+    })
+    const view = renderPortal()
+    expect(await screen.findByText('42 000 ₸')).toBeVisible()
+    await waitFor(() =>
+      expect(intervals.mock.calls.some(([, delay]) => delay === 30_000)).toBe(true),
+    )
+    fireEvent.focus(window)
+    fireEvent.focus(window)
+    await waitFor(() => expect(balanceCalls).toBe(2))
+    releaseBalance!(json({ balanceKzt: 42400, currency: 'KZT' }))
+    expect(await screen.findByText('42 400 ₸')).toBeVisible()
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input) === '/api/mobile/training'),
+    ).toHaveLength(1)
+    visibility.mockReturnValue('hidden')
+    fireEvent.focus(window)
+    expect(balanceCalls).toBe(2)
+    view.unmount()
+    visibility.mockReturnValue('visible')
+    fireEvent.focus(window)
+    expect(balanceCalls).toBe(2)
+  })
+
   it.each([
     {
       language: 'ru' as const,

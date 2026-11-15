@@ -53,6 +53,10 @@ namespace CustomerDisplay.Config
         public int PopupAutoCloseSec { get; set; } = 30;
         public string OutboxDbPath { get; set; } = @"C:\Epharm\outbox.db";
         public int OutboxFlushSec { get; set; } = 5;
+        /// <summary>Missing = server-managed; explicit false opts out. A server capability is always required.</summary>
+        public bool? RecommendationRewardsEnabled { get; set; }
+        /// <summary>Separate DB-posted refund observation; server-managed unless explicitly opted out.</summary>
+        public bool? NativeRefundCaptureEnabled { get; set; }
         /// <summary>Контур выдачи интернет-заказов. Backend также имеет независимый kill switch.</summary>
         public bool FulfillmentEnabled { get; set; } = false;
         /// <summary>
@@ -238,6 +242,8 @@ namespace CustomerDisplay.Config
             if (Env("EPHARM_RECEIPT_CAPTURE_ENABLED", cfg.ReceiptCaptureEnabled ? "true" : "false") == "false")
                 cfg.ReceiptCaptureEnabled = false;
             cfg.ReceiptCaptureDir = Env("EPHARM_RECEIPT_CAPTURE_DIR", cfg.ReceiptCaptureDir);
+            cfg.RecommendationRewardsEnabled = OptionalSwitch("EPHARM_RECOMMENDATION_REWARDS_ENABLED", cfg.RecommendationRewardsEnabled);
+            cfg.NativeRefundCaptureEnabled = OptionalSwitch("EPHARM_NATIVE_REFUND_CAPTURE_ENABLED", cfg.NativeRefundCaptureEnabled);
             cfg.FiscalReceiptInboxDir = Env("EPHARM_FISCAL_RECEIPT_INBOX_DIR", cfg.FiscalReceiptInboxDir);
             var trustedFiscalSources = Env("EPHARM_FISCAL_RECEIPT_TRUSTED_SOURCES", "");
             if (!string.IsNullOrWhiteSpace(trustedFiscalSources))
@@ -392,6 +398,12 @@ namespace CustomerDisplay.Config
                     $"{name} URL must be an absolute HTTPS origin (HTTP is allowed only on loopback).");
 
             return endpoints;
+        }
+
+        private static bool? OptionalSwitch(string key, bool? configured)
+        {
+            var value = Environment.GetEnvironmentVariable(key);
+            return string.IsNullOrWhiteSpace(value) ? configured : bool.TryParse(value, out var enabled) && enabled;
         }
 
         private static string Env(string key, string fallback)

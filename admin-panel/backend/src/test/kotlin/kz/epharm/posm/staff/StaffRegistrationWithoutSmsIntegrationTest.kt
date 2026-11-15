@@ -67,6 +67,8 @@ class StaffRegistrationWithoutSmsIntegrationTest {
         every { provider.requestOtp(any(),any()) } just Runs
         every { provider.verifyOtp(any(),any()) } returns OtpVerificationResult.INVALID
         every { provider.verifyOtp(any(),"1234") } returns OtpVerificationResult.VERIFIED
+        jdbc.update("DELETE FROM posm_source_staff_binding_audit")
+        jdbc.update("DELETE FROM posm_source_staff_bindings")
         jdbc.update("DELETE FROM posm_staff_sessions")
         jdbc.update("DELETE FROM posm_staff_challenges")
         jdbc.update("DELETE FROM posm_staff_rate_limits")
@@ -85,6 +87,20 @@ class StaffRegistrationWithoutSmsIntegrationTest {
         jdbc.update("""INSERT INTO pharmacists(id,name,iin,phone,password_hash,pharmacy_id,pharmacy_name,tier,status)
             VALUES ('no-sms-existing','Synthetic Existing',?,'+77000000111',?,'no-sms-pharmacy','DEMO','Silver','active')""",existingIin,encoder.encode("Existing123!"))
     }
+    @Test fun `new registration with a fresh matching source immediately creates its source bound employee without SMS`() {
+        val source=StaffContext("native-new","17","ws17",context.processInstanceId,newIin,"available",
+            "Synthetic New Employee","available","a".repeat(64))
+        val created=register(request.copy(deviceContext=context.copy(standardNContext=source)))
+        val person=created.path("pharmacist").path("id").asText()
+        assertTrue(person.isNotBlank())
+        assertEquals("no-sms-pharmacy",jdbc.queryForObject("SELECT pharmacy_id FROM pharmacists WHERE id=?",String::class.java,person))
+        assertEquals("active",jdbc.queryForObject("SELECT state FROM posm_source_staff_bindings WHERE pharmacist_id=?",String::class.java,person))
+        assertEquals("IIN",jdbc.queryForObject("SELECT proof_method FROM posm_source_staff_bindings WHERE pharmacist_id=?",String::class.java,person))
+        assertEquals(1L,jdbc.queryForObject("SELECT count(*) FROM posm_device_staff_sessions WHERE pharmacist_id=? AND source_verified_at IS NOT NULL",Long::class.java,person))
+        assertEquals(0L,jdbc.queryForObject("SELECT count(*) FROM posm_pharmacist_mappings WHERE pharmacist_id=?",Long::class.java,person))
+        noSmsCalls()
+    }
+
     private fun hash(value:String)=MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString(""){"%02x".format(it)}
     private fun post(path:String,body:Any,credential:String?=key,expected:Int=200):JsonNode {
         val req=post(path).contentType("application/json").content(json.writeValueAsBytes(body))

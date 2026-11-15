@@ -249,7 +249,7 @@ class PromoPublicationIntegrationTest {
         assertThat(recommend("after-apply").recommendations.single().bonus).isEqualTo(250)
     }
 
-    @Test fun `budget zero independent crosssell rewards and cleared dates survive prepare apply and reopen`() {
+    @Test fun `independent crosssell rewards and cleared dates survive publication without clearing spent funding`() {
         val campaign = promos.findById("pub-promo").orElseThrow()
         campaign.budget = 5_000
         campaign.spent = 200
@@ -271,9 +271,25 @@ class PromoPublicationIntegrationTest {
         assertThat(promos.findById("pub-promo").orElseThrow().spent).isEqualTo(200)
         assertThat(recommend("crosssell-published", barcode = SECOND_BARCODE).recommendations.single().bonus).isZero()
         assertThat(recommend("replacement-still-independent").recommendations.single().bonus).isEqualTo(100)
-        apply(save(reopened.bundle.copy(campaign = reopened.bundle.campaign.copy(budget = 0))).revision)
-        assertThat(state().bundle.campaign.budget).isZero()
+        val zeroBudget = save(reopened.bundle.copy(campaign = reopened.bundle.campaign.copy(budget = 0)))
+        request("POST", "/api/admin/promo/pub-promo/changes/apply", ApplyPromoChangesRequest(zeroBudget.revision))
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.message").value("Бюджет не может быть меньше уже начисленной суммы"))
+        assertThat(state().hasPendingChanges).isTrue()
+        assertThat(promos.findById("pub-promo").orElseThrow().budget).isEqualTo(12_000)
         assertThat(promos.findById("pub-promo").orElseThrow().spent).isEqualTo(200)
+    }
+
+    @Test fun `an unspent campaign can publish a zero budget`() {
+        jdbc.update("update promos set budget=5000 where id='pub-promo'")
+        val initial = state().bundle
+        val pending = save(initial.copy(campaign = initial.campaign.copy(budget = 0)))
+
+        apply(pending.revision)
+
+        assertThat(state().bundle.campaign.budget).isZero()
+        assertThat(promos.findById("pub-promo").orElseThrow().budget).isZero()
+        assertThat(promos.findById("pub-promo").orElseThrow().spent).isZero()
     }
 
     @Test fun `identical active replacement and crosssell cannot be published but can be corrected without deleting history`() {
@@ -463,6 +479,7 @@ class PromoPublicationIntegrationTest {
     }
 
     @Test fun `catalog price and analytics counter updates do not conflict with a prepared authoring bundle`() {
+        jdbc.update("update promos set budget=10000 where id='pub-promo'")
         rules.saveAndFlush(RuleEntity(id = "pub-another-rule", promoId = "pub-promo", statusRaw = "active",
             recommend = "pub-offer", trigger = RuleTrigger("product", "pub-trigger-2"), bonus = 100,
             card = RuleCard(offerRank = 0, bonusInherited = true)))
@@ -473,6 +490,8 @@ class PromoPublicationIntegrationTest {
         assertThat(state().conflict).isFalse()
         apply(pending.revision)
         assertThat(rules.findById("pub-rule").orElseThrow().impressions).isEqualTo(42)
+        assertThat(promos.findById("pub-promo").orElseThrow().budget).isEqualTo(10_000)
+        assertThat(promos.findById("pub-promo").orElseThrow().spent).isEqualTo(900)
     }
 
     @Test fun `first launch cannot publish empty inactive self-triggered or expired configurations`() {

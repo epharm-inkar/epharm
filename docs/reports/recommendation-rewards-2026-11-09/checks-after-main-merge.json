@@ -1,0 +1,129 @@
+{
+  "integrationBase": "fbb4545e",
+  "rewardSchema": "V100",
+  "upstreamSchemaUnchanged": "V099__one_current_app_release_per_platform.sql",
+  "backend": {
+    "tests": 172,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": [
+      {
+        "name": "kz.epharm.finance.PharmacistWalletConcurrencyIntegrationTest",
+        "tests": "9",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.posm.LegacyPosmWireContractTest",
+        "tests": "27",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.posm.PosSaleIdentityConflictTest",
+        "tests": "9",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.posm.RecommendationRewardEvidencePolicyTest",
+        "tests": "72",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.posm.RecommendationRewardFlowIntegrationTest",
+        "tests": "18",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.promo.PromoRewardBudgetConcurrencyIntegrationTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.PendingBonusExpiryRaceIntegrationTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.PendingBonusExpiryTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.ReceiptDecisionConcurrencyIntegrationTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.RecommendationRewardCreditIntegrationTest",
+        "tests": "10",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.RecommendationRewardCreditPolicyTest",
+        "tests": "10",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      },
+      {
+        "name": "kz.epharm.receipts.ReconcileSourceBoundIntegrationTest",
+        "tests": "5",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0"
+      }
+    ]
+  },
+  "native": {
+    "portablePassed": 664,
+    "windowsOnlySkipped": 14,
+    "failed": 0,
+    "pendingShownTargetedPassed": 11,
+    "wpfCrossBuild": "passed (0 warnings/errors)",
+    "interactiveWindows": "not_run",
+    "environment": "canonical physical TMPDIR; security link checks retained"
+  },
+  "frontend": {
+    "unchangedByUpstreamMerge": true,
+    "testsPreviouslyPassed": 65,
+    "lint": "passed",
+    "productionBuild": "passed"
+  },
+  "harnessSelfChecks": {
+    "nodePassed": 11,
+    "pythonPassed": 5
+  },
+  "candidateJarSha256": "75d4eec7767060afe7c5578be9ce5f9362121e08150e8d9ddeef3938c6c48d3e",
+  "productionActions": false,
+  "mobileAppTests": false,
+  "load1500": {
+    "http": "passed",
+    "sqlOracle": "passed",
+    "actors": 1500,
+    "creditedEmployees": 1440,
+    "creditsKzt": 576000,
+    "errors": 0,
+    "deadlocks": 0,
+    "sourceCommit": "01022001b5dc29fc5675a9489ad13a61f72ca500"
+  }
+}

@@ -29,6 +29,7 @@ import { formatKzt } from '@/mocks/fixtures'
 import { useT } from '@/i18n'
 import { canManageMoney } from '@/app/accessPolicy'
 import { useUiStore } from '@/app/store'
+import RecommendationRewardsQueue from './RecommendationRewardsQueue'
 
 type RecTab = ReceiptStatus
 type ProductLookup = (id: string | undefined) => ProductDto | undefined
@@ -52,6 +53,7 @@ export default function ReconcilePage() {
   const toast = useToast()
   const canManage = canManageMoney(useUiStore((state) => state.authedUser?.role))
   const [tab, setTab] = useState<RecTab>('pending')
+  const [workspace, setWorkspace] = useState<'receipts' | 'recommendation_rewards'>('receipts')
   const [selected, setSelected] = useState<ReceiptDto | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const importExcel = useImportExcel()
@@ -92,7 +94,7 @@ export default function ReconcilePage() {
         title={t('page.reconcile.title')}
         subtitle={t('page.reconcile.subtitle')}
         actions={
-          canManage ? (
+          canManage && workspace === 'receipts' ? (
             <>
               <input
                 ref={fileRef}
@@ -115,119 +117,135 @@ export default function ReconcilePage() {
         }
       />
 
-      <div className="grid grid-cols-4 gap-4">
-        <Metric
-          label={t('rec.mQueue')}
-          value={s?.queue ?? 0}
-          accent="ink"
-          icon={<IconClock size={16} />}
-          meta={t('rec.mQueueMeta')}
-        />
-        <Metric
-          label={t('rec.mAuto')}
-          value={s?.autoApproved ?? 0}
-          accent="green"
-          icon={<IconCheck size={16} />}
-        />
-        <Metric
-          label={t('rec.mManual')}
-          value={s?.moderationRequired ?? 0}
-          accent="amber"
-          icon={<IconAlert size={16} />}
-        />
-        <Metric
-          label={t('rec.mFraud')}
-          value={s?.flagged ?? 0}
-          accent="purple"
-          icon={<IconShield size={16} />}
+      <div className="overflow-x-auto">
+        <Tabs
+          items={[
+            { value: 'receipts', label: 'Чеки' },
+            { value: 'recommendation_rewards', label: 'Продажи по рекомендациям' },
+          ]}
+          value={workspace}
+          onChange={setWorkspace}
         />
       </div>
-
-      <div className="card flex min-h-[420px] flex-col">
-        <div className="px-5 pt-4">
-          <Tabs<RecTab> items={TABS} value={tab} onChange={setTab} />
-        </div>
-        <div className="flex-1">
-          {isLoading && receipts.length === 0 ? (
-            <Empty
-              title={t('rec.loading')}
-              body={t('common.connecting')}
-              icon={<IconReceipt size={26} />}
+      {workspace === 'recommendation_rewards' ? (
+        <RecommendationRewardsQueue />
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-4">
+            <Metric
+              label={t('rec.mQueue')}
+              value={s?.queue ?? 0}
+              accent="ink"
+              icon={<IconClock size={16} />}
+              meta={t('rec.mQueueMeta')}
             />
-          ) : isError && receipts.length === 0 ? (
-            <Empty
-              title={t('rec.errTitle')}
-              body={describeError(error)}
-              icon={<IconReceipt size={26} />}
-              action={<Button onClick={() => refetch()}>{t('common.retry')}</Button>}
+            <Metric
+              label={t('rec.mAuto')}
+              value={s?.autoApproved ?? 0}
+              accent="green"
+              icon={<IconCheck size={16} />}
             />
-          ) : receipts.length === 0 ? (
-            <Empty
-              title={t('rec.empty')}
-              body={t(`rec.body.${tab}`)}
-              icon={<IconReceipt size={26} />}
+            <Metric
+              label={t('rec.mManual')}
+              value={s?.moderationRequired ?? 0}
+              accent="amber"
+              icon={<IconAlert size={16} />}
             />
-          ) : (
-            <table className="w-full text-[13px]" data-testid="reconcile-table">
-              <thead className="hairline border-b">
-                <tr className="text-left text-[11px] font-bold uppercase tracking-[0.06em] text-ink-500">
-                  <th className="px-5 py-2.5">{t('rec.thReceipt')}</th>
-                  <th className="px-3 py-2.5">{t('rec.thPharmacist')}</th>
-                  <th className="px-3 py-2.5 text-right">{t('rec.thAmount')}</th>
-                  <th className="px-3 py-2.5">{t('rec.thStatus')}</th>
-                  <th className="px-3 py-2.5 text-center">{t('rec.thLog')}</th>
-                  <th className="px-3 py-2.5 text-center">{t('rec.thExcel')}</th>
-                  <th className="px-5 py-2.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100">
-                {receipts.map((r) => (
-                  <ReceiptRow
-                    key={r.id}
-                    r={r}
-                    productOf={productOf}
-                    onOpen={setSelected}
-                    canManage={canManage}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+            <Metric
+              label={t('rec.mFraud')}
+              value={s?.flagged ?? 0}
+              accent="purple"
+              icon={<IconShield size={16} />}
+            />
+          </div>
 
-      <SectionCard title={t('rec.howTitle')} subtitle={t('rec.howSub')}>
-        <div className="grid grid-cols-3 gap-3 text-[13px]">
-          <div className="card-soft p-4">
-            <div className="mb-2 flex items-center gap-2 text-brand-green-700">
-              <IconCheck size={16} />
-              <span className="text-sm font-extrabold">{t('rec.auto80')}</span>
+          <div className="card flex min-h-[420px] flex-col">
+            <div className="px-5 pt-4">
+              <Tabs<RecTab> items={TABS} value={tab} onChange={setTab} />
             </div>
-            <div className="text-ink-500">{t('rec.autoBody')}</div>
-          </div>
-          <div className="card-soft p-4">
-            <div className="mb-2 flex items-center gap-2 text-accent-warning">
-              <IconAlert size={16} />
-              <span className="text-sm font-extrabold">{t('rec.manual15')}</span>
+            <div className="flex-1">
+              {isLoading && receipts.length === 0 ? (
+                <Empty
+                  title={t('rec.loading')}
+                  body={t('common.connecting')}
+                  icon={<IconReceipt size={26} />}
+                />
+              ) : isError && receipts.length === 0 ? (
+                <Empty
+                  title={t('rec.errTitle')}
+                  body={describeError(error)}
+                  icon={<IconReceipt size={26} />}
+                  action={<Button onClick={() => refetch()}>{t('common.retry')}</Button>}
+                />
+              ) : receipts.length === 0 ? (
+                <Empty
+                  title={t('rec.empty')}
+                  body={t(`rec.body.${tab}`)}
+                  icon={<IconReceipt size={26} />}
+                />
+              ) : (
+                <table className="w-full text-[13px]" data-testid="reconcile-table">
+                  <thead className="hairline border-b">
+                    <tr className="text-left text-[11px] font-bold uppercase tracking-[0.06em] text-ink-500">
+                      <th className="px-5 py-2.5">{t('rec.thReceipt')}</th>
+                      <th className="px-3 py-2.5">{t('rec.thPharmacist')}</th>
+                      <th className="px-3 py-2.5 text-right">{t('rec.thAmount')}</th>
+                      <th className="px-3 py-2.5">{t('rec.thStatus')}</th>
+                      <th className="px-3 py-2.5 text-center">{t('rec.thLog')}</th>
+                      <th className="px-3 py-2.5 text-center">{t('rec.thExcel')}</th>
+                      <th className="px-5 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {receipts.map((r) => (
+                      <ReceiptRow
+                        key={r.id}
+                        r={r}
+                        productOf={productOf}
+                        onOpen={setSelected}
+                        canManage={canManage}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-            <div className="text-ink-500">{t('rec.manualBody')}</div>
           </div>
-          <div className="card-soft p-4">
-            <div className="mb-2 flex items-center gap-2 text-accent-danger">
-              <IconShield size={16} />
-              <span className="text-sm font-extrabold">{t('rec.fraud5')}</span>
-            </div>
-            <div className="text-ink-500">{t('rec.fraudBody')}</div>
-          </div>
-        </div>
-      </SectionCard>
 
-      <ReceiptDetailDrawer
-        receipt={selected}
-        productOf={productOf}
-        onClose={() => setSelected(null)}
-        canManage={canManage}
-      />
+          <SectionCard title={t('rec.howTitle')} subtitle={t('rec.howSub')}>
+            <div className="grid grid-cols-3 gap-3 text-[13px]">
+              <div className="card-soft p-4">
+                <div className="mb-2 flex items-center gap-2 text-brand-green-700">
+                  <IconCheck size={16} />
+                  <span className="text-sm font-extrabold">{t('rec.auto80')}</span>
+                </div>
+                <div className="text-ink-500">{t('rec.autoBody')}</div>
+              </div>
+              <div className="card-soft p-4">
+                <div className="mb-2 flex items-center gap-2 text-accent-warning">
+                  <IconAlert size={16} />
+                  <span className="text-sm font-extrabold">{t('rec.manual15')}</span>
+                </div>
+                <div className="text-ink-500">{t('rec.manualBody')}</div>
+              </div>
+              <div className="card-soft p-4">
+                <div className="mb-2 flex items-center gap-2 text-accent-danger">
+                  <IconShield size={16} />
+                  <span className="text-sm font-extrabold">{t('rec.fraud5')}</span>
+                </div>
+                <div className="text-ink-500">{t('rec.fraudBody')}</div>
+              </div>
+            </div>
+          </SectionCard>
+
+          <ReceiptDetailDrawer
+            receipt={selected}
+            productOf={productOf}
+            onClose={() => setSelected(null)}
+            canManage={canManage}
+          />
+        </>
+      )}
     </div>
   )
 }

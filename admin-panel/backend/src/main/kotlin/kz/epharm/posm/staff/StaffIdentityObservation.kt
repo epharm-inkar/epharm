@@ -22,6 +22,8 @@ internal object StaffIdentityObservation {
                 it.none { c -> c.isISOControl() && !whitespace(c) }
         }==true else context.standardNFullName==null
 
+    fun normalizedName(value: String): String? = tokens(value)?.joinToString(" ")
+
     private fun tokens(value: String): List<String>? {
         if(value.length !in 1..255 || value.any { it.isISOControl() && !whitespace(it) }) return null
         val parts=value.trim(::whitespace).lowercase(Locale.ROOT).split(spaces)

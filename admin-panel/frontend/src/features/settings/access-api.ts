@@ -34,6 +34,9 @@ export interface AccessCapabilities {
   canViewLedger?: boolean
   canExportLedger?: boolean
   canExportPayouts?: boolean
+  canViewRecommendationRewards?: boolean
+  canReviewRecommendationRewards?: boolean
+  canExportRecommendationRewards?: boolean
   canExportPharmacists?: boolean
   canExportLearnerCredentials?: boolean
   canExportCampaignReports?: boolean
@@ -205,7 +208,11 @@ export const accessApi = {
         accountId: string
         status: string
         version: number
-      }>(`/api/admin/access/accounts/${encodeURIComponent(id)}/status`, { expectedVersion, status, currentPassword }, { signal })
+      }>(
+        `/api/admin/access/accounts/${encodeURIComponent(id)}/status`,
+        { expectedVersion, status, currentPassword },
+        { signal },
+      )
       .then((r) => r.data),
 }
 

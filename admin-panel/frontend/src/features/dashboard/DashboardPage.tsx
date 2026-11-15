@@ -355,6 +355,14 @@ function RecommendationsSection() {
                           Standard-N: правило
                         </span>
                       )}
+                      {e.type === 'sale' && e.pharmacistSource === 'standardn_rps_binding' && (
+                        <span
+                          className="chip chip-green"
+                          title="ИИН или полное имя совпали с пользователем Стандарт-Н на этой кассе"
+                        >
+                          Сопоставлен через ePharm
+                        </span>
+                      )}
                       {e.type === 'sale' && e.pharmacistSource === 'standardn_unmapped' && (
                         <div className="text-[11px] font-semibold text-amber-700">
                           {t('recan.sellerUnmapped')}

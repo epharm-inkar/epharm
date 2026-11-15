@@ -27,6 +27,7 @@ export function mayPersistQuery(key: readonly unknown[]): boolean {
   return (
     typeof first === 'string' &&
     first !== 'promo-changes' &&
+    first !== 'recommendation-rewards' &&
     !/^(access|admin-access|unified-access|unified-admin-access)(?:$|[-/:.])/.test(first)
   )
 }

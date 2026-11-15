@@ -42,6 +42,17 @@ beforeEach(() => {
 })
 
 describe('Bug P REPRO — query cache persistence в localStorage', () => {
+  it('не сохраняет финансовые доказательства продаж по рекомендациям в localStorage', async () => {
+    const qc = new QueryClient()
+    configureQueryPersistence(qc, storage, { principal: 'demo-a' })
+    qc.setQueryData(['recommendation-rewards', 'detail', 'case-a'], {
+      evidence: 'private-line-journal',
+    })
+    qc.setQueryData(['promo', 'list'], [{ id: 'public-promo' }])
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(storage.getItem('epharm.query.cache')).toContain('public-promo')
+    expect(storage.getItem('epharm.query.cache')).not.toContain('private-line-journal')
+  })
   it('после setQueryData — данные сохранены в storage', async () => {
     const qc = new QueryClient()
     configureQueryPersistence(qc, storage, { principal: 'demo-a' })

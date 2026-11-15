@@ -1,0 +1,131 @@
+{
+  "suite": "UpdateTransactionTests",
+  "date": "2026-11-11",
+  "runtime": "64-bit (x64) .NET 10.0.2 [collection-per-class, non-parallel]",
+  "total": 29,
+  "passed": 29,
+  "failed": 0,
+  "skipped": 0,
+  "errors": 0,
+  "seconds": 130.576,
+  "xmlSha256": "5dc30d5f8201adb48731f4c55c817de71743c6e73b9c8d570bfd9a1dc1c290b1",
+  "tests": [
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.InterruptedApplyCanBeRecoveredFromDurablePlan",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.SuccessfulTransactionRequiresHealthAndPreservesAllPharmacyState",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.DamagedBackupStopsApplyBeforeAnyTargetIsChanged",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.LockedDllPreventsCommitAndRestoresAlreadyReplacedFiles",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.FailedMutexReacquisitionPreservesCandidateAndPendingRecoveryInsteadOfRollingBack",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.HeldUpdaterMutexStillRejectsCompetingStartup",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.TimedOutScriptReleasesWorkingDirectoryBeforeFixtureCleanup",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.FailureAfterFirstReplacementRestoresCompletePreviousVersion",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.ReleasedUpdaterMutexHandleDoesNotPreventCandidateAcquiringOwnership",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.AckArrivingAtDeadlineCannotLeaveLiveCandidateDuringRollback",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.UnsafeOrDuplicateArchiveEntryIsRejectedBeforePublishingActiveState(name: \\\"../outside.dll\\\")",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.UnsafeOrDuplicateArchiveEntryIsRejectedBeforePublishingActiveState(name: \\\"posm.json\\\")",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.UnsafeOrDuplicateArchiveEntryIsRejectedBeforePublishingActiveState(name: \\\"outbox.db\\\")",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.UnsafeOrDuplicateArchiveEntryIsRejectedBeforePublishingActiveState(name: \\\"CUSTOMERDISPLAY.DLL\\\")",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.UnsafeOrDuplicateArchiveEntryIsRejectedBeforePublishingActiveState(name: \\\"CustomerDisplay.exe:stream\\\")",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.ApplyOrchestrationReleasesMutexAndAcceptsOnlyMatchingCandidateAck",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.HelperPublicationRejectsExistingReparsePointWithoutTouchingItsTarget(name: \\\"apply-update.ps1\\\", dangling: False)",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.HelperPublicationRejectsExistingReparsePointWithoutTouchingItsTarget(name: \\\"apply-update.ps1.tmp\\\", dangling: False)",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.HelperPublicationRejectsExistingReparsePointWithoutTouchingItsTarget(name: \\\"apply-update.ps1\\\", dangling: True)",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.HelperPublicationRejectsExistingReparsePointWithoutTouchingItsTarget(name: \\\"apply-update.ps1.tmp\\\", dangling: True)",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.ApplyOrchestrationRestoresAfterActualLaunchCallbackThrows",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.WrongReadinessTokenTimesOutAndStopsCandidateBeforeRollback",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.RetentionKeepsTwoNewestCompletedBundlesAndNeverDeletesForeignFiles",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.StartFailureOrReadinessTimeoutRestoresPreviousVersion(probe: \\\"throw 'injected process start failure'\\\")",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.StartFailureOrReadinessTimeoutRestoresPreviousVersion(probe: \\\"Start-Sleep -Milliseconds 40; return $false\\\")",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.HelperPublicationReplacesExistingScriptAndInterruptedTemporaryFile",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.PreparationDoesNotMutateLiveInstallationAndRetainsVerifiedBackup",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.ApplierRejectsDanglingReparseForMetadataAndRuntimeTemporaryFiles(runtimeTemporary: False)",
+      "result": "Pass"
+    },
+    {
+      "name": "CustomerDisplay.Core.Tests.UpdateTransactionTests.ApplierRejectsDanglingReparseForMetadataAndRuntimeTemporaryFiles(runtimeTemporary: True)",
+      "result": "Pass"
+    }
+  ],
+  "exitFileLimitation": "PowerShell wrapper wrote an empty exit file; final valid XML and completed stdout prove these counts; UTM CLI exit0 is not the oracle."
+}

@@ -3,10 +3,20 @@ package kz.epharm.receipts.repository
 import kz.epharm.receipts.entity.PendingBonusEntity
 import kz.epharm.receipts.entity.ReceiptEntity
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.Instant
 
 @Repository
 interface PendingBonusRepository : JpaRepository<PendingBonusEntity, String> {
+    /** PostgreSQL rechecks status after a concurrent credit releases its row lock. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """UPDATE pending_bonuses SET status='expired',updated_at=CURRENT_TIMESTAMP
+        WHERE status='awaiting_receipt' AND created_at<:cutoff""", nativeQuery = true)
+    fun expireAwaitingBefore(@Param("cutoff") cutoff: Instant): Int
+
     fun findFirstBySourceSaleIdAndSku(sourceSaleId: String, sku: String): PendingBonusEntity?
 
     /** Открытые pending-бонусы фармацевта по SKU — для матчинга чека (свежие первыми). */

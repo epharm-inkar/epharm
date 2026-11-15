@@ -185,6 +185,7 @@ namespace CustomerDisplay
                 var delivered = await _epharm
                     .HeartbeatAsync(deviceId, pharmacyId, monitorCount, appVersion, staffAuthStatus: StaffAuthenticationStatus)
                     .ConfigureAwait(false);
+                Dispatcher.Invoke(() => ApplyRewardCapability(delivered ? _epharm.RewardEvidenceProtocol : null));
                 if (delivered && _heartbeatDelivered != true)
                 {
                     _heartbeatDelivered = true;
@@ -200,6 +201,7 @@ namespace CustomerDisplay
             }
             catch (Exception ex)
             {
+                Dispatcher.Invoke(() => ApplyRewardCapability(null));
                 if (_heartbeatDelivered != false)
                 {
                     _heartbeatDelivered = false;

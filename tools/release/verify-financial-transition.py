@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject legacy financial, access, session or compound-trigger handling on a forward-migrated DB.
+"""Reject legacy financial, access, session, trigger or reward handling on a forward-migrated DB.
 
 Artifact markers guard known regressions; they do not approve a fallback release or
 replace exact-source review, forward-schema rehearsal, or physical POSM acceptance.
@@ -59,6 +59,45 @@ COMPOUND_CLASSES = {
         ('canonicalTrigger', 'getConditions', 'identity'),
     'kz/epharm/promo/dto/PromoRuleProductRefDto.class': ('getTriggerConditions',),
 }
+REWARD_CLASSES = {
+    'kz/epharm/receipts/service/ReconcileService.class':
+        ('kz/epharm/receipts/service/RecommendationRewardCreditPolicy', 'beforeCredit', 'afterCredit',
+         'ingestVerifiedRecommendationReward', 'lockRewardRecipient'),
+    'kz/epharm/receipts/service/RecommendationRewardCreditPolicy.class':
+        ('recommendation_sale_rewards', 'FOR UPDATE', 'FOR NO KEY UPDATE', 'beforeCredit', 'afterCredit',
+         'reward_not_ready', 'reward_budget_exhausted', 'reward_identity_conflict',
+         'reward_beneficiary_changed', 'budget_reserved=true', "state='credited'"),
+    'kz/epharm/posm/service/RecommendationRewardService.class':
+        ('kz/epharm/receipts/service/ReconcileService', 'ingestVerifiedRecommendationReward',
+         'recommendation_reward_refund_holds', 'refund_review', 'refund_reported',
+         'refund_original_reference_conflict', 'lockReceipt'),
+    'kz/epharm/posm/service/RecommendationRewardEvidencePolicy.class':
+        ('completionProblem', 'refundProblem', 'payment_not_confirmed', 'refund_not_confirmed',
+         'paid_line_link_inconsistent', 'refund_source_unverified'),
+}
+SOURCE_BINDING_CLASSES = {
+    'kz/epharm/posm/staff/SourceStaffBindingService.class':
+        ('authorizes', 'resolve', 'observe', 'FOR UPDATE', 'posm_source_staff_bindings',
+         'source_verified_at', 'password_fingerprint', 'source_binding_conflict',
+         'source_name_ambiguous', 'hq_mapping_revoked', 'conflict_at', 'updated_at', 'lockAccount',
+         'transition_order DESC', 'conflict_at=GREATEST(clock_timestamp()'),
+    'kz/epharm/posm/staff/SourceStaffBindingService$Companion.class':
+        ('lockAccount', 'pg_advisory_xact_lock', 'hashtextextended(?,729182)'),
+    'kz/epharm/posm/service/RecommendationRewardService.class':
+        ('kz/epharm/posm/staff/SourceStaffBindingService', 'authorizes', 'standardn_rps_binding',
+         'getSourceNamespace', 'getNativeSessionId', 'getWorkstationId'),
+    'kz/epharm/posm/service/PosmPharmacistIdentityService.class':
+        ('kz/epharm/posm/staff/SourceStaffBindingService', 'resolve', 'getBlocksHq',
+         'STANDARDN_RPS_BINDING', 'STANDARDN_EXPLICIT_MAPPING'),
+    'kz/epharm/posm/staff/StaffAuthService.class':
+        ('kz/epharm/posm/staff/SourceStaffBindingService', 'observe', 'getSourceNamespace',
+         'source_namespace', 'getStandardNSessionId', 'getWorkstationId'),
+    'kz/epharm/posm/service/PosmPharmacistMappingService.class':
+        ('posm_source_staff_bindings', 'reviewed', 'setUpdatedAt', 'FOR UPDATE',
+         'kz/epharm/posm/staff/SourceStaffBindingService$Companion', 'lockAccount'),
+    'kz/epharm/posm/service/RecommendationRewardReviewService.class':
+        ('getSourceNamespace', 'getNativeSessionId', 'getWorkstationId', 'getCompletedAt'),
+}
 SCHEMA_PROBE = """SELECT CASE WHEN
   to_regclass('public.pharmacist_wallet_entries') IS NOT NULL OR
   to_regclass('public.pharmacist_wallet_checkpoints') IS NOT NULL OR
@@ -85,15 +124,54 @@ COMPOUND_SCHEMA_PROBE = """SELECT CASE WHEN
          AND table_name='rules' AND constraint_name='rules_trigger_conditions_shape'
          AND constraint_type='CHECK')
 THEN 'protected' ELSE 'legacy' END;\n"""
+REWARD_SCHEMA_PROBE = """SELECT CASE WHEN
+  to_regclass('public.recommendation_reward_shows') IS NOT NULL OR
+  to_regclass('public.recommendation_reward_receipts') IS NOT NULL OR
+  to_regclass('public.recommendation_sale_rewards') IS NOT NULL OR
+  to_regclass('public.recommendation_reward_audit') IS NOT NULL OR
+  to_regclass('public.recommendation_reward_refund_holds') IS NOT NULL OR
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+         AND table_name='pos_sales' AND column_name='reward_evidence')
+THEN 'protected' ELSE 'legacy' END;\n"""
+SOURCE_BINDING_SCHEMA_PROBE = """SELECT CASE WHEN
+  to_regclass('public.posm_source_staff_bindings') IS NOT NULL OR
+  to_regclass('public.posm_source_staff_binding_audit') IS NOT NULL OR
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+         AND table_name='posm_device_staff_sessions' AND column_name IN ('source_namespace','source_verified_at'))
+THEN 'protected' ELSE 'legacy' END;\n"""
 
 
 def verify(jar_path: Path, schema_protected: bool, access_protected: bool = False,
-           session_protected: bool = False, compound_protected: bool = False) -> bool:
+           session_protected: bool = False, compound_protected: bool = False,
+           reward_protected: bool = False, source_binding_protected: bool = False) -> bool:
     with zipfile.ZipFile(jar_path) as jar:
         entries = jar.namelist()
         names = set(entries)
         if len(entries) != len(names):
             raise ValueError('Ambiguous duplicate artifact entries')
+        source_binding_code = 'BOOT-INF/classes/kz/epharm/posm/staff/SourceStaffBindingService.class' in names or any(
+            re.fullmatch(r'BOOT-INF/classes/db/migration/V0*(102|103)__[^/]+\.sql', name) for name in names)
+        # V102 conflicts and proof lifetimes remain authoritative even before the first binding exists.
+        if source_binding_protected or source_binding_code:
+            for name, markers in SOURCE_BINDING_CLASSES.items():
+                path = 'BOOT-INF/classes/' + name
+                if path not in names or jar.getinfo(path).file_size > 2 * 1024 * 1024:
+                    raise ValueError('Target lacks the reviewed source-binding implementation')
+                body = jar.read(path)
+                if any(marker.encode('ascii') not in body for marker in markers):
+                    raise ValueError('Target contains obsolete source-binding identity or conflict handling')
+        reward_code = 'BOOT-INF/classes/kz/epharm/receipts/service/RecommendationRewardCreditPolicy.class' in names or any(
+            re.fullmatch(r'BOOT-INF/classes/db/migration/V0*100__[^/]+\.sql', name) for name in names)
+        # V100 holds and finite-budget decisions survive even when all reward flags are disabled.
+        # A generic wallet-capable predecessor can otherwise approve those receipts without the policy.
+        if reward_protected or reward_code or source_binding_protected or source_binding_code:
+            for name, markers in REWARD_CLASSES.items():
+                path = 'BOOT-INF/classes/' + name
+                if path not in names or jar.getinfo(path).file_size > 2 * 1024 * 1024:
+                    raise ValueError('Target lacks the reviewed recommendation-reward implementation')
+                body = jar.read(path)
+                if any(marker.encode('ascii') not in body for marker in markers):
+                    raise ValueError('Target contains obsolete recommendation-reward hold or budget handling')
         access_code = any('BOOT-INF/classes/' + name in names for name in ACCESS_CLASSES) or any(
             re.fullmatch(r'BOOT-INF/classes/db/migration/V0*66__[^/]+\.sql', name) for name in names)
         # Presence is conservative even before any account becomes MANAGED. A failed
@@ -178,11 +256,21 @@ def compound_schema_is_protected() -> bool:
     return _schema_is_protected(COMPOUND_SCHEMA_PROBE, 'compound-trigger')
 
 
+def reward_schema_is_protected() -> bool:
+    return _schema_is_protected(REWARD_SCHEMA_PROBE, 'recommendation-reward')
+
+
+def source_binding_schema_is_protected() -> bool:
+    return _schema_is_protected(SOURCE_BINDING_SCHEMA_PROBE, 'source-binding')
+
+
 def verify_image(image: str) -> bool:
     protected = schema_is_protected()
     access_protected = access_schema_is_protected()
     session_protected = session_schema_is_protected()
     compound_protected = compound_schema_is_protected()
+    reward_protected = reward_schema_is_protected()
+    source_binding_protected = source_binding_schema_is_protected()
     container = subprocess.check_output(['docker', 'create', '--network', 'none', image],
         text=True, stderr=subprocess.DEVNULL, timeout=15).strip()
     if not re.fullmatch(r'[a-f0-9]{64}', container):
@@ -192,7 +280,7 @@ def verify_image(image: str) -> bool:
             jar = Path(directory) / 'app.jar'
             subprocess.run(['docker', 'cp', f'{container}:/app/app.jar', str(jar)],
                 check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-            return verify(jar, protected, access_protected, session_protected, compound_protected)
+            return verify(jar, protected, access_protected, session_protected, compound_protected, reward_protected, source_binding_protected)
     finally:
         subprocess.run(['docker', 'rm', container], check=True, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=15)
@@ -207,16 +295,18 @@ def main() -> None:
     parser.add_argument('--access-protected', action='store_true', help='Offline --jar fixture represents the V066 access schema')
     parser.add_argument('--session-protected', action='store_true', help='Offline --jar fixture represents the V093 admin-session schema')
     parser.add_argument('--compound-protected', action='store_true', help='Offline --jar fixture represents the V094 compound-trigger schema')
+    parser.add_argument('--reward-protected', action='store_true', help='Offline --jar fixture represents the V100 recommendation-reward schema')
+    parser.add_argument('--source-binding-protected', action='store_true', help='Offline --jar fixture represents the V102 native source-binding schema')
     args = parser.parse_args()
-    if args.image and (args.schema_protected or args.access_protected or args.session_protected or args.compound_protected or
+    if args.image and (args.schema_protected or args.access_protected or args.session_protected or args.compound_protected or args.reward_protected or args.source_binding_protected or
                        not re.fullmatch(r'sha256:[a-f0-9]{64}', args.image)):
         parser.error('Production checks require an exact image ID and live read-only DB probe')
     try:
         capable = verify_image(args.image) if args.image else verify(
-            args.jar, args.schema_protected, args.access_protected, args.session_protected, args.compound_protected)
+            args.jar, args.schema_protected, args.access_protected, args.session_protected, args.compound_protected, args.reward_protected, args.source_binding_protected)
     except (OSError, ValueError, KeyError, UnicodeError, RuntimeError, zipfile.BadZipFile, subprocess.SubprocessError):
-        raise SystemExit('ERROR: financial/access/session/compound-trigger transition denied or state unknown; keep current pins and use a reviewed wallet/RBAC/session/compound-capable forward image') from None
-    print('Financial transition contract OK: ' + ('wallet-capable artifact' if capable else 'legacy schema/artifact') + '; managed-access, admin-session and compound-trigger guards checked')
+        raise SystemExit('ERROR: financial/access/session/compound-trigger/reward/source-binding transition denied or state unknown; keep current pins and use a reviewed wallet/RBAC/session/compound/reward/source-binding-capable forward image') from None
+    print('Financial transition contract OK: ' + ('wallet-capable artifact' if capable else 'legacy schema/artifact') + '; managed-access, admin-session, compound-trigger, recommendation-reward and source-binding guards checked')
 
 
 if __name__ == '__main__':

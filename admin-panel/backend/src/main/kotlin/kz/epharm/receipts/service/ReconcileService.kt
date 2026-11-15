@@ -54,6 +54,7 @@ class ReconcileService(
     private val recommendationEvents: RecommendationEventRepository,
     private val jdbc: JdbcTemplate,
     private val entityManager: EntityManager,
+    private val rewardCreditPolicy: RecommendationRewardCreditPolicy,
 ) {
 
     private val log = LoggerFactory.getLogger(ReconcileService::class.java)
@@ -187,7 +188,13 @@ class ReconcileService(
 
     @Transactional
     fun approve(id: String, reviewer: String): ReceiptDto {
+        entityManager.flush() // JDBC must see receipts created or reassigned earlier in this transaction.
+        val recipient = jdbc.query("SELECT pharmacist_id FROM receipts WHERE id=?", { rs, _ -> rs.getString(1) }, id).singleOrNull()
+        lockRewardRecipient(recipient)
         val receipt = loadForDecision(id)
+        if (receipt.pharmacistId != recipient) {
+            throw AppException(ErrorCode.CONFLICT, "Получатель чека изменился — повторите проверку", HttpStatus.CONFLICT)
+        }
         if (receipt.status == ReceiptStatus.approved) return toDto(receipt)
         if (receipt.status == ReceiptStatus.rejected || receipt.bonusCredited > 0) {
             throw AppException(ErrorCode.CONFLICT,"Итоговое решение по чеку уже принято",HttpStatus.CONFLICT)
@@ -285,6 +292,45 @@ class ReconcileService(
         receipt.autoApproved = false
         if (receipt.status != ReceiptStatus.flagged) receipt.status = ReceiptStatus.moderation_required
         receiptRepository.save(receipt)
+    }
+
+    /** V2 evidence has already proved a timely addition; checkout itself has no thirty-minute deadline. */
+    @Transactional
+    fun ingestVerifiedRecommendationReward(pendingId: String, sourceSaleId: String, totalAmount: Long, autoCredit: Boolean): String {
+        entityManager.flush()
+        val recipient = jdbc.query("SELECT pharmacist_id FROM pending_bonuses WHERE id=?", { rs, _ -> rs.getString(1) }, pendingId).singleOrNull()
+        lockRewardRecipient(recipient)
+        val pending = lockPending(pendingId) ?: throw AppException(ErrorCode.CONFLICT, "reward_pending_missing", HttpStatus.CONFLICT)
+        if (pending.pharmacistId != recipient) {
+            throw AppException(ErrorCode.CONFLICT, "reward_beneficiary_changed", HttpStatus.CONFLICT)
+        }
+        val sale = posSales.findById(sourceSaleId).orElse(null)
+            ?: throw AppException(ErrorCode.CONFLICT, "reward_sale_missing", HttpStatus.CONFLICT)
+        if (pending.sourceSaleId != sourceSaleId || totalAmount <= 0) {
+            throw AppException(ErrorCode.CONFLICT, "reward_sale_conflict", HttpStatus.CONFLICT)
+        }
+        val receipt = receiptRepository.findFirstByPendingBonusId(pending.id)?.let { loadForDecision(it.id) }
+            ?: receiptRepository.saveAndFlush(newReceiptForPending(pending, sale.fiscalId, sale.cashier, sale.printedAt, totalAmount))
+        val reason = rewardCreditPolicy.attachReceipt(pending, receipt, sourceSaleId)
+        if (receipt.status in setOf(ReceiptStatus.approved, ReceiptStatus.rejected)) return receipt.id
+        receipt.source = ReceiptSource.posm
+        receipt.confirmedByLog = true
+        receipt.parsedSku = pending.sku
+        receipt.parsedAmount = totalAmount
+        receipt.parsedAt = sale.printedAt
+        receipt.fiscalId = sale.fiscalId
+        receipt.parsedCashier = sale.cashier ?: ""
+        receipt.autoApproved = false
+        receipt.flagReason = reason
+        receipt.status = ReceiptStatus.moderation_required
+        if (autoCredit && creditFor(receipt, pending, strictRewardPolicy = false)) {
+            receipt.status = ReceiptStatus.approved
+            receipt.autoApproved = true
+            receipt.flagReason = null
+            receipt.reviewer = "auto:recommendation"
+            receipt.reviewedAt = Instant.now()
+        }
+        return receiptRepository.save(receipt).id
     }
 
     /**
@@ -413,19 +459,29 @@ class ReconcileService(
     }
 
     /** Начисление бонуса фармацевту: balance += bonus, earned30d += bonus, pending → matched. */
-    private fun creditFor(receipt: ReceiptEntity, knownCandidate: PendingBonusEntity? = null) {
-        if (receipt.bonusCredited > 0) return // идемпотентность — уже начислено
+    private fun creditFor(receipt: ReceiptEntity, knownCandidate: PendingBonusEntity? = null, strictRewardPolicy: Boolean = true): Boolean {
+        if (receipt.bonusCredited > 0) return true // идемпотентность — уже начислено
         val pending = knownCandidate
-            ?: receipt.pendingBonusId?.let { pendingBonusRepository.findById(it).orElse(null) }
-            ?: return
-        val pharmacist = pharmacistRepository.findById(receipt.pharmacistId).orElse(null) ?: return
-        if (pending.bonus > 0) wallet.credit(
-            WalletCreditSource.RECEIPT_BONUS, pending.id, pharmacist.id, pending.bonus, "receipt:${receipt.id}",
+            // The decision path already holds pending -> receipt; refresh any JPA snapshot
+            // loaded before those locks so an expired/changed reservation cannot be revived.
+            ?: receipt.pendingBonusId?.let(::lockPending)
+            ?: return true
+        val decision = rewardCreditPolicy.beforeCredit(pending, receipt)
+        if (!decision.allowed) {
+            if (strictRewardPolicy) throw AppException(ErrorCode.CONFLICT, decision.reasonCode ?: "reward_requires_review", HttpStatus.CONFLICT)
+            receipt.flagReason = decision.reasonCode
+            return false
+        }
+        val pharmacist = pharmacistRepository.findById(receipt.pharmacistId).orElse(null) ?: return true
+        if (decision.amountKzt > 0) wallet.credit(
+            WalletCreditSource.RECEIPT_BONUS, pending.id, pharmacist.id, decision.amountKzt, "receipt:${receipt.id}",
         )
+        rewardCreditPolicy.afterCredit(pending, receipt, decision.amountKzt)
         pending.status = PendingBonusStatus.matched
         pendingBonusRepository.save(pending)
-        receipt.bonusCredited = pending.bonus
-        log.info("Бонус {}₸ начислен фармацевту {} по чеку {}", pending.bonus, pharmacist.id, receipt.id)
+        receipt.bonusCredited = decision.amountKzt
+        log.info("Бонус {}₸ начислен фармацевту {} по чеку {}", decision.amountKzt, pharmacist.id, receipt.id)
+        return true
     }
 
     private fun amountWithinTolerance(actual: Long, expected: Long): Boolean {
@@ -464,6 +520,13 @@ class ReconcileService(
         return loadOrThrow(id).also {
             entityManager.refresh(it)
             if(it.pendingBonusId!=pendingId) throw AppException(ErrorCode.CONFLICT,"Связь чека изменилась — повторите проверку",HttpStatus.CONFLICT)
+        }
+    }
+
+    /** Shared with the multi-case reward flow; acquire before any pending/receipt/case/promo locks. */
+    private fun lockRewardRecipient(pharmacistId: String?) {
+        if (!pharmacistId.isNullOrBlank()) {
+            jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?,0))", "reward-pharmacist:$pharmacistId")
         }
     }
 

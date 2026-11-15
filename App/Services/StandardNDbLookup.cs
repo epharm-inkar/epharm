@@ -76,6 +76,9 @@ namespace CustomerDisplay.Services
         private string? _optionsDbUser;
         private string? _optionsDbPassword;
         private string? _successfulConnectionKey;
+        private string? _rewardSourceNamespace;
+        // Only the digest of the successfully opened source is exposed; never credentials or paths.
+        public string? RewardSourceNamespace => _rewardSourceNamespace;
         private string? _loggedConnectionSource;
         private string? _loggedActiveUserShape;
         private readonly Dictionary<string, string?> _userNameCache = new(StringComparer.OrdinalIgnoreCase);
@@ -139,6 +142,7 @@ namespace CustomerDisplay.Services
                 return observation with { Session = session with {
                     StandardNIin = identity.Iin, StandardNIinStatus = identity.Status,
                     StandardNFullName = name.FullName, StandardNFullNameStatus = name.Status,
+                    SourceNamespace = RewardSourceNamespace,
                 } };
             }
             catch
@@ -218,7 +222,12 @@ namespace CustomerDisplay.Services
         /// DOCS query succeeded and confirmed that no receipt is open.
         /// </summary>
         public bool TryGetCurrentReceipt(out StandardNReceiptSnapshot? receipt) =>
-            TryReadCurrentReceiptGroup(out receipt);
+            TryReadCurrentReceiptGroup(out receipt, out var posting) && !posting;
+
+        /// <summary>A valid partially posted group is a healthy hold, not a new cart or a read failure.</summary>
+        public bool TryGetCurrentReceipt(out StandardNReceiptSnapshot? receipt, out bool posting,
+            StandardNReceiptSnapshot? knownCurrent = null) =>
+            TryReadCurrentReceiptGroup(out receipt, out posting, knownCurrent);
 
         /// <summary>
         /// Read-only report for a pharmacy workstation. It intentionally prints table/column
@@ -1300,6 +1309,7 @@ namespace CustomerDisplay.Services
                 {
                     conn.Open();
                     _successfulConnectionKey = candidate.Key;
+                    _rewardSourceNamespace = RecommendationRewardJournal.SourceNamespace(candidate.Host, candidate.Port, dbPath, _machineName);
                     if (!string.Equals(_loggedConnectionSource, candidate.Source, StringComparison.Ordinal))
                     {
                         _loggedConnectionSource = candidate.Source;

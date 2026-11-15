@@ -83,7 +83,8 @@ interface PosSaleRepository : JpaRepository<PosSaleEntity, String> {
         nativeQuery = true,
         value = """
             SELECT pharmacy_id AS "pharmacyId", COUNT(*) AS "cnt"
-            FROM pos_sales WHERE printed_at >= :since GROUP BY pharmacy_id
+            FROM pos_sales WHERE printed_at >= :since
+              AND COALESCE(reward_evidence #>> '{completion,status}', '') <> 'refund' GROUP BY pharmacy_id
         """,
     )
     fun countByPharmacySince(@Param("since") since: Instant): List<PharmacyCountRow>
@@ -93,7 +94,8 @@ interface PosSaleRepository : JpaRepository<PosSaleEntity, String> {
         nativeQuery = true,
         value = """
             SELECT pharmacy_id AS "pharmacyId", COALESCE(SUM(total_amount), 0) AS "amount"
-            FROM pos_sales WHERE printed_at >= :since GROUP BY pharmacy_id
+            FROM pos_sales WHERE printed_at >= :since
+              AND COALESCE(reward_evidence #>> '{completion,status}', '') <> 'refund' GROUP BY pharmacy_id
         """,
     )
     fun amountByPharmacySince(@Param("since") since: Instant): List<PharmacyAmountRow>
@@ -104,7 +106,8 @@ interface PosSaleRepository : JpaRepository<PosSaleEntity, String> {
      */
     @Query(
         nativeQuery = true,
-        value = "SELECT COUNT(*) FROM pos_sales WHERE pharmacy_id IN (:ids) AND printed_at >= :since",
+        value = """SELECT COUNT(*) FROM pos_sales WHERE pharmacy_id IN (:ids) AND printed_at >= :since
+            AND COALESCE(reward_evidence #>> '{completion,status}', '') <> 'refund'""",
     )
     fun countByPharmaciesSince(@Param("ids") ids: Collection<String>, @Param("since") since: Instant): Long
 }
@@ -228,7 +231,8 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
                    'sale' AS "eventType",
                    s.printed_at AS "eventAt",
                    CASE
-                       WHEN s.item_count = 0 THEN 'Чек'
+                       WHEN s.item_count = 0 THEN CASE WHEN s.reward_evidence #>> '{completion,status}' = 'refund' THEN 'Возврат' ELSE 'Чек' END
+                       WHEN s.reward_evidence #>> '{completion,status}' = 'refund' THEN 'Возврат: ' || COALESCE(NULLIF(s.item ->> 'name', ''), NULLIF(s.item ->> 'sku', ''), 'позиция')
                        ELSE COALESCE(NULLIF(s.item ->> 'name', ''), NULLIF(s.item ->> 'sku', ''), 'позиция')
                    END AS "title",
                    CAST(NULL AS VARCHAR) AS "triggerSku",

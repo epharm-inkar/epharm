@@ -1,0 +1,137 @@
+{
+  "state": "http_and_guarded_SQL_oracle_passed",
+  "date": "2026-11-11",
+  "scope": "Local isolated PostgreSQL and actual candidate HTTP; all UTM VMs stopped; no production or mobile tests",
+  "candidateJarSha256": "3f787c55186a12d4e9a2525df1fcaee344cc51f20e6626a6cd90aa7e14ade023",
+  "elapsedSeconds": 184.99815704099998,
+  "actors": 1500,
+  "pharmacies": 500,
+  "peakAuthenticatedActors": 1500,
+  "peakHttpInflight": 48,
+  "maxInflight": 50,
+  "actualCredits": 1440,
+  "totalKzt": 576000,
+  "negativeControls": 60,
+  "negativeCreditKzt": 0,
+  "matchingRpsContextsVerified": 1500,
+  "databaseOracleExit": 0,
+  "errors": {},
+  "violations": [],
+  "requests": {
+    "heartbeat": {
+      "count": 4500,
+      "statuses": {
+        "200": 4500
+      },
+      "p50Ms": 3.0581660000025295,
+      "p95Ms": 5.835332999995444,
+      "p99Ms": 30.346625000005588,
+      "maxMs": 578.669292000006
+    },
+    "playlist": {
+      "count": 4500,
+      "statuses": {
+        "200": 4500
+      },
+      "p50Ms": 2.418334000001778,
+      "p95Ms": 5.14579200001026,
+      "p99Ms": 18.31570899999997,
+      "maxMs": 455.7882079999981
+    },
+    "recommend": {
+      "count": 1500,
+      "statuses": {
+        "200": 1500
+      },
+      "p50Ms": 6.151333000001614,
+      "p95Ms": 11.233791999999994,
+      "p99Ms": 296.46566599999994,
+      "maxMs": 849.5534170000001
+    },
+    "shown_foreign_control": {
+      "count": 15,
+      "statuses": {
+        "200": 15
+      },
+      "p50Ms": 2.2770420000015292,
+      "p95Ms": 131.93774999999994,
+      "p99Ms": 131.93774999999994,
+      "maxMs": 131.93774999999994
+    },
+    "shown": {
+      "count": 1485,
+      "statuses": {
+        "200": 1485
+      },
+      "p50Ms": 4.12145899999814,
+      "p95Ms": 9.036417000000256,
+      "p99Ms": 204.4825830000001,
+      "maxMs": 273.2962920000001
+    },
+    "sale": {
+      "count": 1500,
+      "statuses": {
+        "200": 1500
+      },
+      "p50Ms": 9.9301249999844,
+      "p95Ms": 18.5327919999836,
+      "p99Ms": 428.7529590000049,
+      "maxMs": 719.7320000000036
+    },
+    "sale_replay": {
+      "count": 1500,
+      "statuses": {
+        "200": 1500
+      },
+      "p50Ms": 4.412917000008747,
+      "p95Ms": 7.9152500000054715,
+      "p99Ms": 155.3861659999966,
+      "maxMs": 422.77700000000186
+    },
+    "sale_race": {
+      "count": 15,
+      "statuses": {
+        "200": 15
+      },
+      "p50Ms": 12.161707999999635,
+      "p95Ms": 586.3589590000047,
+      "p99Ms": 586.3589590000047,
+      "maxMs": 586.3589590000047
+    },
+    "sale_physical_alias": {
+      "count": 15,
+      "statuses": {
+        "200": 15
+      },
+      "p50Ms": 2.903500000014901,
+      "p95Ms": 113.52512500000012,
+      "p99Ms": 113.52512500000012,
+      "maxMs": 113.52512500000012
+    },
+    "sale_offline_replay": {
+      "count": 15,
+      "statuses": {
+        "200": 15
+      },
+      "p50Ms": 4.47074999997858,
+      "p95Ms": 276.18162499999744,
+      "p99Ms": 276.18162499999744,
+      "maxMs": 276.18162499999744
+    }
+  },
+  "realPaymentDelaySeconds": 125,
+  "limits": [
+    "Synthetic full_package adapter fixture; real Standard-N unit semantics not validated",
+    "Logical authenticated active actors and concurrent HTTP requests are different metrics",
+    "HTTP acceptance does not prove credit: guarded verify.sql must also pass",
+    "Local laptop throughput is not production capacity proof; no mobile tests executed"
+  ],
+  "resourceCaps": {
+    "backendCpu": 2.5,
+    "backendMemoryMiB": 2560,
+    "backendHeapMiB": 1200,
+    "postgresCpu": 1.5,
+    "postgresMemoryMiB": 1536,
+    "hikariPool": 16
+  }
+}

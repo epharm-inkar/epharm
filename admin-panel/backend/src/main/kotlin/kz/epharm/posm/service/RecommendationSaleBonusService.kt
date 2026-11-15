@@ -53,6 +53,7 @@ class RecommendationSaleBonusService(
 
     @Transactional
     fun afterSale(sale: PosSaleEntity) {
+        if (sale.rewardEvidence != null) return // v2 evidence never falls back to the legacy 30-minute policy.
         val cutoff = eligibleAfter ?: return
         val latestEvidenceAt = Instant.now().plusSeconds(300)
         if (!enabled || sale.captureSource != "standardn-print-log" || sale.totalAmount <= 0 ||

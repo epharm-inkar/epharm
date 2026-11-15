@@ -355,6 +355,7 @@ namespace CustomerDisplay
                 var request = await Dispatcher.InvokeAsync(() =>
                 {
                     var req = _session.BuildRequest(_posmConfig, ReceiptItems, scannedItem);
+                    req.SourceNamespace = RecommendSourceNamespace(req);
                     if (req.Cart.Count == 0)
                     {
                         ResetRecommendationUiState(closeWindows: true);
@@ -692,7 +693,7 @@ namespace CustomerDisplay
                 TriggerBarcode = rec.TriggerBarcode,
                 TriggerName = rec.TriggerName,
             };
-            EnqueueShownPing(rec.EventId);
+            EnqueueShownPing(rec);
         }
 
         /// <summary>
@@ -701,10 +702,15 @@ namespace CustomerDisplay
         /// событие (INSERT OR IGNORE идемпотентно). Демо-карточки (клавиша D / превью) не шлём — их
         /// eventId нет в БД. Любая ошибка проглатывается: касса не должна тормозить из-за телеметрии.
         /// </summary>
-        private void EnqueueShownPing(string eventId)
+        private void EnqueueShownPing(Recommendation recommendation)
         {
+            var eventId = recommendation.EventId;
             if (eventId.StartsWith("demo", StringComparison.OrdinalIgnoreCase)) return;
-            if (_pendingShownPings?.Record(eventId, DateTimeOffset.UtcNow) != true)
+            var shownAt = DateTimeOffset.UtcNow;
+            RewardShownEvidence? evidence = null;
+            try { evidence = CaptureRewardShown(recommendation, shownAt); }
+            catch { Log("Reward baseline unavailable; ordinary display telemetry continues without monetary evidence."); }
+            if (_pendingShownPings?.Record(eventId, shownAt, evidence) != true)
                 Log("shown-ping: pending buffer unavailable or full; display telemetry is not durable");
         }
 
@@ -923,6 +929,7 @@ namespace CustomerDisplay
         private void StartNewCheckoutSession()
         {
             _session = new CheckoutSession();
+            _rewardSnapshot = null;
         }
     }
 }

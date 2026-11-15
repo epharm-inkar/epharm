@@ -5,6 +5,72 @@ namespace CustomerDisplay.Core.Tests;
 
 public sealed class StandardNLogParserTests
 {
+    private const string PrintBegin = "0 . . RunScriptByIndex: Перед печатью очереди чеков";
+    private const string PrintEnd = "203 . . RunScriptByIndex: После печати очереди чеков";
+
+    [Fact]
+    public void ExactCompletedQueueKeepsOnlyItsOwnDistinctPhysicalDocumentIds()
+    {
+        var batch = new StandardNPrintLogBatch();
+        batch.Observe("Destroy Cheque ID=50"); batch.Observe(PrintBegin);
+        batch.Observe("0 . . Destroy Cheque ID=23660"); batch.Observe("281 . . Destroy Cheque ID=23660");
+        batch.Observe("Destroy Cheque ID=-1");
+        Assert.Equal(new long[] { 23660 }, batch.Observe(PrintEnd)!.Order());
+        Assert.Null(batch.Observe(PrintEnd)); // Replaying completion alone cannot reuse the old IDs.
+    }
+
+    [Fact]
+    public void ProductTextCannotPretendToBeAPrintQueueCallbackOrPhysicalDocument()
+    {
+        var batch = new StandardNPrintLogBatch();
+        batch.Observe("Add2Cheque sname=RunScriptByIndex: Перед печатью очереди чеков");
+        batch.Observe("Destroy Cheque ID=100"); Assert.Null(batch.Observe(PrintEnd));
+        batch.Observe(PrintBegin); batch.Observe("Add2Cheque sname=Destroy Cheque ID=100");
+        Assert.Null(batch.Observe(PrintEnd));
+    }
+
+    [Theory]
+    [InlineData("PrintChequeList stop end")]
+    [InlineData("PrintChequeList results: 58875")]
+    [InlineData("PrintChequeList error")]
+    [InlineData("Destroy Cheque ID=not-a-document")]
+    [InlineData("Destroy Cheque ID=-2")]
+    [InlineData("Destroy Cheque ID=0")]
+    [InlineData("Destroy Cheque ID=9223372036854775808")]
+    public void IncompleteOrFailedQueueNeverLeaksItsIdsIntoALaterCompletion(string interrupted)
+    {
+        var batch = new StandardNPrintLogBatch(); batch.Observe(PrintBegin); batch.Observe("Destroy Cheque ID=100");
+        batch.Observe(interrupted); Assert.Null(batch.Observe(PrintEnd));
+        batch.Observe(PrintBegin); batch.Observe("Destroy Cheque ID=200");
+        Assert.Equal(new long[] { 200 }, batch.Observe(PrintEnd)!.Order());
+    }
+
+    [Fact]
+    public void QueueRestartRotationAndEvidenceBoundsDiscardIncompleteBatches()
+    {
+        var batch = new StandardNPrintLogBatch(); batch.Observe(PrintBegin); batch.Observe("Destroy Cheque ID=100");
+        batch.Observe(PrintBegin); batch.Observe("Destroy Cheque ID=200");
+        Assert.Equal(new long[] { 200 }, batch.Observe(PrintEnd)!.Order());
+        batch.Observe(PrintBegin); batch.Observe("Destroy Cheque ID=300"); batch.Reset();
+        Assert.Null(batch.Observe(PrintEnd));
+        batch.Observe(PrintBegin); batch.Observe("Destroy Cheque ID=400");
+        for (var i = 0; i <= StandardNPrintLogBatch.MaximumLines; i++) batch.Observe("bounded vendor trace");
+        Assert.Null(batch.Observe(PrintEnd));
+        batch.Observe(PrintBegin);
+        for (var i = 1; i <= StandardNReceiptProjection.MaxDocuments + 1; i++) batch.Observe("Destroy Cheque ID=" + i);
+        Assert.Null(batch.Observe(PrintEnd));
+    }
+
+    [Fact]
+    public void NativePrintAgeExceptionRequiresExactBoundedDocumentParameters()
+    {
+        var legacy = StandardNDbLookup.NativeCashPrintSql(); var exact = StandardNDbLookup.NativeCashPrintSql(2);
+        Assert.Contains("DATEADD(-5 SECOND TO CURRENT_TIMESTAMP)", legacy);
+        Assert.Contains("AUDIT_ID=@session", exact); Assert.Contains("ID in (@doc0,@doc1)", exact);
+        Assert.Contains("STATUS", exact); Assert.Contains("DOC_TYPE in (3,9)", exact); Assert.DoesNotContain("DATEADD", exact);
+        Assert.Throws<ArgumentOutOfRangeException>(() => StandardNDbLookup.NativeCashPrintSql(501));
+    }
+
     [Fact]
     public void ParsesExistingCompactAdd2ChequeFormat()
     {

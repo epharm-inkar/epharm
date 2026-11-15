@@ -7,6 +7,7 @@ import jakarta.persistence.Table
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import java.time.Instant
+import kz.epharm.posm.dto.RewardSaleEvidence
 
 /** Позиция чека внутри pos_sale (хранится в jsonb). sku — iPartID кассы, barcode — EAN-13 (ключ матчинга). */
 data class PosSaleItem(
@@ -98,4 +99,11 @@ class PosSaleEntity(
 
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "reward_evidence", columnDefinition = "jsonb")
+    var rewardEvidence: RewardSaleEvidence? = null,
+
+    @Column(name = "device_id", length = 128)
+    var deviceId: String? = null,
 )

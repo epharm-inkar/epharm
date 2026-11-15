@@ -5,6 +5,21 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Recommendation-sale reward candidate: immutable visible-show baselines, exact
+  product barcode aliases, new full packages added within 120 seconds, confirmed
+  later payment, explicit same-pharmacy cashier mapping, atomic campaign budget
+  and one common-wallet credit. Uncertain evidence goes to HQ; returns create a
+  review without automatic debit. The separate `/learn` reads the same balance.
+- POSM 1.0.87 candidate: server-negotiated evidence/refund capture on explicitly
+  selected devices, preserved local opt-outs, durable native refund observation
+  and exact print batches. Existing RPS fixes, customer display, QR and queues
+  remain. Automatic money defaults off; Windows and production pilot acceptance
+  are required before activation.
+- Additive reward evidence schema and guarded forward recovery: a pre-reward
+  backend cannot process the new reservations through legacy financial writers.
+
 ### Fixed
 
 - Recover a confirmed created POSM profile into explicit manual sign-in when fresh

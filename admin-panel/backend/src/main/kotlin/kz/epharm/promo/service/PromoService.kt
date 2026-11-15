@@ -204,7 +204,12 @@ class PromoService(
         req.title?.let { entity.title = it.trim() }
         req.brand?.let { entity.brand = it.trim() }
         req.period?.let { entity.period = it.trim() }
-        req.budget?.let { entity.budget = it }
+        req.budget?.let {
+            if (promoRepository.updateBudgetIfCoversSpent(id, it) != 1) {
+                throw AppException(ErrorCode.CONFLICT, "Бюджет не может быть меньше уже начисленной суммы", HttpStatus.CONFLICT)
+            }
+            entity.budget = it
+        }
         req.kpi?.let { entity.kpi = it.trim() }
         req.cover?.let { entity.cover = it.trim() }
         // Товарная акция. Смена товара → надо перетянуть цену из Medusa.

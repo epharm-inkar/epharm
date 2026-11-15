@@ -1,8 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace CustomerDisplay.Models.Posm
 {
+    public sealed class HeartbeatResponse
+    {
+        public bool Ok { get; set; }
+        public int? RewardEvidenceProtocol { get; set; }
+    }
+
     // DTO для обмена с backend POSM Rules Engine (/api/posm/*).
     // Имена полей зеркалят kz.epharm.posm.dto.* (Kotlin). Сериализация — camelCase
     // (настроена в EpharmApiClient через JsonSerializerOptions).
@@ -27,6 +34,9 @@ namespace CustomerDisplay.Models.Posm
         public string SessionId { get; set; } = "";
         public string? ScannedBarcode { get; set; }   // последний отсканированный EAN-13 (информационно)
         public List<CartItem> Cart { get; set; } = new();
+        /// <summary>Optional exact source of a fresh native cart; absent context never uses a cached database guess.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? SourceNamespace { get; set; }
     }
 
     /// <summary>Строка таблицы «Сравнение» (триггер-товар vs рекомендованный).</summary>
@@ -74,6 +84,8 @@ namespace CustomerDisplay.Models.Posm
         public string RecommendSku { get; set; } = "";
         public string RecommendName { get; set; } = "";
         public string? RecommendBarcode { get; set; }      // EAN-13 рекомендованного (лог + позиция чека)
+        /// <summary>Exact catalogue aliases of this product; null/absent retains the legacy primary barcode.</summary>
+        public List<string>? RecommendBarcodes { get; set; }
         public string? RecommendVendor { get; set; }       // «Jadran Galenski»
         public string? RecommendVolume { get; set; }       // «150 мл»
         public string? RecommendStock { get; set; }        // «в наличии 14 уп.»
@@ -145,5 +157,7 @@ namespace CustomerDisplay.Models.Posm
     public sealed class MarkShownRequest
     {
         public DateTimeOffset ShownAt { get; set; } = DateTimeOffset.UtcNow;
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public RewardShownEvidence? RewardEvidence { get; set; }
     }
 }
