@@ -183,14 +183,15 @@ namespace CustomerDisplay
                     ? ReceiptItems.FirstOrDefault(item => item.SourceDocumentId == line.SourceDocumentId && item.SourceLineId == line.LineId)
                       ?? ReceiptItems.FirstOrDefault(item => !item.SourceDocumentId.HasValue && item.PartId == line.PartId)
                     : ReceiptItems.FirstOrDefault(item => item.PartId == line.PartId);
+                var sameProduct = existing?.PartId == line.PartId;
                 var incoming = new ReceiptItem
                 {
                     PartId = line.PartId,
                     // The log and Firebird projections do not always expose the same optional
                     // identity columns. A blank secondary observation must not create a synthetic
                     // change every 400 ms or erase data already used by an in-flight request.
-                    Barcode = ReceiptRecommendationChange.MergeIdentity(line.Barcode, existing?.Barcode),
-                    Name = ReceiptRecommendationChange.MergeIdentity(line.Name, existing?.Name) ?? "",
+                    Barcode = ReceiptRecommendationChange.MergeIdentity(line.Barcode, sameProduct ? existing?.Barcode : null),
+                    Name = ReceiptRecommendationChange.MergeIdentity(line.Name, sameProduct ? existing?.Name : null) ?? "",
                     Price = line.Price,
                     Qty = line.Qty,
                     DiscountPercent = line.DiscountPercent,
@@ -200,7 +201,7 @@ namespace CustomerDisplay
                 };
 
                 var lineAction = ReceiptRecommendationChange.ClassifyLine(
-                    existed: existing != null,
+                    existed: sameProduct,
                     previousQty: existing?.Qty ?? 0m,
                     previousBarcode: existing?.Barcode,
                     previousName: existing?.Name,
@@ -209,6 +210,7 @@ namespace CustomerDisplay
                     nextName: incoming.Name);
 
                 var lineChanged = existing == null ||
+                                  existing.PartId != incoming.PartId ||
                                   existing.Qty != incoming.Qty ||
                                   existing.Price != incoming.Price ||
                                   existing.DiscountPercent != incoming.DiscountPercent ||
@@ -280,12 +282,17 @@ namespace CustomerDisplay
             // обновляем поля + ставим новое количество
             var idx = ReceiptItems.IndexOf(existing);
             var previousQty = existing.Qty;
+            var sameProduct = existing.PartId == incoming.PartId;
             // A log-only decrease can be followed by a re-add between full DB polls. Without
             // exact native line ordering, never keep earlier eligible units alive through it.
             if (!incoming.SourceDocumentId.HasValue && incoming.Qty < previousQty)
                 _rewardJournal?.MarkIncomplete(_session.SessionId);
             // Plain receipt rows do not notify WPF: replace the bound object without mutating it.
             existing = existing.Clone();
+            // A reused native line ID can now identify a different product. Its former EAN/name
+            // must not be inherited when the new authoritative row omits optional identity fields.
+            existing.PartId = incoming.PartId;
+            if (!sameProduct) { existing.Name = ""; existing.Barcode = null; }
             // A duplicate observation from the other Standard-N source can omit presentation fields.
             // Preserve already resolved identity so it cannot cancel or degrade a valid backend request.
             if (!string.IsNullOrWhiteSpace(incoming.Name)) existing.Name = incoming.Name;

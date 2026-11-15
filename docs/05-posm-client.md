@@ -5,6 +5,23 @@ Path: `App/` and `Models/`.
 Current client is C#/WPF/.NET 10. Older Electron references are historical and no longer describe the
 implementation.
 
+## Post-release hardening candidate — 2026-11-15
+
+The new-employee registration form contains no SMS wording, request button or code
+field, including RU/KK explanatory text, unavailable-policy status and unexpected
+legacy OTP errors. Login never directs the user to an invisible code field either.
+Phone status remains explicitly unverified. Existing-profile activation and password
+recovery retain their separate proof; this change does not remove it from `/learn`.
+
+When Standard-N reuses a native line ID for another product, the displayed product
+ID is replaced and recommendation lookup is refreshed. A missing new EAN/name cannot
+inherit the previous product's identity. Reward evidence still fails closed on an
+uncertain line transition. Unsupported future outbox kinds are retained on disk and
+excluded before the delivery batch limit, so supported sales and shown acknowledgements
+keep draining after a rollback; no unsupported event is acknowledged as delivered.
+
+These are candidate changes, not a new signed POSM release or evidence of installation.
+
 ## Release status — 2026-11-15
 
 Backend/frontend `v0.2.18` and signed POSM `1.0.87` contain the implementation below.

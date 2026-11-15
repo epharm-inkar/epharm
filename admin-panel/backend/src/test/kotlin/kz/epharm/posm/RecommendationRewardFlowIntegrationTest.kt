@@ -54,6 +54,7 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.testcontainers.containers.PostgreSQLContainer
@@ -479,6 +480,38 @@ class RecommendationRewardFlowIntegrationTest {
         assertThat(balance(f.employee)).isEqualTo(400)
         assertThat(spent(f.world.offers.single())).isEqualTo(400)
         assertThat(number("SELECT count(*) FROM recommendation_reward_receipts WHERE pharmacy_id=?", f.employee.pharmacy)).isEqualTo(1)
+    }
+
+    @Test fun `a late shown ACK cannot credit a stored HQ identity after its mapping was revoked or reassigned`() {
+        for (reassigned in listOf(false, true)) {
+            val f = flow()
+            val request = payment(f)
+            deliver(f, request)
+            assertThat(cases(f).single()["state"]).isEqualTo("waiting_evidence")
+            assertThat(sales.findById(f.sale).orElseThrow().pharmacistSource).isEqualTo("standardn_explicit_mapping")
+            val replacement = employee(f.employee, mapped = false)
+            if (reassigned) {
+                mvc.perform(post("/api/admin/posm/pharmacist-mappings").header("Authorization", hq())
+                    .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(
+                        UpsertPosmPharmacistMappingRequest(f.employee.pharmacy, f.employee.rawUser, "Synthetic cashier", replacement.person))))
+                    .andExpect(status().isOk)
+            } else {
+                val mapping = rows("SELECT id FROM posm_pharmacist_mappings WHERE pharmacy_id=? AND external_user_id=?",
+                    f.employee.pharmacy, f.employee.rawUser).single()["id"]
+                mvc.perform(delete("/api/admin/posm/pharmacist-mappings/$mapping").header("Authorization", hq()))
+                    .andExpect(status().isNoContent)
+            }
+
+            acknowledge(f)
+            deliver(f, request)
+
+            assertThat(cases(f).single()["state"]).isEqualTo("review_required")
+            assertThat(cases(f).single()["reason_code"]).isEqualTo("employee_unverified")
+            assertThat(balance(f.employee)).isZero()
+            assertThat(balance(replacement)).isZero()
+            assertThat(spent(f.world.offers.single())).isZero()
+            assertThat(number("SELECT count(*) FROM pending_bonuses WHERE source_sale_id=?", f.sale)).isZero()
+        }
     }
 
     @Test fun `ordinary paid checkout retains raw v2 sale without allocating financial cases or invoking legacy bonuses`() {
