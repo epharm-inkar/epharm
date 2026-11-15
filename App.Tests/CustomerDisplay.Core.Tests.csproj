@@ -58,6 +58,8 @@
     <Compile Include="..\App\Services\ReceiptObservationGate.cs" Link="Services\ReceiptObservationGate.cs" />
     <Compile Include="..\App\Services\ReceiptFinalizationRules.cs" Link="Services\ReceiptFinalizationRules.cs" />
     <Compile Include="..\App\Services\StandardNReceiptSnapshot.cs" Link="Services\StandardNReceiptSnapshot.cs" />
+    <Compile Include="..\App\Services\StandardNUnpaidGroupAbsenceProof.cs" Link="Services\StandardNUnpaidGroupAbsenceProof.cs" />
+    <Compile Include="..\App\MainWindow.UnresolvedReceiptGroups.cs" Link="ReceiptLifecycle\MainWindow.UnresolvedReceiptGroups.cs" />
     <Compile Include="..\App\Services\StandardNReceiptProjection.cs" Link="Services\StandardNReceiptProjection.cs" />
     <Compile Include="..\App\Services\StandardNQuantityUnits.cs" Link="Services\StandardNQuantityUnits.cs" />
     <Compile Include="..\App\Services\StandardNFinalLineLinker.cs" Link="Services\StandardNFinalLineLinker.cs" />

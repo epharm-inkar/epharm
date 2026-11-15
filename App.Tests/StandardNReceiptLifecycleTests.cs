@@ -18,6 +18,131 @@ namespace CustomerDisplay.Core.Tests
     [Collection<StandardNReceiptLifecycleCollection>]
     public sealed class StandardNReceiptLifecycleTests
     {
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void IdleConnectivityGapAfterPaidCheckoutCannotPoisonTheNextUnobservedCheckout(bool capabilityChange)
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            var previous = RewardReceipt(100, 1); window.Observe(previous);
+            window.PrintWithStates(Posted(previous, 100));
+            Assert.Empty(window.ReceiptItems); Assert.Null(window.DocumentId);
+            if (capabilityChange) { window.SetRewardCapability(null); window.SetRewardCapability(1); }
+            else window.DatabaseFailed();
+            window.Observe(RewardReceipt(200, 1));
+            Assert.NotNull(window.ShowReward("new-after-idle-gap", "4601164003157"));
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(30));
+            var added = RewardReceipt(200, 2); window.Observe(added);
+            window.PrintWithStates(Posted(added, 200));
+            Assert.True(window.Reports.Single(report => report.SourceDocumentId == 200).RewardEvidence!.JournalComplete);
+        }
+
+        [Fact]
+        public async Task SeventyDisappearedUnpaidCheckoutsRestartAndFreshPaymentKeepCaptureAndRewardsWorking()
+        {
+            var root = Path.Combine(Path.GetTempPath(), "epharm-sequential-cancels-" + Guid.NewGuid().ToString("N"));
+            using (var window = new MainWindow(root, cleanup: false))
+            {
+                window.EnableRewardEvidence();
+                long transaction = 0;
+                window.SetUnpaidAbsenceReader((group, ns) => new(ns, StandardNUnpaidGroupAbsenceProof.Fingerprint(group),
+                    Interlocked.Increment(ref transaction), window.ReceiptNow.UtcDateTime));
+                for (var id = 1000; id < 1070; id++)
+                {
+                    window.Observe(RewardReceipt(id, 1));
+                    Assert.NotNull(window.ShowReward("cancelled-show-" + id, "4601164003157"));
+                    window.Observe(null); window.Observe(null);
+                    await window.WaitForUnpaidProbeAsync();
+                    window.ProbeUnpaidGroups(); await window.WaitForUnpaidProbeAsync();
+                    window.AdvanceReceiptTime(TimeSpan.FromSeconds(2)); window.ProbeUnpaidGroups();
+                    await window.WaitForUnpaidProbeAsync();
+                    Assert.Empty(window.Artifacts.ReadObservedGroups());
+                    Assert.Empty(window.Reports);
+                }
+                Assert.Equal(70, Directory.GetFiles(Path.Combine(root, "receipts", "reward-evidence", "unresolved"), "*.json").Length);
+            }
+            using var restarted = new MainWindow(root);
+            restarted.EnableRewardEvidence();
+            restarted.Observe(RewardReceipt(2000, 1));
+            var shown = restarted.ShowReward("fresh-after-seventy", "4601164003157");
+            Assert.True(shown!.CartComplete);
+            restarted.AdvanceReceiptTime(TimeSpan.FromSeconds(30));
+            var increased = RewardReceipt(2000, 2); restarted.Observe(increased);
+            restarted.AdvanceReceiptTime(TimeSpan.FromMinutes(5));
+            restarted.PrintWithStates(Posted(increased, 2000));
+            var sale = Assert.Single(restarted.Reports);
+            Assert.True(sale.RewardEvidence!.JournalComplete);
+            Assert.Equal("fresh-after-seventy", Assert.Single(sale.RewardEvidence.Changes).EventId);
+        }
+
+        [Fact]
+        public async Task CurrentOrSuspendedOrUnknownGroupsNeverRetireMerelyBecauseUiCartDisappears()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.Observe(RewardReceipt(100, 1));
+            var calls = 0;
+            window.SetUnpaidAbsenceReader((group, ns) => { Interlocked.Increment(ref calls); return null; });
+            window.ProbeUnpaidGroups(); await window.WaitForUnpaidProbeAsync();
+            Assert.Equal(0, calls); // Current source cannot be archived.
+            window.Observe(null); window.Observe(null); await window.WaitForUnpaidProbeAsync();
+            window.AdvanceReceiptTime(TimeSpan.FromHours(24)); window.ProbeUnpaidGroups(); await window.WaitForUnpaidProbeAsync();
+            Assert.Single(window.Artifacts.ReadObservedGroups());
+            Assert.Empty(window.Reports);
+            Assert.False(Directory.Exists(Path.Combine(window.StorageRoot, "receipts", "reward-evidence", "unresolved")));
+        }
+
+        [Fact]
+        public async Task FailedNativeReadCannotArchiveAGroupEvenIfItsOutValueWasAssignedBeforeFailure()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.Observe(RewardReceipt(100, 1));
+            long transaction = 0;
+            window.SetUnpaidAbsenceReader((group, ns) => new(ns, StandardNUnpaidGroupAbsenceProof.Fingerprint(group),
+                Interlocked.Increment(ref transaction), window.ReceiptNow.UtcDateTime));
+            window.SetUnpaidAbsenceFailure();
+            window.Observe(null); window.Observe(null); await window.WaitForUnpaidProbeAsync();
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(2)); window.ProbeUnpaidGroups(); await window.WaitForUnpaidProbeAsync();
+            Assert.Single(window.Artifacts.ReadObservedGroups()); Assert.Empty(window.Reports);
+        }
+
+        [Fact]
+        public async Task LegacyGroupUsesOnlyItsRecordedJournalNamespaceWithoutRewritingOriginalMetadata()
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            var receipt = RewardReceipt(100, 1);
+            var legacy = new StandardNObservedReceiptGroup(1, "synthetic-pharmacy", receipt, "sess_legacy",
+                receipt.Pharmacist.Id, receipt.Pharmacist.Name, false, []) { ObservedActiveDocumentIds = [100] };
+            Assert.True(window.Artifacts.SaveObservedGroup(legacy));
+            window.Observe(receipt); window.ShowReward("legacy-show", "4601164003157");
+            Assert.Null(Assert.Single(window.Artifacts.ReadObservedGroups()).SourceNamespace);
+            long transaction = 0;
+            window.SetUnpaidAbsenceReader((group, ns) =>
+            {
+                Assert.Null(group.SourceNamespace); Assert.Equal(new string('a', 64), ns);
+                return new(ns, StandardNUnpaidGroupAbsenceProof.Fingerprint(group), Interlocked.Increment(ref transaction), window.ReceiptNow.UtcDateTime);
+            });
+            window.Observe(null); window.Observe(null); await window.WaitForUnpaidProbeAsync();
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(2)); window.ProbeUnpaidGroups(); await window.WaitForUnpaidProbeAsync();
+            Assert.Empty(window.Artifacts.ReadObservedGroups());
+            Assert.Single(Directory.GetFiles(Path.Combine(window.StorageRoot, "receipts", "reward-evidence", "unresolved"), "*.json"));
+            Assert.Empty(window.Reports);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SameNativeTransactionOrClockCannotTurnOneAbsenceReadIntoTwo(bool repeatTransaction)
+        {
+            using var window = new MainWindow(); window.EnableRewardEvidence();
+            window.Observe(RewardReceipt(100, 1));
+            var fixedTime = window.ReceiptNow.UtcDateTime; long transaction = 0;
+            window.SetUnpaidAbsenceReader((group, ns) => new(ns, StandardNUnpaidGroupAbsenceProof.Fingerprint(group),
+                repeatTransaction ? 1 : Interlocked.Increment(ref transaction), repeatTransaction ? window.ReceiptNow.UtcDateTime : fixedTime));
+            window.Observe(null); window.Observe(null); await window.WaitForUnpaidProbeAsync();
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(3)); window.ProbeUnpaidGroups(); await window.WaitForUnpaidProbeAsync();
+            Assert.Single(window.Artifacts.ReadObservedGroups()); Assert.Empty(window.Reports);
+        }
+
         [Fact]
         public void FreshExactCartSendsItsNamespaceWithoutEnablingMoneyCapture()
         {
@@ -1406,6 +1531,7 @@ namespace CustomerDisplay
         {
             _storageRoot = storageRoot ?? Path.Combine(Path.GetTempPath(), "epharm-real-finalizer-" + Guid.NewGuid().ToString("N"));
             _cleanupStorage = cleanup;
+            _posmConfig.ReceiptCaptureDir = Path.Combine(_storageRoot, "receipts");
             _receiptProofClock = () => _testReceiptNow;
             _testOutbox = new OfflineOutbox(Path.Combine(_storageRoot, "outbox.db"));
             _saleReporter = new SaleReporter(_posmConfig, _testOutbox);
@@ -1418,6 +1544,7 @@ namespace CustomerDisplay
             Dispatcher.Invoke(StopPhysicalReceiptObservers);
             _standardNDb.ReleaseBlockedRead();
             WaitForReceiptProbeAsync().GetAwaiter().GetResult();
+            _unpaidGroupProbeTask.GetAwaiter().GetResult();
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             if (_cleanupStorage && Directory.Exists(_storageRoot)) Directory.Delete(_storageRoot, recursive: true);
         }
@@ -1477,6 +1604,10 @@ namespace CustomerDisplay
         internal void SetFreshProbeStates(params StandardNReceiptSnapshot[] states) => _standardNDb.States = states;
         internal void CloseReceiptObservers() => Dispatcher.Invoke(StopPhysicalReceiptObservers);
         internal void AdvanceReceiptTime(TimeSpan time) => _testReceiptNow += time;
+        internal void SetUnpaidAbsenceReader(Func<StandardNObservedReceiptGroup, string, StandardNUnpaidGroupAbsenceProof?> reader) => _standardNDb.AbsenceReader = reader;
+        internal void SetUnpaidAbsenceFailure() => _standardNDb.AbsenceReadSucceeded = false;
+        internal Task WaitForUnpaidProbeAsync() => _unpaidGroupProbeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        internal void ProbeUnpaidGroups() => Dispatcher.Invoke(() => { _nextUnpaidGroupProbe = DateTimeOffset.MinValue; ReconcileUnresolvedReceiptGroups(); });
         internal void KeepDraft(string id) { SavedDrafts.Add(id); _activeReceiptDraftId = id; }
         internal void DatabaseFailed() { _receiptObservations.ReadFailed(); InvalidateRewardObservation(); }
         internal void EnableRewardEvidence() {
@@ -1554,7 +1685,7 @@ namespace CustomerDisplay
             _activeReceiptDraftId = null;
         }
         private void ResetRecommendationUiState(bool closeWindows) { if (closeWindows) PopupClears++; }
-        private void StartNewCheckoutSession() { SessionRestarts++; _session = new CheckoutSession(); }
+        private void StartNewCheckoutSession() { SessionRestarts++; _session = new CheckoutSession(); _rewardSnapshot = null; }
         private void RefreshCurrentPharmacistFromStandardNDb() { }
         private void CaptureCurrentSellerForSession() =>
             _session.CaptureSeller(_currentPharmacistId, _currentPharmacistName, _currentStandardNSessionId);
@@ -1594,6 +1725,10 @@ namespace CustomerDisplay
             public bool TryGetRefundBaseline(out string sourceNamespace, out long maximumDocumentId, out DateTimeOffset databaseTime) { sourceNamespace = ""; maximumDocumentId = 0; databaseTime = default; return false; }
             public bool TryReadNativeRefunds(string sourceNamespace, NativeRefundScan scan, out NativeRefundBatch? batch) { batch = null; return false; }
             public string? RewardSourceNamespace => new('a', 64);
+            public Func<StandardNObservedReceiptGroup, string, StandardNUnpaidGroupAbsenceProof?>? AbsenceReader { get; set; }
+            public bool AbsenceReadSucceeded { get; set; } = true;
+            public bool TryGetUnpaidGroupAbsenceProof(StandardNObservedReceiptGroup group, string sourceNamespace, out StandardNUnpaidGroupAbsenceProof? proof)
+            { proof = AbsenceReader?.Invoke(group, sourceNamespace); return proof != null && AbsenceReadSucceeded; }
             public IReadOnlyList<StandardNReceiptSnapshot>? States { get; set; }
             private ReceiptProbeBlock? _block;
             private ReceiptProbeBlock? _active;

@@ -63,9 +63,11 @@ public partial class MainWindow
 
     private void InvalidateRewardObservation()
     {
+        var observedCheckout = _rewardSnapshot != null || _standardNDocumentId.HasValue || ReceiptItems.Count > 0;
         _rewardSnapshot = null;
         _rewardSnapshotNamespace = null;
-        _rewardJournal?.MarkIncomplete(_session.SessionId);
+        // An idle connectivity gap cannot poison an ID which has never observed a cart.
+        if (observedCheckout) _rewardJournal?.MarkIncomplete(_session.SessionId);
     }
 
     private string? RecommendSourceNamespace(RecommendRequest request)
