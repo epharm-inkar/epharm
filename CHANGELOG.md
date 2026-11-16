@@ -16,6 +16,9 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Fixed
 
+- Add an explicit unlimited funding mode protected by financial permissions and a
+  V107 recovery fence; existing campaigns remain capped and money flags stay unchanged.
+
 - Count pharmacist receipts from captured sales in the current pharmacy, refresh
   dashboard totals, and display refunds and all recommended receipt lines correctly.
 - Preserve ordinary-sale source provenance and historical staff proof, isolate
