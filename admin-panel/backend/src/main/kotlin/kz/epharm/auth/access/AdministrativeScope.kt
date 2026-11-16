@@ -208,7 +208,13 @@ class AdministrativeScope(private val catalog: UnifiedAdminCatalog, private val 
     }
 
     fun requirePharmacyUpdate(req: UpdatePharmacyRequest) {
-        if (current() != null && (req.receipts30d != null || req.gmv30d != null || req.rulesAccepted != null)) deny()
+        if (current() == null) return
+        if (req.receipts30d != null || req.gmv30d != null || req.rulesAccepted != null) deny()
+        if (req.inventoryDeviceCount != null || req.inventorySource != null) {
+            // Inventory is an explicit pharmacy-passport edit, not a financial counter,
+            // device registration, or a side effect of having registry view access.
+            requireExplicitPermission(UnifiedAdminCatalog.key("pharmacies_products", "pharmacies", "edit"))
+        }
     }
 
     fun pharmacist(dto: PharmacistDto): PharmacistDto {

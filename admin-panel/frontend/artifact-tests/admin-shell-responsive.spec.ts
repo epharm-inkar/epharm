@@ -201,8 +201,8 @@ async function expectLastColumnReachable(page: Page, region: Locator, lastColumn
   await expectNoDocumentOverflow(page)
 }
 
-for (const width of [1094, 1440]) {
-  test(`pharmacy table keeps its last column reachable at ${width}px`, async ({ page }) => {
+for (const width of [390, 1094, 1440]) {
+  test(`pharmacy inventory and POSM counts remain distinct and reachable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })
     await seedHeadquarters(page)
     await page.route('**/api/admin/pharmacies', (route) =>
@@ -222,6 +222,13 @@ for (const width of [1094, 1440]) {
             gmv30d: 10000,
             liftPct: 12.5,
             rulesAccepted: 2,
+            inventoryDeviceCount: 5,
+            inventorySource: 'Synthetic inventory',
+            inventoryUpdatedAt: '2026-11-16T08:00:00Z',
+            registeredDeviceCount: 2,
+            onlineDeviceCount: 1,
+            deviceCountsObservedAt: '2026-11-16T09:00:00Z',
+            deviceOnlineWindowSeconds: 90,
             active: true,
             createdAt: '2026-01-01T00:00:00Z',
             updatedAt: '2026-01-01T00:00:00Z',
@@ -230,6 +237,21 @@ for (const width of [1094, 1440]) {
       }),
     )
     await page.goto('/pharmacies')
+    const inventory = page.getByTestId('pharmacy-inventory-responsive-pharmacy')
+    await expect(inventory).toContainText('5')
+    await expect(inventory).toHaveAttribute('title', 'Synthetic inventory')
+    const deviceCounts = page.getByTestId('pharmacy-devices-responsive-pharmacy')
+    await expect(deviceCounts.locator('span').first()).toHaveText('2')
+    await expect(deviceCounts).toContainText('На связи: 1')
+    if (width < 768) {
+      await expect(page.getByTestId('pharmacy-card-responsive-pharmacy')).toBeVisible()
+      await expect(page.getByTestId('pharmacies-table')).toHaveCount(0)
+      await expect(inventory).toBeVisible()
+      await expect(deviceCounts).toBeVisible()
+      await expectNoDocumentOverflow(page)
+      await page.screenshot({ path: testInfo.outputPath('pharmacy-inventory-mobile.png'), fullPage: true })
+      return
+    }
     const region = page.getByRole('region', { name: 'Таблица аптек', exact: true })
     await expectLastColumnReachable(
       page,

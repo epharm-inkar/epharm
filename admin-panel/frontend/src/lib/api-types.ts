@@ -300,6 +300,14 @@ export interface PharmacyDto {
   active: boolean
   createdAt: string
   updatedAt: string
+  /** Active POSM registry identities, not the complete physical/AnyDesk inventory. */
+  registeredDeviceCount?: number | null
+  onlineDeviceCount?: number | null
+  deviceCountsObservedAt?: string | null
+  deviceOnlineWindowSeconds?: number | null
+  inventoryDeviceCount?: number | null
+  inventorySource?: string | null
+  inventoryUpdatedAt?: string | null
 }
 
 export interface CreatePharmacyRequest {
@@ -322,6 +330,8 @@ export interface UpdatePharmacyRequest {
   receipts30d?: number
   gmv30d?: number
   rulesAccepted?: number
+  inventoryDeviceCount?: number | null
+  inventorySource?: string | null
 }
 
 export type PharmacistTier = 'Silver' | 'Gold' | 'Platinum'

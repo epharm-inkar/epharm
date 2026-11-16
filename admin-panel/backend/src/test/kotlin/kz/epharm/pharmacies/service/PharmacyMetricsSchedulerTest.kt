@@ -51,14 +51,13 @@ class PharmacyMetricsSchedulerTest {
         every { sales.countByPharmacySince(now.minus(30, ChronoUnit.DAYS)) } returns listOf(count)
         every { sales.amountByPharmacySince(now.minus(30, ChronoUnit.DAYS)) } returns listOf(amount)
         every { recommendations.aggregateByPharmacySince(Instant.EPOCH) } returns listOf(accepts)
-        every { pharmacies.findAll() } returns listOf(pharmacy)
-        every { pharmacies.save(pharmacy) } returns pharmacy
+        every { pharmacies.findAllIdsForMetrics() } returns listOf(pharmacy.id)
+        every { pharmacies.updateMetricsIfChanged(pharmacy.id, 2, 12_345L, 3) } returns 1
 
         assertThat(scheduler.refreshNow(now)).isEqualTo(1)
-        assertThat(pharmacy.receipts30d).isEqualTo(2)
-        assertThat(pharmacy.gmv30d).isEqualTo(12_345)
-        assertThat(pharmacy.rulesAccepted).isEqualTo(3)
-        verify(exactly = 1) { pharmacies.save(pharmacy) }
+        verify(exactly = 1) { pharmacies.updateMetricsIfChanged(pharmacy.id, 2, 12_345L, 3) }
+        verify(exactly = 0) { pharmacies.findAll() }
+        verify(exactly = 0) { pharmacies.save(any()) }
     }
 
     @Test
@@ -77,11 +76,24 @@ class PharmacyMetricsSchedulerTest {
         every { sales.countByPharmacySince(any()) } returns emptyList()
         every { sales.amountByPharmacySince(any()) } returns emptyList()
         every { recommendations.aggregateByPharmacySince(Instant.EPOCH) } returns emptyList()
-        every { pharmacies.findAll() } returns listOf(pharmacy)
-        every { pharmacies.save(pharmacy) } returns pharmacy
+        every { pharmacies.findAllIdsForMetrics() } returns listOf(pharmacy.id)
+        every { pharmacies.updateMetricsIfChanged(pharmacy.id, 0, 0L, 0) } returns 1
 
         assertThat(scheduler.refreshNow(now)).isEqualTo(1)
-        assertThat(pharmacy.receipts30d).isZero()
-        assertThat(pharmacy.gmv30d).isZero()
+        verify(exactly = 1) { pharmacies.updateMetricsIfChanged(pharmacy.id, 0, 0L, 0) }
+        verify(exactly = 0) { pharmacies.save(any()) }
+    }
+
+    @Test
+    fun `unchanged or deleted pharmacies do not count as changed`() {
+        every { sales.countByPharmacySince(any()) } returns emptyList()
+        every { sales.amountByPharmacySince(any()) } returns emptyList()
+        every { recommendations.aggregateByPharmacySince(Instant.EPOCH) } returns emptyList()
+        every { pharmacies.findAllIdsForMetrics() } returns listOf("unchanged", "deleted")
+        every { pharmacies.updateMetricsIfChanged(any(), 0, 0L, 0) } returns 0
+
+        assertThat(scheduler.refreshNow()).isZero()
+        verify(exactly = 2) { pharmacies.updateMetricsIfChanged(any(), 0, 0L, 0) }
+        verify(exactly = 0) { pharmacies.save(any()) }
     }
 }

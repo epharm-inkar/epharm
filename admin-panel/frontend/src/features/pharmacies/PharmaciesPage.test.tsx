@@ -1,6 +1,6 @@
 // Тесты PharmaciesPage — пустой/loading/error/полный список + filter + search.
 
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -68,6 +68,8 @@ beforeEach(() => {
   pharmacyHooks.useCreatePharmacy.mockReturnValue({ mutate: vi.fn(), isPending: false })
 })
 
+afterEach(() => vi.unstubAllGlobals())
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -127,6 +129,66 @@ describe('PharmaciesPage — loading/error', () => {
 })
 
 describe('PharmaciesPage — список', () => {
+  it('показывает отдельно зарегистрированные ПК и недавно активные, отсутствие данных не равно нулю', () => {
+    setPharmacies([
+      mkPharmacy({ id: 'connected', registeredDeviceCount: 4, onlineDeviceCount: 1, deviceOnlineWindowSeconds: 90 }),
+      mkPharmacy({ id: 'zero', registeredDeviceCount: 0, onlineDeviceCount: 0 }),
+      mkPharmacy({ id: 'unknown' }),
+    ])
+    renderPage()
+    expect(screen.getByRole('columnheader', { name: 'ПК с POSM' })).toBeInTheDocument()
+    expect(screen.getByTestId('pharmacy-devices-connected')).toHaveTextContent('4На связи: 1')
+    expect(screen.getByTitle('Активность за последние 90 с')).toBeInTheDocument()
+    expect(screen.getByTestId('pharmacy-devices-zero')).toHaveTextContent('0На связи: 0')
+    expect(screen.getByTestId('pharmacy-devices-unknown')).toHaveTextContent('Нет данных о ПК')
+    expect(screen.getByText(/Это не полный перечень ПК из AnyDesk/)).toBeInTheDocument()
+  })
+
+  it('показывает те же значения в мобильной карточке без широкой таблицы', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }))
+    setPharmacies([mkPharmacy({ registeredDeviceCount: 3, onlineDeviceCount: 0, inventoryDeviceCount: 5 })])
+    renderPage()
+    const card = screen.getByTestId('pharmacy-card-ph_1')
+    expect(within(card).getByText('ПК с POSM')).toBeInTheDocument()
+    expect(within(card).getByTestId('pharmacy-devices-ph_1')).toHaveTextContent('3На связи: 0')
+    expect(within(card).getByText('ПК в списке')).toBeInTheDocument()
+    expect(within(card).getByTestId('pharmacy-inventory-ph_1')).toHaveTextContent('5')
+    expect(screen.queryByTestId('pharmacies-table')).not.toBeInTheDocument()
+  })
+
+  it('инвентаризация не выводится из POSM: известный ноль и неизвестное значение различаются', () => {
+    setPharmacies([
+      mkPharmacy({ id: 'inventory', inventoryDeviceCount: 5, inventorySource: 'Synthetic inventory', inventoryUpdatedAt: '2026-11-16T08:00:00Z', registeredDeviceCount: 2, onlineDeviceCount: 1 }),
+      mkPharmacy({ id: 'zero-inventory', inventoryDeviceCount: 0 }),
+      mkPharmacy({ id: 'no-inventory', inventoryDeviceCount: null, registeredDeviceCount: 3 }),
+    ])
+    renderPage()
+    expect(screen.getByRole('columnheader', { name: 'ПК в списке' })).toBeInTheDocument()
+    expect(screen.getByTestId('pharmacy-inventory-inventory')).toHaveTextContent('5Сверено 16.11.2026')
+    expect(screen.getByTestId('pharmacy-inventory-inventory')).toHaveAttribute('title', 'Synthetic inventory')
+    expect(screen.getByTestId('pharmacy-devices-inventory')).toHaveTextContent('2На связи: 1')
+    expect(screen.getByTestId('pharmacy-inventory-zero-inventory')).toHaveTextContent(/^0$/)
+    expect(screen.getByTestId('pharmacy-inventory-no-inventory')).toHaveTextContent('Не сверено')
+  })
+
+  it('обновляет снимок устройств только по запросу пользователя', async () => {
+    const refetch = vi.fn()
+    pharmacyHooks.usePharmacies.mockReturnValue({ data: [mkPharmacy()], isLoading: false, isError: false, refetch })
+    renderPage()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Обновить список' }))
+    expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('находит аптеку по адресу с пробелами вокруг запроса', async () => {
+    setPharmacies([mkPharmacy({ addr: 'Гагарина 137' }), mkPharmacy({ id: 'other', addr: 'Абая 10' })])
+    renderPage()
+    await userEvent.setup().type(screen.getByPlaceholderText(/Поиск по аптеке/), ' Гагарина 137 ')
+    expect(screen.getByTestId('pharmacy-row-ph_1')).toBeInTheDocument()
+    expect(screen.queryByTestId('pharmacy-row-other')).not.toBeInTheDocument()
+  })
+
   it('различает скрытый GMV и настоящий ноль', () => {
     setPharmacies([
       mkPharmacy({ id: 'hidden', gmv30d: null }),

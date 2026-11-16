@@ -2,6 +2,12 @@
 
 Database: PostgreSQL 16.
 
+Candidate V104 (`pharmacy_device_inventory`) adds nullable count/source/observation-time
+columns to `pharmacies`. A CHECK permits only an all-null unknown inventory or a complete
+nonnegative count and nonblank/control-character-free source with timestamp. No inventory
+is backfilled, no pharmacy is created, and no AnyDesk identifier is stored by the migration.
+This candidate must pass PostgreSQL/Flyway CI before release; it is not a production import.
+
 For admin unification the two source databases were restored separately: ePharm uses 16,
 CRM uses 18.6/dump 1.16. Do not restore the latter directly over the former. The local
 identity mapping stays offline; V066 adds opt-in access tables without converting existing accounts; see [the U1/U2 contract](23-unified-admin-data-and-access.md)

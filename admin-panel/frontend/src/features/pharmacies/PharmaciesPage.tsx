@@ -51,7 +51,8 @@ export default function PharmaciesPage() {
     return pharmacies.filter((p) => {
       if (tab !== 'all' && p.group !== tab) return false
       if (!q) return true
-      return `${p.id} ${p.name} ${p.chainName} ${p.city}`.toLowerCase().includes(q.toLowerCase())
+      return `${p.id} ${p.name} ${p.chainName} ${p.city} ${p.district} ${p.addr}`
+        .toLowerCase().includes(q.trim().toLowerCase())
     })
   }, [pharmacies, q, tab])
 
@@ -135,7 +136,11 @@ export default function PharmaciesPage() {
               className="!h-9 !w-full"
             />
           </div>
+          <Button onClick={() => refetch()}>{t('ph.refresh')}</Button>
         </div>
+        <p className="hairline border-b px-3 py-3 text-xs text-ink-500 sm:px-5">
+          {t('ph.inventoryHint')} {t('ph.devicesHint')}
+        </p>
 
         {showWarningBanner && (
           <div className="hairline border-b bg-accent-warning/10 px-5 py-2 text-[12px] font-semibold text-ink-700">
@@ -217,6 +222,14 @@ export default function PharmaciesPage() {
                     </div>
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                       <div>
+                        <dt className="text-xs text-ink-500">{t('ph.thInventoryDevices')}</dt>
+                        <dd className="mt-0.5"><PharmacyInventoryCount pharmacy={p} /></dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-ink-500">{t('ph.thDevices')}</dt>
+                        <dd className="mt-0.5"><PharmacyDeviceCount pharmacy={p} /></dd>
+                      </div>
+                      <div>
                         <dt className="text-xs text-ink-500">{t('ph.thChain')}</dt>
                         <dd className="mt-0.5 font-semibold text-ink-800">{p.chainName}</dd>
                       </div>
@@ -262,6 +275,8 @@ export default function PharmaciesPage() {
                   <col className="w-[150px]" />
                   <col className="w-[160px]" />
                   <col className="w-[80px]" />
+                  <col className="w-[140px]" />
+                  <col className="w-[130px]" />
                   <col className="w-[120px]" />
                   <col className="w-[120px]" />
                   <col className="w-[80px]" />
@@ -274,6 +289,8 @@ export default function PharmaciesPage() {
                     <th className="px-3 py-2.5 align-middle">{t('ph.thCity')}</th>
                     <th className="px-3 py-2.5 align-middle">{t('ph.thGroup')}</th>
                     <th className="px-3 py-2.5 text-right align-middle">{t('ph.thPharm')}</th>
+                    <th className="px-3 py-2.5 text-right align-middle">{t('ph.thInventoryDevices')}</th>
+                    <th className="px-3 py-2.5 text-right align-middle">{t('ph.thDevices')}</th>
                     <th className="px-3 py-2.5 text-right align-middle">{t('ph.thReceipts')}</th>
                     <th className="px-3 py-2.5 text-right align-middle">{t('ph.thGmv')}</th>
                     <th className="px-5 py-2.5 text-right align-middle">{t('ph.thLift')}</th>
@@ -340,6 +357,12 @@ export default function PharmaciesPage() {
                         </span>
                       </td>
                       <td className="num px-3 py-2.5 text-right align-middle">{p.pharmacists}</td>
+                      <td className="px-3 py-2.5 text-right align-middle">
+                        <PharmacyInventoryCount pharmacy={p} />
+                      </td>
+                      <td className="px-3 py-2.5 text-right align-middle">
+                        <PharmacyDeviceCount pharmacy={p} />
+                      </td>
                       <td className="num px-3 py-2.5 text-right align-middle">
                         {formatNum(p.receipts30d)}
                       </td>
@@ -361,6 +384,45 @@ export default function PharmaciesPage() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function PharmacyInventoryCount({ pharmacy }: { pharmacy: PharmacyDto }) {
+  const t = useT()
+  const updatedAt = pharmacy.inventoryUpdatedAt ? new Date(pharmacy.inventoryUpdatedAt) : null
+  return (
+    <div data-testid={`pharmacy-inventory-${pharmacy.id}`} title={pharmacy.inventorySource ?? undefined}>
+      <span className="num font-semibold text-ink-800">
+        {pharmacy.inventoryDeviceCount == null ? t('ph.inventoryUnknown') : formatNum(pharmacy.inventoryDeviceCount)}
+      </span>
+      {pharmacy.inventoryDeviceCount != null && updatedAt && Number.isFinite(updatedAt.getTime()) && (
+        <span className="mt-0.5 block text-xs text-ink-500">
+          {t('ph.inventoryAsOf', { date: updatedAt.toLocaleDateString('ru-RU', { timeZone: 'Asia/Almaty' }) })}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function PharmacyDeviceCount({ pharmacy }: { pharmacy: PharmacyDto }) {
+  const t = useT()
+  return (
+    <div data-testid={`pharmacy-devices-${pharmacy.id}`}>
+      <span className="num font-semibold text-ink-800">
+        {pharmacy.registeredDeviceCount == null
+          ? t('ph.devicesUnavailable')
+          : formatNum(pharmacy.registeredDeviceCount)}
+      </span>
+      {pharmacy.onlineDeviceCount != null && (
+        <span
+          className="mt-0.5 block text-xs text-ink-500"
+          title={pharmacy.deviceOnlineWindowSeconds == null ? undefined :
+            t('ph.devicesWindow', { n: pharmacy.deviceOnlineWindowSeconds })}
+        >
+          {t('ph.devicesOnline', { n: pharmacy.onlineDeviceCount })}
+        </span>
+      )}
     </div>
   )
 }

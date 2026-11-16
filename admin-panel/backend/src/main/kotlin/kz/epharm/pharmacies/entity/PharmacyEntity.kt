@@ -60,6 +60,15 @@ class PharmacyEntity(
 
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now(),
+
+    @Column(name = "inventory_device_count")
+    var inventoryDeviceCount: Int? = null,
+
+    @Column(name = "inventory_source", length = 255)
+    var inventorySource: String? = null,
+
+    @Column(name = "inventory_updated_at")
+    var inventoryUpdatedAt: Instant? = null,
 ) {
     var group: PharmacyGroup
         get() = PharmacyGroup.valueOf(groupRaw)
