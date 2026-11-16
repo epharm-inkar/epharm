@@ -8,6 +8,7 @@ import kz.epharm.promo.dto.*
 import kz.epharm.promo.entity.PromoEntity
 import kz.epharm.promo.entity.PromoStatus
 import kz.epharm.promo.repository.PromoRepository
+import kz.epharm.promo.repository.refreshLockedFunding
 import kz.epharm.rules.entity.RuleEntity
 import kz.epharm.rules.repository.RuleRepository
 import kz.epharm.shared.error.AppException
@@ -63,7 +64,13 @@ class PromoPublicationService(
         if (promo.status == PromoStatus.archived) invalid("Восстановите кампанию перед подготовкой изменений")
         val currentFingerprint = fingerprint(promo)
         if (previous?.bundle != null && previous.fingerprint != currentFingerprint) conflict("Опубликованные условия изменились: отмените подготовленный черновик и загрузите актуальные данные")
-        val bundle = request.bundle!!
+        val incoming = request.bundle!!
+        // Old editors omit this field: preserve the reviewed draft first, then the published mode.
+        // In particular, false in an existing draft is intentional, not a missing value.
+        val bundle = incoming.copy(campaign = incoming.campaign.copy(
+            budgetUnlimited = incoming.campaign.budgetUnlimited
+                ?: previous?.bundle?.campaign?.budgetUnlimited ?: promo.budgetUnlimited,
+        ))
         validate(bundle)
         if (changesMoney(promo, bundle)) scope.requireAllPermission(MotivationPermissions.configureBonus)
         write(id, previous, currentFingerprint, bundle, actor)
@@ -173,11 +180,13 @@ class PromoPublicationService(
             prepared?.updatedAt, prepared?.updatedBy,
             scope.canAllPermission(MotivationPermissions.campaignEdit) &&
                 scope.canAllPermission(MotivationPermissions.recommendationEdit) && promo.status != PromoStatus.archived,
-            pending != null && issues.isEmpty() && publication && finance, issues.distinct())
+            pending != null && issues.isEmpty() && publication && finance, issues.distinct(),
+            scope.canAllPermission(MotivationPermissions.configureBonus))
     }
 
     private fun currentBundle(promo: PromoEntity) = PromoChangesBundleDto(
         UpdatePromoRequest(title = promo.title, brand = promo.brand, period = promo.period, budget = promo.budget,
+            budgetUnlimited = promo.budgetUnlimited,
             kpi = promo.kpi, cover = promo.cover, medusaProductId = promo.medusaProductId, productName = promo.productName,
             productImage = promo.productImage, barcode = promo.barcode, barcodes = promo.barcodes, ipartId = promo.ipartId,
             overrideImage = promo.overrideImage, overrideDescription = promo.overrideDescription,
@@ -209,7 +218,10 @@ class PromoPublicationService(
 
     private fun canonical(node: JsonNode): JsonNode = when {
         node.isObject -> mapper.createObjectNode().also { result ->
-            node.fieldNames().asSequence().filter { it != "price" }.sorted()
+            // False is the historical capped mode: keep fingerprints of pre-V107 drafts valid.
+            // True remains material authored state, so either mode transition conflicts with stale drafts.
+            node.fieldNames().asSequence().filter { it != "price" &&
+                !(it == "budgetUnlimited" && !node[it].asBoolean(false)) }.sorted()
                 .forEach { result.set<JsonNode>(it, canonical(node[it])) }
         }
         node.isArray -> mapper.createArrayNode().also { result -> node.forEach { result.add(canonical(it)) } }
@@ -219,7 +231,7 @@ class PromoPublicationService(
     private fun load(id: String, mutation: Boolean = false) =
         (if (mutation) promos.findForUpdate(id) else promos.findById(id)).orElseThrow {
             AppException(ErrorCode.NOT_FOUND, "Кампания не найдена", HttpStatus.NOT_FOUND)
-        }
+        }.let { if (mutation) promos.refreshLockedFunding(it) else it }
 
     private fun prepared(id: String): Prepared? = jdbc.query(
         "select revision,base_fingerprint,bundle_json,updated_at,updated_by from promo_publication_changes where promo_id=?",

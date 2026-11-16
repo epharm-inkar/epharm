@@ -441,6 +441,8 @@ export interface PromoDto {
   period: string
   pharmacies: number
   budget: number
+  /** Explicit financial mode; old API responses without it remain limited. */
+  budgetUnlimited?: boolean
   spent: number
   kpi: string
   cover: string
@@ -483,6 +485,7 @@ export interface CreatePromoRequest {
   brand?: string
   period?: string
   budget?: number
+  budgetUnlimited?: boolean
   kpi?: string
   cover?: string
   medusaProductId?: string | null
@@ -507,6 +510,7 @@ export interface UpdatePromoRequest {
   brand?: string
   period?: string
   budget?: number
+  budgetUnlimited?: boolean
   kpi?: string
   cover?: string
   medusaProductId?: string | null
@@ -616,6 +620,7 @@ export interface PromoChangesViewDto {
   updatedBy: string | null
   canSave: boolean
   canApply: boolean
+  canConfigureBudget?: boolean
   readinessIssues: string[]
 }
 

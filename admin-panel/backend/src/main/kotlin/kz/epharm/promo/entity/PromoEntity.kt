@@ -149,6 +149,10 @@ class PromoEntity(
 
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now(),
+
+    /** Explicit financial authorization; a numeric zero budget is never interpreted as unlimited. */
+    @Column(name = "budget_unlimited", nullable = false)
+    var budgetUnlimited: Boolean = false,
 ) {
     var status: PromoStatus
         get() = PromoStatus.valueOf(statusRaw)

@@ -28,4 +28,5 @@ data class PromoChangesViewDto(
     val canSave: Boolean,
     val canApply: Boolean,
     val readinessIssues: List<String>,
+    val canConfigureBudget: Boolean = false,
 )

@@ -1,5 +1,17 @@
 # Admin Console
 
+## Explicit unlimited campaign budget — candidate 2026-11-16
+
+Campaign detail offers “Без лимита” only with fresh server-confirmed financial
+permission. Enabling requires confirmation, then the usual prepare/review/apply
+flow; checking the box alone does not change the published campaign. The selected
+mode is retained when other fields are edited, including an existing prepared draft.
+Creation remains capped by default. Unlimited cards and rows show actual spending
+and an explicit unlimited label, never a fictitious remaining amount or percentage.
+Mixed summaries total finite caps separately and count unlimited campaigns.
+Returning to a finite cap below already committed spending is rejected by the server.
+The mode is per campaign, not a global setting or automatic activation of zero caps.
+
 ## Sales display correction — 2026-11-16
 
 The dashboard summary and paginated journal both refresh every 15 seconds while

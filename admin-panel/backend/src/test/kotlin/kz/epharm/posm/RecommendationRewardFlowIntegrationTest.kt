@@ -718,6 +718,60 @@ class RecommendationRewardFlowIntegrationTest {
         assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", first.employee.pharmacy)).isEqualTo(2)
     }
 
+    @Test fun `zero budget only credits with explicit unlimited mode and replay or refund never changes spent twice`() {
+        for (unlimited in listOf(false, true)) {
+            val world = world(budget = 0, budgetUnlimited = unlimited)
+            val f = flow(world = world)
+            acknowledge(f)
+            val paid = payment(f)
+            deliver(f, paid)
+            deliver(f, paid)
+            val expected = if (unlimited) 400L else 0L
+            assertCredit(f, expected)
+            assertThat(balance(f.employee)).isEqualTo(expected)
+            assertThat(spent(world.offers.single())).isEqualTo(expected)
+            assertThat(number("SELECT budget FROM promos WHERE id=?", world.offers.single().promo)).isZero()
+            if (unlimited) {
+                deliver(f, refund(f, f.employee))
+                assertThat(balance(f.employee)).isEqualTo(400)
+                assertThat(spent(world.offers.single())).isEqualTo(400)
+                assertThat(cases(f).single()["state"]).isEqualTo("refund_review")
+            } else {
+                assertThat(cases(f).single()["reason_code"]).isEqualTo("reward_budget_invalid")
+            }
+        }
+    }
+
+    @Test fun `parallel unlimited employee sales retain every debit once without a synthetic numeric cap`() {
+        val world = world(budget = 0, budgetUnlimited = true)
+        val first = flow(world = world)
+        val second = flow(world = world, employee = employee(base = first.employee))
+        acknowledge(first); acknowledge(second)
+        val firstPaid = payment(first); val secondPaid = payment(second)
+        parallel(listOf(
+            { deliver(first, firstPaid) }, { deliver(second, secondPaid) },
+            { deliver(first, firstPaid) }, { deliver(second, secondPaid) },
+        ))
+        assertCredit(first, 400); assertCredit(second, 400)
+        assertThat(balance(first.employee) + balance(second.employee)).isEqualTo(800)
+        assertThat(spent(world.offers.single())).isEqualTo(800)
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", first.employee.pharmacy)).isEqualTo(2)
+        assertThat(number("SELECT budget FROM promos WHERE id=?", world.offers.single().promo)).isZero()
+    }
+
+    @Test fun `unlimited spending overflow retains the raw sale for review without wallet credit or lost accounting`() {
+        val world = world(budget = 0, budgetUnlimited = true)
+        val f = flow(world = world)
+        acknowledge(f)
+        jdbc.update("UPDATE promos SET spent=? WHERE id=?", Long.MAX_VALUE - 399, world.offers.single().promo)
+        deliver(f, payment(f))
+        assertCredit(f, 0)
+        assertThat(balance(f.employee)).isZero()
+        assertThat(spent(world.offers.single())).isEqualTo(Long.MAX_VALUE - 399)
+        assertThat(cases(f).single()["reason_code"]).isEqualTo("reward_budget_overflow")
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE id=?", f.sale)).isEqualTo(1)
+    }
+
     @Test fun `opposite multi campaign orders for the same and different employees cannot deadlock or duplicate funds`() {
         for (sameEmployee in listOf(true, false)) {
             val world = world(offerCount = 2)
@@ -1230,7 +1284,7 @@ class RecommendationRewardFlowIntegrationTest {
         return Employee(pharmacy, person, raw, device, key)
     }
 
-    private fun world(offerCount: Int = 1, budget: Long = 10_000): World {
+    private fun world(offerCount: Int = 1, budget: Long = 10_000, budgetUnlimited: Boolean = false): World {
         val id = token()
         val trigger = "trigger_$id"
         val barcode = barcode()
@@ -1240,7 +1294,7 @@ class RecommendationRewardFlowIntegrationTest {
             val offerCode = barcode()
             products.saveAndFlush(ProductEntity(id = product, name = "Synthetic offer $product", barcode = offerCode, price = 1000))
             val promo = "promo_${index}_$id"
-            promos.saveAndFlush(PromoEntity(id = promo, title = "Synthetic funded offer", brand = "TEST", budget = budget,
+            promos.saveAndFlush(PromoEntity(id = promo, title = "Synthetic funded offer", brand = "TEST", budget = budget, budgetUnlimited = budgetUnlimited,
                 medusaProductId = product, productName = "Synthetic offer", tiers = listOf(PromoTier(1, 1000, 200))).also { it.status = PromoStatus.active })
             rules.saveAndFlush(RuleEntity(id = "rule_${index}_$id", trigger = RuleTrigger("product", trigger), recommend = product,
                 bonus = 200, promoId = promo).also { it.status = RuleStatus.active })

@@ -36,7 +36,7 @@ class RecommendationRewardCreditPolicyTest {
             "source_sale_id" to "sale", "product_id" to "product", "promo_id" to "promo", "state" to "ready",
             "reason_code" to "eligible", "unit_bonus" to 200L, "eligible_packages" to 3L, "total_bonus" to 600L,
             "pending_bonus_id" to "pending", "receipt_id" to "receipt", "budget_reserved" to false)
-        budget=mutableMapOf("budget" to 1000L,"spent" to 100L)
+        budget=mutableMapOf("budget" to 1000L,"spent" to 100L,"budget_unlimited" to false)
         person=mutableMapOf("status" to "active","pharmacy_id" to "pharmacy")
         pending=PendingBonusEntity(id="pending",pharmacistId="person",pharmacyId="pharmacy",sku="product",bonus=200,sourceSaleId="sale")
         receipt=ReceiptEntity(id="receipt",pendingBonusId="pending",pharmacistId="person",pharmacyId="pharmacy",parsedSku="product",parsedAmount=1200,parsedAt=now)
@@ -44,7 +44,7 @@ class RecommendationRewardCreditPolicyTest {
             items=listOf(PosSaleItem(productId="product",qty=3.0,price=400,total=1200)))
         every { jdbc.queryForList(match { it.contains("FROM recommendation_sale_rewards") }, *anyVararg()) } answers { listOf(HashMap(reward)) }
         every { jdbc.queryForList("SELECT status,pharmacy_id FROM pharmacists WHERE id=?", any<String>()) } answers { listOf(HashMap(person)) }
-        every { jdbc.queryForList("SELECT budget,spent FROM promos WHERE id=? FOR NO KEY UPDATE", any<String>()) } answers { listOf(HashMap(budget)) }
+        every { jdbc.queryForList(match { it.startsWith("SELECT budget,") && it.endsWith("FROM promos WHERE id=? FOR NO KEY UPDATE") }, any<String>()) } answers { listOf(HashMap(budget)) }
         every { sales.findById("sale") } answers { Optional.of(sale) }
         every { jdbc.update(any<String>(), *anyVararg()) } answers {
             val statement=firstArg<String>()
@@ -97,6 +97,69 @@ class RecommendationRewardCreditPolicyTest {
         reward["budget_reserved"]=true;budget["spent"]=700L
         assertEquals(600L,policy.beforeCredit(pending,receipt).amountKzt)
         verify(exactly=0) { jdbc.update(match { it.startsWith("UPDATE promos") }, *anyVararg()) }
+    }
+
+    @Test fun `explicit unlimited budget allows zero limit and still records exact spending`() {
+        budget["budget_unlimited"] = true
+        budget["budget"] = 0L
+        budget["spent"] = 100L
+        val result = policy.beforeCredit(pending, receipt)
+        assertTrue(result.allowed)
+        assertEquals(600L, result.amountKzt)
+        verify(exactly = 1) { jdbc.update("UPDATE promos SET spent=spent+? WHERE id=? AND spent=?", 600L, "promo", 100L) }
+        assertEquals(true, reward["budget_reserved"])
+    }
+
+    @Test fun `unlimited budget ignores numeric cap but never bypasses identity or paid evidence`() {
+        budget["budget_unlimited"] = true
+        budget["budget"] = 100L
+        budget["spent"] = 5000L
+        sale.pharmacistId = "another-person"
+        assertThrows(AppException::class.java) { policy.beforeCredit(pending, receipt) }
+        verify(exactly = 0) { jdbc.update(match { it.startsWith("UPDATE promos") }, *anyVararg()) }
+        sale.pharmacistId = "person"
+        assertTrue(policy.beforeCredit(pending, receipt).allowed)
+    }
+
+    @Test fun `unlimited reserved reward is not charged twice even with spending beyond numeric budget`() {
+        budget["budget_unlimited"] = true
+        budget["budget"] = 0L
+        budget["spent"] = Long.MAX_VALUE
+        reward["budget_reserved"] = true
+        assertEquals(600L, policy.beforeCredit(pending, receipt).amountKzt)
+        verify(exactly = 0) { jdbc.update(match { it.startsWith("UPDATE promos") }, *anyVararg()) }
+    }
+
+    @Test fun `unlimited budget fails closed before bigint spending overflow`() {
+        budget["budget_unlimited"] = true
+        budget["budget"] = 0L
+        budget["spent"] = Long.MAX_VALUE - 599L
+        val result = policy.beforeCredit(pending, receipt)
+        assertFalse(result.allowed)
+        assertEquals("reward_budget_overflow", result.reasonCode)
+        assertEquals(false, reward["budget_reserved"])
+        verify(exactly = 0) { jdbc.update(match { it.startsWith("UPDATE promos") }, *anyVararg()) }
+    }
+
+    @Test fun `unlimited budget accepts exact bigint boundary but not negative stored values`() {
+        budget["budget_unlimited"] = true
+        budget["budget"] = 0L
+        budget["spent"] = -1L
+        assertEquals("reward_budget_invalid", policy.beforeCredit(pending, receipt).reasonCode)
+        reward["state"] = "ready"
+        budget["spent"] = Long.MAX_VALUE - 600L
+        assertTrue(policy.beforeCredit(pending, receipt).allowed)
+        verify(exactly = 1) { jdbc.update("UPDATE promos SET spent=spent+? WHERE id=? AND spent=?", 600L, "promo", Long.MAX_VALUE - 600L) }
+    }
+
+    @Test fun `missing or non boolean unlimited flag does not reinterpret zero budget`() {
+        budget["budget"] = 0L
+        for (mode in listOf(null, "true", 1, false)) {
+            if (mode == null) budget.remove("budget_unlimited") else budget["budget_unlimited"] = mode
+            reward["state"] = "ready"
+            assertEquals("reward_budget_invalid", policy.beforeCredit(pending, receipt).reasonCode)
+        }
+        verify(exactly = 0) { jdbc.update(match { it.startsWith("UPDATE promos") }, *anyVararg()) }
     }
 
     @Test fun `quantity amount beneficiary and source mismatches cannot bypass the common credit gate`() {

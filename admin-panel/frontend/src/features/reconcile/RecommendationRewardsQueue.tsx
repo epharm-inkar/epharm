@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useUiStore } from '@/app/store'
 import { useAdministrativeCapabilities } from '@/app/useAdministrativeCapabilities'
 import { Button, Drawer, Empty, Field, Input, Select, useToast } from '@/ui'
 import { describeError } from '@/lib/describeError'
@@ -54,6 +55,7 @@ export default function RecommendationRewardsQueue() {
 }
 
 function RewardsWorkspace({ canReview, canExport }: { canReview: boolean; canExport: boolean }) {
+  const language = useUiStore((state) => state.language)
   const [filter, setFilter] = useState<RewardFilter>({ state: 'review_required' })
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -181,7 +183,7 @@ function RewardsWorkspace({ canReview, canExport }: { canReview: boolean; canExp
                       >
                         {rewardStates[item.state] ?? item.state}
                       </span>
-                      <p className="mt-1 text-xs text-ink-500">{rewardReason(item.reasonCode)}</p>
+                      <p className="mt-1 text-xs text-ink-500">{rewardReason(item.reasonCode, language)}</p>
                     </td>
                     <td className="px-4 py-3">
                       {actualCredit(item)}
@@ -241,6 +243,7 @@ function RewardDrawer({
   canReview: boolean
 }) {
   const detail = useRecommendationReward(id)
+  const language = useUiStore((state) => state.language)
   return (
     <Drawer open={!!id} onClose={onClose} title="Проверка продажи по рекомендации" width={680}>
       {detail.isLoading ? (
@@ -258,7 +261,7 @@ function RewardDrawer({
           <div className="flex flex-col gap-4">
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <Datum label="Статус" value={rewardStates[detail.data.state] ?? detail.data.state} />
-              <Datum label="Причина" value={rewardReason(detail.data.reasonCode)} />
+              <Datum label="Причина" value={rewardReason(detail.data.reasonCode, language)} />
               <Datum label="Аптека" value={detail.data.pharmacyName || detail.data.pharmacyId} />
               <Datum
                 label="Получатель"
