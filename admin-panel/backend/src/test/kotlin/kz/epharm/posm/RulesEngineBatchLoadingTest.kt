@@ -127,15 +127,10 @@ class RulesEngineBatchLoadingTest {
 }
 
 internal fun RuleEntity.matchReference(): RuleMatchReference {
-    val rule = this
-    return object : RuleMatchReference {
-        override val id = rule.id
-        override val kind = rule.trigger.kind
-        override val value = rule.trigger.value as? String
-        override val productAnyJson = if (kind == "product_any" && rule.trigger.value is List<*>)
-            com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(rule.trigger.value) else null
-        override val recommend = rule.recommend
-        override val promoId = rule.promoId
-        override val hasConditions = rule.trigger.conditions.isNotEmpty()
-    }
+    return RuleMatchReference(
+        id, trigger.kind, trigger.value as? String,
+        if (trigger.kind == "product_any" && trigger.value is List<*>)
+            com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(trigger.value) else null,
+        recommend, promoId, trigger.conditions.isNotEmpty(),
+    )
 }

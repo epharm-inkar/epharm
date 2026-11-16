@@ -12,29 +12,18 @@ import org.springframework.stereotype.Repository
 import java.util.Optional
 
 /** Matching inputs only: rich cards and managed RuleEntity snapshots are loaded for candidates later. */
-interface RuleMatchReference {
-    val id: String
-    val kind: String
-    val value: String?
-    val productAnyJson: String?
-    val recommend: String
-    val promoId: String?
-    val hasConditions: Boolean
-}
+data class RuleMatchReference(
+    val id: String,
+    val kind: String,
+    val value: String?,
+    val productAnyJson: String?,
+    val recommend: String,
+    val promoId: String?,
+    val hasConditions: Boolean,
+)
 
 @Repository
-interface RuleRepository : JpaRepository<RuleEntity, String> {
-    @Query(value = """
-        SELECT r.id, r.trigger->>'kind' AS kind,
-               CASE WHEN jsonb_typeof(r.trigger->'value') = 'string' THEN r.trigger->>'value' END AS value,
-               CASE WHEN r.trigger->>'kind' = 'product_any' AND jsonb_typeof(r.trigger->'value') = 'array'
-                    THEN CAST(r.trigger->'value' AS text) END AS "productAnyJson",
-               r.recommend, r.promo_id AS "promoId",
-               COALESCE(r.trigger->'conditions', '[]'::jsonb) <> '[]'::jsonb AS "hasConditions"
-          FROM rules r WHERE r.status = 'active' ORDER BY r.updated_at DESC
-    """, nativeQuery = true)
-    fun findActiveMatchReferences(): List<RuleMatchReference>
-
+interface RuleRepository : JpaRepository<RuleEntity, String>, RuleMatchReferenceLookup {
     @Query("SELECT r FROM RuleEntity r WHERE r.id IN :ids AND r.statusRaw = 'active'")
     @QueryHints(QueryHint(name = HibernateHints.HINT_READ_ONLY, value = "true"))
     fun findMatchCandidatesByIds(ids: Collection<String>): List<RuleEntity>

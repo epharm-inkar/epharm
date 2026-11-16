@@ -7,6 +7,8 @@ import kz.epharm.posm.service.RulesEngineService
 import kz.epharm.rules.entity.RuleCard
 import kz.epharm.rules.entity.RuleComparisonRow
 import kz.epharm.rules.entity.RuleEntity
+import kz.epharm.rules.entity.RuleStatus
+import kz.epharm.rules.repository.RuleMatchReference
 import kz.epharm.rules.repository.RuleRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.hibernate.Session
@@ -19,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.transaction.TestTransaction
 import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
@@ -85,6 +88,7 @@ class RulesEngineReferencesIntegrationTest {
     fun `native references do not deserialize rich rule entities and keep scalar types exact`() {
         val refs = rules.findActiveMatchReferences()
         assertThat(refs).hasSize(981)
+        assertThat(refs.map { it.javaClass }.distinct()).containsExactly(RuleMatchReference::class.java)
         assertThat(ruleLoads).isZero()
         val exact = refs.single { it.id == "r_0" }
         assertThat(exact.kind).isEqualTo("product")
@@ -96,6 +100,11 @@ class RulesEngineReferencesIntegrationTest {
         assertThat(json.readTree(any.productAnyJson)[1].textValue()).isEqualTo("filler_470")
         assertThat(any.recommend).isEqualTo("offer")
         assertThat(any.promoId).isNull()
+        TestTransaction.flagForRollback()
+        TestTransaction.end()
+        // A direct repository read outside a caller transaction starts its own read-only transaction.
+        assertThat(TestTransaction.isActive()).isFalse()
+        assertThat(rules.findActiveMatchReferences()).isEmpty()
     }
 
     @Test
@@ -131,6 +140,11 @@ class RulesEngineReferencesIntegrationTest {
         em.clear()
         val editable = rules.findById("r_0").orElseThrow()
         assertThat(em.unwrap(Session::class.java).isReadOnly(editable)).isFalse()
+        // The JDBC reference read shares the JPA transaction and retains the former query's autoflush semantics.
+        editable.status = RuleStatus.paused
+        assertThat(engine.match(cart).matches).isEmpty()
+        editable.status = RuleStatus.active
+        assertThat(engine.match(cart).matches).hasSize(1)
         editable.impressions = 7
         em.flush()
         assertThat(jdbc.queryForObject("SELECT impressions FROM rules WHERE id='r_0'", Int::class.java)).isEqualTo(7)

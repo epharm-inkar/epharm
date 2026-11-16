@@ -20,6 +20,8 @@ All notable production changes to Epharm are recorded here. The format follows
   for matching candidates. Keep global barcode ownership, the complete legacy name/SKU
   fallback pool, campaign dates, AND conditions and ranking without a cross-request cache.
 - Use read-only ORM loaders only for matching; administrative edits remain writable.
+- Map scalar rule rows directly to immutable values, avoiding per-row projection reflection
+  while retaining transaction visibility and fresh campaign status.
 
 ## [0.2.21] - 2026-11-16
 
