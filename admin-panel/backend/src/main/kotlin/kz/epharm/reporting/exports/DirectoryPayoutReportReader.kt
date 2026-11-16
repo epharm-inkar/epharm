@@ -5,6 +5,8 @@ import java.time.Instant
 import kz.epharm.auth.policy.PharmacyScope
 import kz.epharm.finance.dto.PayoutBatchDto
 import kz.epharm.finance.entity.PayoutBatchStatus
+import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.pharmacists.service.currentReceiptCounts
 import kz.epharm.reporting.xlsx.ReportWorkbook
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
@@ -39,7 +41,10 @@ data class PharmacistReport(
 )
 
 @Service
-class DirectoryPayoutReportReader(private val jdbc: NamedParameterJdbcTemplate) {
+class DirectoryPayoutReportReader(
+    private val jdbc: NamedParameterJdbcTemplate,
+    private val pharmacists: PharmacistRepository,
+) {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     fun payouts(period: ReportPeriod, scope: PharmacyScope, status: PayoutBatchStatus? = null): PayoutReport {
         // The legacy payout snapshot has names/city, not a stable historical pharmacy ID (D6).
@@ -80,6 +85,7 @@ class DirectoryPayoutReportReader(private val jdbc: NamedParameterJdbcTemplate) 
             is PharmacyScope.Assigned -> scope.ids.map { it.id }.toSet().also { if (it.isEmpty()) forbidden() }
             else -> forbidden()
         }
+        val generated = Instant.now()
         val params = mutableMapOf<String, Any>()
         val where = buildString {
             append(" WHERE 1=1")
@@ -88,7 +94,7 @@ class DirectoryPayoutReportReader(private val jdbc: NamedParameterJdbcTemplate) 
             if (pharmacyId != null) { append(" AND p.pharmacy_id=:pharmacy"); params["pharmacy"] = pharmacyId }
         }
         val rows = jdbc.query("""SELECT p.id,p.name,p.iin,p.phone,p.status,p.tier,p.pharmacy_id,p.pharmacy_name,p.city,
-            p.receipts_30d,p.rules_accepted_30d,p.earned_30d,p.balance,p.courses_done,p.courses_total,p.joined_at,p.created_at,p.updated_at,
+            p.rules_accepted_30d,p.earned_30d,p.balance,p.courses_done,p.courses_total,p.joined_at,p.created_at,p.updated_at,
             (coalesce(length(p.password_hash),0)>0) AS has_password,h.chain_id,h.chain_name,h.city AS pharmacy_city,h.addr,h.district
             FROM pharmacists p LEFT JOIN pharmacies h ON h.id=p.pharmacy_id $where
             ORDER BY p.name,p.id LIMIT ${ReportWorkbook.MAX_ROWS + 1}""", params) { rs, _ ->
@@ -100,13 +106,17 @@ class DirectoryPayoutReportReader(private val jdbc: NamedParameterJdbcTemplate) 
                 if (hasPassword) "iin_password" else "phone_sms_or_activation", if (personal) rs.getString(if (hasPassword) "iin" else "phone") else null,
                 if (hasPassword) "password_set" else "activation_required_or_sms", pharmacy, rs.getString("pharmacy_name"),
                 rs.getString("chain_id"), rs.getString("chain_name"), rs.getString("city"), rs.getString("pharmacy_city"),
-                rs.getString("addr"), rs.getString("district"), if (financialAll) rs.getInt("receipts_30d") else null,
+                rs.getString("addr"), rs.getString("district"), null,
                 if (financialAll) rs.getInt("rules_accepted_30d") else null, if (financialAll) rs.getLong("earned_30d") else null,
                 if (financialAll) rs.getLong("balance") else null, rs.getInt("courses_done"), rs.getInt("courses_total"),
                 rs.getDate("joined_at").toString(), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant())
         }
         FinanceReportReader.ensureReportSize(rows.size)
-        return PharmacistReport(Instant.now(), assigned, status, pharmacyId, rows, financialAll)
+        val entries = if (financialAll) {
+            val counts = pharmacists.currentReceiptCounts(rows.associate { it.id to it.currentPharmacyId }, generated)
+            rows.map { it.copy(receipts30d = counts[it.id] ?: 0) }
+        } else rows
+        return PharmacistReport(generated, assigned, status, pharmacyId, entries, financialAll)
     }
 
     private fun forbidden(): Nothing = throw AppException(ErrorCode.FORBIDDEN, "Для этой истории требуется явная допустимая область", HttpStatus.FORBIDDEN)

@@ -6,6 +6,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import java.io.ByteArrayInputStream
 import java.time.LocalDate
+import java.time.Instant
+import java.time.Duration
 import java.time.ZoneId
 import java.util.UUID
 import kz.epharm.auth.access.StoredGrant
@@ -13,6 +15,9 @@ import kz.epharm.auth.domain.AdminRole
 import kz.epharm.auth.entity.AdminUserEntity
 import kz.epharm.auth.repository.AdminUserRepository
 import kz.epharm.auth.service.JwtService
+import kz.epharm.posm.entity.PosSaleEntity
+import kz.epharm.posm.entity.PosSaleItem
+import kz.epharm.posm.repository.PosSaleRepository
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.junit.jupiter.api.Assertions.*
@@ -55,6 +60,7 @@ class UnifiedReportsIntegrationTest {
     @Autowired lateinit var jwt: JwtService
     @Autowired lateinit var mapper: ObjectMapper
     @Autowired lateinit var mvc: MockMvc
+    @Autowired lateinit var sales: PosSaleRepository
     private lateinit var admin: AdminUserEntity
     private lateinit var bearer: String
     private val day get() = LocalDate.now(ZoneId.of("Asia/Almaty")).toString()
@@ -179,6 +185,8 @@ class UnifiedReportsIntegrationTest {
             assertEquals(CellType.BLANK, b.getCell(8).cellType)
             assertEquals(CellType.BLANK, a.getCell(21).cellType)
             assertEquals(CellType.BLANK, b.getCell(21).cellType)
+            assertEquals(CellType.BLANK, a.getCell(18).cellType)
+            assertEquals(CellType.BLANK, b.getCell(18).cellType)
             val allCells = book.flatMap { it.flatMap { row -> row.map { cell -> cell.toString() } } }.joinToString("\n")
             assertFalse(allCells.contains("synthetic-private-hash"))
             assertFalse(allCells.contains("000000000001"))
@@ -198,6 +206,35 @@ class UnifiedReportsIntegrationTest {
         }
     }
 
+    @Test fun `current receipt counts agree between registry API and workbook instead of the stale profile field`() {
+        jdbc.update("update pharmacists set receipts_30d=999")
+        val now = Instant.now()
+        fun sale(id: String, person: String = "report-staff", pharmacy: String = "report-b", at: Instant = now.minusSeconds(60)) =
+            PosSaleEntity(id = id, pharmacistId = person, pharmacyId = pharmacy, printedAt = at,
+                reportedPharmacistId = "report-staff", items = listOf(PosSaleItem(name = "one"), PosSaleItem(name = "two")))
+        sales.saveAllAndFlush(listOf(
+            sale("report-recent"), sale("report-refund"), sale("report-future", at = now.plusSeconds(3600)),
+            sale("report-expired", at = now.minus(Duration.ofDays(31))),
+            sale("report-old-pharmacy", pharmacy = "report-a"), sale("report-raw-only", person = ""),
+            sale("report-unknown-person", person = "unknown"),
+        ))
+        jdbc.update("update pos_sales set reward_evidence=CAST(? AS jsonb) where id='report-refund'",
+            """{"completion":{"status":"refund"}}""")
+        setGrants(grant("pharmacists", "registry", "view"), grant("pharmacists", "registry", "export"),
+            grant("pharmacists", "registry", "financial_data"))
+
+        mvc.perform(get("/api/admin/pharmacists/report-staff").header("Authorization", bearer))
+            .andExpect(status().isOk).andExpect(jsonPath("$.receipts30d").value(1))
+        val file = mvc.perform(get("/api/admin/reports/pharmacists.xlsx").header("Authorization", bearer))
+            .andExpect(status().isOk).andReturn().response.contentAsByteArray
+        XSSFWorkbook(ByteArrayInputStream(file)).use { book ->
+            val rows = book.getSheet("Данные").filter { it.rowNum > 0 }
+            assertEquals(1.0, rows.single { it.getCell(0).stringCellValue == "report-staff" }.getCell(18).numericCellValue)
+            assertEquals(0.0, rows.single { it.getCell(0).stringCellValue == "report-other" }.getCell(18).numericCellValue)
+        }
+        assertEquals(999, jdbc.queryForObject("select receipts_30d from pharmacists where id='report-staff'", Int::class.java))
+    }
+
     @Test fun `payout export keeps source snapshot fields and bank caveat and rejects assigned pharmacy scope`() {
         jdbc.update("insert into payout_batches(id,period,status,pharmacists,amount,items) values('report-batch','Source period','pending',1,600,1)")
         jdbc.update("""insert into payout_items(id,batch_id,pharmacist_id,pharmacist_name,pharmacy,city,receipts,rules,amount,flag)
@@ -210,6 +247,7 @@ class UnifiedReportsIntegrationTest {
             assertEquals("Source period", book.getSheet("Данные").getRow(1).getCell(1).stringCellValue)
             val row = book.getSheet("Состав пакетов").getRow(1)
             assertEquals("Historic pharmacy", row.getCell(4).stringCellValue)
+            assertEquals(8.0, row.getCell(6).numericCellValue)
             assertEquals("Source flag", row.getCell(9).stringCellValue)
             assertEquals(CellType.BLANK, row.getCell(11).cellType)
             assertTrue(book.getSheet("Параметры").any { it.getCell(1).toString().contains("не доказывают банковский перевод") })
