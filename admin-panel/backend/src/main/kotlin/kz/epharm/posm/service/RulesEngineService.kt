@@ -1,5 +1,6 @@
 package kz.epharm.posm.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import kz.epharm.catalog.entity.ProductEntity
 import kz.epharm.catalog.repository.ProductRepository
 import kz.epharm.catalog.service.AccCatalogClassification
@@ -12,6 +13,7 @@ import kz.epharm.rules.entity.RuleEntity
 import kz.epharm.rules.entity.RuleStatus
 import kz.epharm.rules.entity.RuleTrigger
 import kz.epharm.rules.repository.RuleRepository
+import kz.epharm.rules.repository.RuleMatchReference
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -82,7 +84,7 @@ class RulesEngineService(
 
     @Transactional(readOnly = true)
     fun match(cart: List<CartItemDto>, scannedBarcode: String? = null): RuleMatchResult {
-        val activeRules = ruleRepository.findAllByStatusRawOrderByUpdatedAtDesc(RuleStatus.active.name)
+        val activeRules = ruleRepository.findActiveMatchReferences()
         // Кампания — мастер-выключатель: правило из неактивной кампании НЕ показываем,
         // даже если оно осталось active в БД (смена статуса кампании не пересохраняет правила).
         // Границы дат включительны и считаются в часовом поясе аптек Казахстана: активный статус
@@ -106,16 +108,21 @@ class RulesEngineService(
         // Для online-рекомендаций не загружаем и не нормализуем весь каталог Medusa (28k+ строк)
         // на каждый скан. Нужны только товары из действующих правил: это одновременно быстрее и
         // безопаснее для fuzzy-fallback — нерелевантный товар каталога не может стать триггером.
-        val relevantProducts = relevantProducts(active)
-        val relevantById = relevantProducts.associateBy(ProductEntity::id)
         // Exact barcode ownership is global: an inactive product can still conflict with a rule.
         val byBarcode = barcodeIndex(cart)
+        val needsFallback = cart.any { item ->
+            val barcode = item.barcode?.trim()?.takeIf(String::isNotEmpty)
+            (barcode == null || barcode !in byBarcode) &&
+                (!item.sku.isNullOrBlank() || !item.name.isNullOrBlank())
+        }
+        val relevantProducts = if (needsFallback) relevantProducts(active) else emptyList()
+        val relevantById = relevantProducts.associateBy(ProductEntity::id)
         val cartProducts: Map<String, ProductEntity> = resolveCart(cart, relevantProducts, byBarcode)
         val cartSkus: Set<String> = cartProducts.keys
         val cartBarcodes = cart.mapNotNull { it.barcode?.trim()?.takeIf(String::isNotEmpty) }.toSet()
         val cartIpartIds = cart.mapNotNull { it.sku?.trim()?.takeIf(String::isNotEmpty) }.toSet()
         val cartExactNames = cart.mapNotNull { it.name?.takeIf(String::isNotBlank)?.let(::normalizeName) }.toSet()
-        val hasAccRules = active.any { it.trigger.kind.startsWith("acc_") || it.trigger.conditions.isNotEmpty() }
+        val hasAccRules = active.any { it.kind.startsWith("acc_") || it.hasConditions }
         val classified = if (hasAccRules) accCatalogTaxonomy.unambiguousBarcodes(cartBarcodes) else emptyMap()
         val scopedCart = cart.mapNotNull { item ->
             val barcode = item.barcode?.trim().orEmpty()
@@ -124,7 +131,26 @@ class RulesEngineService(
         }
         if (cartSkus.isEmpty() && scopedCart.isEmpty()) return RuleMatchResult(emptyList(), emptyList())
 
-        val raw = active.mapNotNull { rule ->
+        // Keep the original fallback product pool, but hydrate rich rule cards only after
+        // resolving the basket. This also covers unknown EANs resolved by local SKU/name.
+        val potential = active.filter { reference ->
+            when (reference.kind) {
+                "product" -> reference.value in cartSkus
+                "product_any" -> reference.productAnyIds().any { it in cartSkus }
+                "mnn" -> cartProducts.values.any { it.mnn == reference.value }
+                else -> AccScopeKind.entries.firstOrNull { it.wire == reference.kind }?.let { kind ->
+                    reference.value?.let { key -> scopedCart.any { (_, classification) -> classification.matches(kind, key) } }
+                } == true
+            }
+        }
+        if (potential.isEmpty()) return RuleMatchResult(emptyList(), emptyList())
+        val fullById = ruleRepository.findMatchCandidatesByIds(potential.map { it.id }).associateBy(RuleEntity::id)
+        val candidates = potential.mapNotNull { fullById[it.id] }
+            .filter { it.status == RuleStatus.active && (it.promoId == null || it.promoId in activePromoIds) }
+        val recommendById = if (needsFallback || candidates.isEmpty()) relevantById
+            else productRepository.findMatchProductsByIds(candidates.map { it.recommend }.toSet()).associateBy(ProductEntity::id)
+
+        val raw = candidates.mapNotNull { rule ->
             val accKind = AccScopeKind.entries.firstOrNull { it.wire == rule.trigger.kind }
             val scopedMatch = if (accKind != null) {
                 val key = rule.trigger.value as? String ?: return@mapNotNull null
@@ -163,7 +189,7 @@ class RulesEngineService(
                 accIdentity(classification, item.barcode!!.trim())
             }
             // recommend не должен уже лежать в корзине
-            val recProduct = relevantById[rule.recommend] ?: return@mapNotNull null
+            val recProduct = recommendById[rule.recommend] ?: return@mapNotNull null
             val alreadyInCart = if (accKind == null) {
                 rule.recommend in cartSkus
             } else {
@@ -353,29 +379,32 @@ class RulesEngineService(
      * По product/product_any берём trigger ids, по mnn — все товары указанного МНН;
      * recommend нужен и для ответа, и для проверки «уже в корзине».
      */
-    private fun relevantProducts(rules: List<RuleEntity>): List<ProductEntity> {
+    private fun relevantProducts(rules: List<RuleMatchReference>): List<ProductEntity> {
         val productIds = LinkedHashSet<String>()
         val mnns = LinkedHashSet<String>()
         rules.forEach { rule ->
             productIds += rule.recommend
-            when (rule.trigger.kind) {
-                "product" -> (rule.trigger.value as? String)?.let(productIds::add)
-                "product_any" -> (rule.trigger.value as? List<*>)
-                    ?.mapNotNull { it as? String }
-                    ?.let(productIds::addAll)
-                "mnn" -> (rule.trigger.value as? String)?.let(mnns::add)
+            when (rule.kind) {
+                "product" -> rule.value?.let(productIds::add)
+                "product_any" -> productIds.addAll(rule.productAnyIds())
+                "mnn" -> rule.value?.let(mnns::add)
             }
         }
         // A scan may see thousands of active rules; load each key set once, not one SQL query per product/MNN.
         val byId = if (productIds.isEmpty()) emptyMap()
-            else productRepository.findAllById(productIds).associateBy(ProductEntity::id)
+            else productRepository.findMatchProductsByIds(productIds).associateBy(ProductEntity::id)
         val byMnn = if (mnns.isEmpty()) emptyMap()
-            else productRepository.findAllByMnnInOrderByNameAsc(mnns).groupBy(ProductEntity::mnn)
+            else productRepository.findMatchProductsByMnns(mnns).groupBy(ProductEntity::mnn)
         return buildList {
             productIds.mapNotNullTo(this, byId::get)
             mnns.forEach { addAll(byMnn[it].orEmpty()) }
         }.distinctBy(ProductEntity::id)
     }
+
+    /** Numeric array elements must not become product IDs or pollute the clinical name fallback pool. */
+    private fun RuleMatchReference.productAnyIds(): List<String> = productAnyJson?.let { raw ->
+        ARRAY_JSON.readTree(raw).filter { it.isTextual }.map { it.textValue() }
+    }.orEmpty()
 
     /**
      * Консервативный fallback для реальных касс Стандарт-Н, где EAN часто заменён внутренним
@@ -505,6 +534,7 @@ class RulesEngineService(
     }
 
     private companion object {
+        private val ARRAY_JSON = ObjectMapper()
         private val CAMPAIGN_ZONE: ZoneId = ZoneId.of("Asia/Almaty")
         private val WHITESPACE = Regex("\\s+")
         private val NUMBER = Regex("\\d+(?:[.,]\\d+)?")
