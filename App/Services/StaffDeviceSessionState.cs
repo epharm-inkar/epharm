@@ -53,6 +53,10 @@ public sealed class StaffDeviceSessionState
     private readonly TimeProvider _time;
     private long? _recoveryStarted;
     private string? _pharmacistId;
+    // Presentation is per confirmed native user, not per security grant/session.
+    // Retain this baseline through process/DB/network gaps; none proves a new cashier.
+    private StaffAuthContext? _promptSource;
+    private bool _hasPresented;
     public StaffDeviceSessionState(TimeProvider? time = null) => _time = time ?? TimeProvider.System;
     public string? ProcessInstanceId { get; private set; }
     public StaffSessionObservation Observation { get; private set; } = new("initializing");
@@ -63,7 +67,8 @@ public sealed class StaffDeviceSessionState
     public bool VerificationPending { get; private set; }
     public bool RecoveryExpired { get; private set; }
     public DateTimeOffset? RecoveryDeadline { get; private set; }
-    public bool Prompted { get; private set; }
+    public bool Prompted { get; private set; } = true;
+    public long CashierGeneration { get; private set; }
     public string? BypassStatus { get; private set; }
     public StaffDeviceContext? Context => ProcessInstanceId == null ? null : new(ProcessInstanceId, CurrentSource);
     public StaffAuthContext? CurrentSource => ProcessInstanceId != null && Observation.Status == "resolved" && Observation.Session is { } observed &&
@@ -73,6 +78,17 @@ public sealed class StaffDeviceSessionState
     {
         var source = process.Identity != null && observation.Status == "resolved" && observation.Session is { } observed &&
             observed.ProcessIdentity == process.Identity ? SourceContext(observed) : null;
+        if (process.Status == "resolved" && source != null) {
+            if (_promptSource == null || source.StandardNUserId != _promptSource.StandardNUserId ||
+                source.SourceNamespace != null && _promptSource.SourceNamespace != null && source.SourceNamespace != _promptSource.SourceNamespace) {
+                CashierGeneration++;
+                // A manual login/form before the first source resolution already
+                // presented this initial episode. A different known user always prompts.
+                Prompted = _promptSource == null && (_hasPresented || Grant != null);
+            }
+            _promptSource = source with { SourceNamespace = source.SourceNamespace ??
+                (_promptSource?.StandardNUserId == source.StandardNUserId ? _promptSource.SourceNamespace : null) };
+        }
         var changed = ProcessInstanceId != process.Identity || source != null && LastKnownSource != null && !SameCashier(source, LastKnownSource);
         if (changed) {
             Invalidate(); LastKnownSource = null; ProcessInstanceId = process.Identity;
@@ -98,7 +114,7 @@ public sealed class StaffDeviceSessionState
             response.ExpiresAt is not { } expires || expires <= now ||
             sent.StandardNContext != null && (sent.StandardNContext.ProcessInstanceId != ProcessInstanceId ||
                 LastKnownSource != null && !SameCashier(sent.StandardNContext, LastKnownSource))) return false;
-        Grant = response.SessionToken; ExpiresAt = expires; Prompted = true; BypassStatus = null;
+        Grant = response.SessionToken; ExpiresAt = expires; MarkPrompted(); BypassStatus = null;
         _pharmacistId = response.Pharmacist.Id;
         VerificationPending = false; RecoveryDeadline = null; _recoveryStarted = null; RecoveryExpired = false;
         return true;
@@ -111,8 +127,7 @@ public sealed class StaffDeviceSessionState
         if (ExpiresAt <= now) { Invalidate(); return false; }
         if (RecoveryDeadline <= now || _recoveryStarted is { } started && _time.GetElapsedTime(started) >= TimeSpan.FromMinutes(2)) {
             Invalidate();
-            // One ordinary, closable prompt after recovery expires; never a fullscreen
-            // interruption or an endless prompt loop while the network remains down.
+            // Expiry removes proof; it is not a native-user change or a reason to interrupt work.
             BypassStatus = "staff_bypass_service_unavailable";
             RecoveryExpired = true;
             return false;
@@ -149,14 +164,10 @@ public sealed class StaffDeviceSessionState
     {
         Invalidate(); Prompted = true; BypassStatus = "pending_approval";
     }
-    public void AllowServiceRecoveryPrompt()
-    {
-        if (Grant == null && BypassStatus == "staff_bypass_service_unavailable") Prompted = false;
-    }
-    public bool NeedsPrompt(DateTimeOffset now) => !IsAuthenticated(now) && ProcessInstanceId != null && !Prompted;
-    public void MarkPrompted() { Prompted = true; RecoveryExpired = false; }
+    public bool NeedsPrompt(DateTimeOffset now) => !IsAuthenticated(now) && ProcessInstanceId != null && CurrentSource != null && !Prompted;
+    public void MarkPrompted() { Prompted = true; _hasPresented = true; RecoveryExpired = false; }
     public void ClearGrant() { Grant = null; _pharmacistId = null; ExpiresAt = null; VerificationPending = false; RecoveryDeadline = null; _recoveryStarted = null; }
-    public void Invalidate() { Generation++; ClearGrant(); Prompted = false; BypassStatus = null; RecoveryExpired = false; }
+    public void Invalidate() { Generation++; ClearGrant(); BypassStatus = null; RecoveryExpired = false; }
     public string Bypass(StaffPromptBypassReason reason, bool preservePendingRequest = false)
     {
         // A failed background poll must not cancel an independently pending login/registration response.

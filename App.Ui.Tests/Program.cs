@@ -89,6 +89,8 @@ internal static class Program
                 await Run("unknown-source-close-does-not-repeat", proof => DeviceDismiss(false, proof));
                 await Run("unknown-source-continue-does-not-repeat", proof => DeviceDismiss(true, proof));
                 await Run("changed-process-rejects-inflight-device-login", DeviceChangedProcess);
+                await Run("same-user-session-change-keeps-form-and-submits-fresh-device-context", proof => DeviceContextRefresh(false, proof));
+                await Run("same-user-process-change-keeps-form-and-submits-fresh-device-context", proof => DeviceContextRefresh(true, proof));
                 await Run("process-service-error-bypasses-without-grant", proof => DeviceServiceFailure(false, proof));
                 await Run("process-sms-error-bypasses-without-grant", proof => DeviceServiceFailure(true, proof));
                 await Run("recovery-sms-source-flap-keeps-filled-form-and-challenge", SmsSourceFlap);
@@ -133,7 +135,7 @@ internal static class Program
                 watchdog.Stop();
                 foreach (var window in Windows) if (window.IsVisible) window.Dismiss();
                 foreach (var window in RecommendationWindows) if (window.IsVisible) window.Close();
-                var success = Results.Count == 55 && Results.All(result => result.Passed);
+                var success = Results.Count == 57 && Results.All(result => result.Passed);
                 WriteProof(success, null);
                 application.Shutdown(success ? 0 : 1);
             }
@@ -491,7 +493,7 @@ internal static class Program
     {
         var state = DeviceState(); var context = state.Context!; var generation = state.Generation;
         using var handler = new FakeHandler { DeviceContext = context }; using var client = new StaffAuthClient(Config(), handler);
-        Check(proof, "real-process-presence-policy-prompts-without-db", state.NeedsPrompt(DateTimeOffset.UtcNow));
+        Check(proof, "unreadable-source-does-not-automatically-prompt", !state.NeedsPrompt(DateTimeOffset.UtcNow));
         var window = DeviceWindow(client, state); await Idle();
         Check(proof, "source-unavailable-window-is-ordinary-and-closable", window.WindowStyle != WindowStyle.None);
         Check(proof, "own-login-is-enabled-without-source-ids", Field<Button>(window, "_submit").IsEnabled && context.StandardNContext == null);
@@ -546,6 +548,53 @@ internal static class Program
         FillLogin(window); Click(Field<Button>(window, "_submit")); await Until(() => eventSeen && !Busy(window));
         Check(proof, "pid-reuse-with-new-start-time-rejects-late-login", !accepted && state.Grant == null && state.Generation != generation);
         Check(proof, "foreign-process-grant-does-not-release-current-presentation", window.IsVisible);
+    }
+    private static async Task DeviceContextRefresh(bool changedProcess, Dictionary<string, bool> proof)
+    {
+        var state = KnownDeviceState(); var original = state.Context!; var source = original.StandardNContext!;
+        var generation = state.Generation; var cashierGeneration = state.CashierGeneration;
+        var process = changedProcess ? "443:639295055776695956" : original.ProcessInstanceId;
+        var freshSource = source with { ProcessInstanceId = process,
+            StandardNSessionId = changedProcess ? source.StandardNSessionId : "DEV-NEXT-SESSION" };
+        var fresh = new StaffDeviceContext(process, freshSource);
+        using var handler = new FakeHandler { DeviceContext = fresh }; using var client = new StaffAuthClient(Config(), handler);
+        var window = DeviceWindow(client, state); FillLogin(window);
+        var submitted = original; var starts = 0; var parentWaiting = false; var accepted = false;
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // Exercise the explicit-submit hook used by MainWindow without starting its external runtime.
+        window.AuthenticationStarted += () => {
+            starts++; submitted = state.Context!; generation = state.Generation;
+            window.UpdateDeviceContext(submitted);
+        };
+        window.AuthenticationCompletion = async response => {
+            parentWaiting = true;
+            Check(proof, "parent-receives-the-fresh-submitted-context", response.DeviceContext == fresh && submitted == fresh);
+            await release.Task.WaitAsync(window.ClosedToken);
+            accepted = state.Accept(generation, submitted, response, DateTimeOffset.UtcNow);
+            if (accepted) window.Dismiss();
+        };
+        state.Observe(new("resolved", process), new("resolved", new StaffObservedSession(process,
+            freshSource.StandardNUserId, freshSource.StandardNSessionId, freshSource.WorkstationId,
+            freshSource.StandardNIin, freshSource.StandardNIinStatus, freshSource.StandardNFullName,
+            freshSource.StandardNFullNameStatus, freshSource.SourceNamespace)));
+        window.UpdateSourceContext(state.CurrentSource); await Idle();
+        Check(proof, "same-user-churn-invalidates-proof-without-another-prompt", state.Generation != generation &&
+            state.CashierGeneration == cashierGeneration && !state.NeedsPrompt(DateTimeOffset.UtcNow));
+        Check(proof, "existing-form-retains-entered-login-and-password", window.IsVisible &&
+            Field<ComboBox>(window, "_mode").SelectedIndex == 0 && Field<TextBox>(window, "_iin").Text == FixtureIin &&
+            Field<PasswordBox>(window, "_password").Password == FixturePassword);
+        Check(proof, "context-change-does-not-send-credentials", starts == 0 && handler.TotalCalls == 0 && !Busy(window));
+        Click(Field<Button>(window, "_submit")); await Until(() => parentWaiting);
+        Check(proof, "explicit-submit-sends-one-request-with-fresh-device-context", starts == 1 &&
+            handler.DeviceLoginCalls == 1 && handler.DeviceBodyMatched && handler.TotalCalls == 1 && handler.UnexpectedCalls == 0);
+        Check(proof, "parent-handoff-keeps-window-and-input-until-accepted", window.IsVisible && Busy(window) &&
+            state.Grant == null && Field<TextBox>(window, "_iin").Text == FixtureIin &&
+            Field<PasswordBox>(window, "_password").Password == FixturePassword);
+        release.TrySetResult(); await Until(() => !Busy(window));
+        Check(proof, "fresh-context-parent-acceptance-closes-and-authenticates", accepted && !window.IsVisible &&
+            state.IsAuthenticated(DateTimeOffset.UtcNow));
+        Check(proof, "accepted-close-clears-password-without-replay", Field<PasswordBox>(window, "_password").Password.Length == 0 &&
+            handler.TotalCalls == 1 && starts == 1);
     }
     private static async Task DeviceServiceFailure(bool sms, Dictionary<string, bool> proof)
     {

@@ -90,19 +90,19 @@ namespace CustomerDisplay.Core.Tests
         }
 
         [Fact]
-        public async Task RecoveryExpiresFromFirstFailureAndReopensOnlyOneClosablePrompt()
+        public async Task RecoveryExpiresFromFirstFailureWithoutReopeningForTheSameCashier()
         {
             using var http = new StaffHttp(); using var shell = new MainWindow();
-            shell.ConfigureStaffTest(http); await shell.AcceptStaffTest(); shell.StaffCapabilityOutageTest();
+            shell.ConfigureStaffTest(http, knownSource: true); await shell.AcceptStaffTest(); shell.StaffCapabilityOutageTest();
             var deadline = shell.StaffStateTest.RecoveryDeadline;
             shell.AdvanceStaffTest(TimeSpan.FromSeconds(61)); shell.StaffCapabilityOutageTest();
             Assert.Equal(deadline, shell.StaffStateTest.RecoveryDeadline);
             // Real loop order: capability failure arrives BEFORE source observation.
             shell.AdvanceStaffTest(TimeSpan.FromSeconds(60)); shell.StaffCapabilityOutageTest(); shell.ObserveStaffTest();
-            Assert.Null(shell.StaffStateTest.Grant); var prompt = shell.StaffWindowTest;
-            Assert.NotNull(prompt); Assert.False(prompt.Required);
-            shell.ObserveStaffTest(); Assert.Same(prompt, shell.StaffWindowTest);
-            prompt.Close(); shell.ObserveStaffTest(); Assert.Null(shell.StaffWindowTest);
+            Assert.Null(shell.StaffStateTest.Grant); Assert.Null(shell.StaffWindowTest);
+            shell.AdvanceStaffTest(TimeSpan.FromMinutes(30)); shell.StaffCapabilityHealthyTest(); shell.ObserveStaffTest();
+            Assert.Null(shell.StaffWindowTest); Assert.False(shell.StaffVerifiedTest);
+            shell.OpenStaffManuallyTest(); Assert.NotNull(shell.StaffWindowTest); Assert.False(shell.StaffWindowTest.Required);
             shell.StopStaffTest();
         }
 
@@ -130,12 +130,14 @@ namespace CustomerDisplay.Core.Tests
         [Theory]
         [InlineData(401)]
         [InlineData(403)]
-        public async Task DefinitiveDenialClearsTheGrantWithoutRepeatingTheRecentPrompt(int status)
+        public async Task DefinitiveDenialClearsTheGrantWithoutReopeningAfterThirtyMinutes(int status)
         {
             using var http = new StaffHttp(); using var shell = new MainWindow();
-            shell.ConfigureStaffTest(http); await shell.AcceptStaffTest(); http.Status = (HttpStatusCode)status;
+            shell.ConfigureStaffTest(http, knownSource: true); await shell.AcceptStaffTest(); http.Status = (HttpStatusCode)status;
             await shell.ValidateStaffTest();
             Assert.Null(shell.StaffStateTest.Grant); Assert.Null(shell.StaffWindowTest);
+            shell.AdvanceStaffTest(TimeSpan.FromMinutes(30)); shell.ObserveStaffTest();
+            Assert.Null(shell.StaffWindowTest); Assert.False(shell.StaffVerifiedTest);
             shell.OpenStaffManuallyTest(); Assert.NotNull(shell.StaffWindowTest);
             shell.StopStaffTest();
         }
@@ -165,19 +167,19 @@ namespace CustomerDisplay.Core.Tests
             }
             shell.ObserveStaffTest();
             shell.AdvanceStaffTest(TimeSpan.FromMinutes(3)); shell.ObserveStaffTest();
-            Assert.Null(shell.StaffWindowTest); // No queued surprise when the cooldown expires.
+            Assert.Null(shell.StaffWindowTest); // Same-user process churn cannot queue a later prompt.
             shell.OpenStaffManuallyTest(); Assert.NotNull(shell.StaffWindowTest);
             shell.StopStaffTest();
         }
 
         [Fact]
-        public void NewSessionAfterCooldownOffersExactlyOneOptionalPrompt()
+        public void NewProcessForTheSameCashierDoesNotReopenAfterThirtyMinutes()
         {
             using var http = new StaffHttp(); using var shell = new MainWindow();
-            shell.ConfigureStaffTest(http); shell.StaffWindowTest!.Close();
-            shell.AdvanceStaffTest(TimeSpan.FromMinutes(2)); shell.InvalidateStaffTest("process");
-            var prompt = shell.StaffWindowTest; Assert.NotNull(prompt); Assert.False(prompt.Required);
-            prompt.Close(); shell.InvalidateStaffTest("process"); Assert.Null(shell.StaffWindowTest);
+            shell.ConfigureStaffTest(http, knownSource: true); shell.StaffWindowTest!.Close();
+            shell.AdvanceStaffTest(TimeSpan.FromMinutes(30)); shell.InvalidateStaffTest("process");
+            shell.ObserveStaffTest(); Assert.Null(shell.StaffWindowTest);
+            shell.OpenStaffManuallyTest(); Assert.NotNull(shell.StaffWindowTest); Assert.False(shell.StaffWindowTest.Required);
         }
 
         [Fact]
@@ -311,9 +313,8 @@ namespace CustomerDisplay.Core.Tests
             Assert.Null(shell.StaffStateTest.Grant); Assert.False(shell.StaffVerifiedTest);
             Assert.True(shell.StaffStateTest.RecoveryExpired); Assert.Null(shell.StaffWindowTest);
             Assert.Equal(0, http.Validations);
-            shell.ObserveStaffTest(); var prompt = shell.StaffWindowTest;
-            Assert.NotNull(prompt); Assert.False(prompt.Required); Assert.False(shell.StaffVerifiedTest);
-            prompt.Close(); shell.ObserveStaffTest(); Assert.Null(shell.StaffWindowTest);
+            shell.ObserveStaffTest(); Assert.Null(shell.StaffWindowTest); Assert.False(shell.StaffVerifiedTest);
+            shell.OpenStaffManuallyTest(); Assert.NotNull(shell.StaffWindowTest); Assert.False(shell.StaffWindowTest.Required);
         }
 
         [Theory]
@@ -338,7 +339,7 @@ namespace CustomerDisplay.Core.Tests
         }
 
         [Fact]
-        public async Task PartialProcessUncertaintyCannotExtendRecoveryOrOpenAWindowWithoutTrustedProof()
+        public async Task PartialProcessUncertaintyCannotExtendRecoveryOrReopenForTheSameCashier()
         {
             using var http = new StaffHttp(); using var shell = new MainWindow();
             shell.ConfigureStaffTest(http); await shell.AcceptStaffTest(); await shell.ValidateStaffTest();
@@ -352,8 +353,8 @@ namespace CustomerDisplay.Core.Tests
             Assert.False(shell.StaffVerifiedTest); Assert.Null(shell.StaffWindowTest);
             Assert.Equal(1, http.Validations); Assert.Equal(0, http.Logouts);
             Assert.True(shell.ObserveStaffProcessTest(shell.StaffPresenceTest));
-            var prompt = shell.StaffWindowTest; Assert.NotNull(prompt); Assert.False(prompt.Required);
-            prompt.Close(); shell.ObserveStaffProcessTest(shell.StaffPresenceTest); Assert.Null(shell.StaffWindowTest);
+            Assert.Null(shell.StaffWindowTest); Assert.False(shell.StaffVerifiedTest);
+            shell.OpenStaffManuallyTest(); Assert.NotNull(shell.StaffWindowTest); Assert.False(shell.StaffWindowTest.Required);
         }
 
         [Fact]
@@ -392,6 +393,72 @@ namespace CustomerDisplay.Core.Tests
             shell.StaffCapabilityOutageTest(); shell.StaffCapabilityHealthyTest(); shell.ObserveStaffTest();
             Assert.Equal("pending_approval", shell.StaffAuthenticationStatus);
             Assert.Null(shell.StaffWindowTest); Assert.Null(shell.StaffStateTest.Grant); shell.StopStaffTest();
+        }
+
+        [Fact]
+        public void UnknownInitialNativeUserDoesNotAutomaticallyOpenButTrayLoginRemainsAvailable()
+        {
+            using var http = new StaffHttp(); using var shell = new MainWindow();
+            shell.ConfigureStaffTest(http, openUnknownForm: false);
+            Assert.Null(shell.StaffWindowTest); Assert.Null(shell.StaffStateTest.Context!.StandardNContext);
+            shell.AdvanceStaffTest(TimeSpan.FromMinutes(30)); shell.ObserveStaffTest(); Assert.Null(shell.StaffWindowTest);
+            shell.OpenStaffManuallyTest(); Assert.NotNull(shell.StaffWindowTest); Assert.False(shell.StaffWindowTest.Required);
+            shell.StopStaffTest();
+        }
+
+        [Fact]
+        public void FirstConfirmedCashierAndSwitchAwayAndBackEachOpenOnceEvenWithinTwoMinutes()
+        {
+            using var http = new StaffHttp(); using var shell = new MainWindow();
+            shell.ConfigureStaffTest(http, openUnknownForm: false);
+            shell.ObserveStaffSourceTest(); var first = shell.StaffWindowTest;
+            Assert.NotNull(first); Assert.Equal(1, shell.StaffStateTest.CashierGeneration);
+            shell.AdvanceStaffTest(TimeSpan.FromSeconds(2)); shell.ObserveStaffSourceTest("other-user");
+            var second = shell.StaffWindowTest;
+            Assert.NotNull(second); Assert.NotSame(first, second); Assert.False(first.IsVisible);
+            Assert.Equal(2, shell.StaffStateTest.CashierGeneration);
+            shell.AdvanceStaffTest(TimeSpan.FromSeconds(2)); shell.ObserveStaffSourceTest();
+            var third = shell.StaffWindowTest;
+            Assert.NotNull(third); Assert.NotSame(second, third); Assert.False(second.IsVisible);
+            Assert.Equal(3, shell.StaffStateTest.CashierGeneration);
+            shell.ObserveStaffTest(); Assert.Same(third, shell.StaffWindowTest);
+            third.Close(); shell.ObserveStaffTest(); Assert.Null(shell.StaffWindowTest); shell.StopStaffTest();
+        }
+
+        [Fact]
+        public async Task ThirtyMinutePollAndGrantExpiryNeverReopenForAnUnchangedNativeUser()
+        {
+            using var http = new StaffHttp(); using var shell = new MainWindow();
+            shell.ConfigureStaffTest(http, knownSource: true); await shell.AcceptStaffTest();
+            var cashierGeneration = shell.StaffStateTest.CashierGeneration;
+            shell.AdvanceStaffTest(TimeSpan.FromMinutes(30)); shell.ObserveStaffTest(); await shell.ValidateStaffTest();
+            Assert.True(shell.StaffVerifiedTest); Assert.Null(shell.StaffWindowTest);
+            shell.AdvanceStaffTest(TimeSpan.FromHours(8)); shell.ObserveStaffTest();
+            Assert.False(shell.StaffVerifiedTest); Assert.Null(shell.StaffStateTest.Grant); Assert.Null(shell.StaffWindowTest);
+            Assert.Equal(cashierGeneration, shell.StaffStateTest.CashierGeneration); shell.StopStaffTest();
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task OpenFormSurvivesSessionOrProcessChurnRejectsOldCompletionAndExplicitlyRetriesCurrentContext(bool processChanged)
+        {
+            using var http = new StaffHttp(); using var shell = new MainWindow();
+            shell.ConfigureStaffTest(http, knownSource: true); var window = shell.StaffWindowTest!;
+            var previous = shell.StaffStateTest.Context!;
+            var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var oldCompletion = window.Reply(new("authenticated", "old-synthetic-grant", http.ExpiresAt,
+                new("synthetic-person", "Synthetic Person"), DeviceContext: previous), hold.Task);
+            Assert.True(window.IsRequestPending);
+            shell.ObserveStaffSourceTest(session: "renewed-session", process: processChanged ? "43:639296064000000001" : null);
+            Assert.Same(window, shell.StaffWindowTest); Assert.True(window.IsVisible);
+            Assert.Equal(previous, window.DeviceContext); // No background mutation of an in-flight request.
+            hold.SetResult(); await oldCompletion;
+            Assert.False(shell.StaffVerifiedTest); Assert.Null(shell.StaffStateTest.Grant);
+            Assert.Same(window, shell.StaffWindowTest); Assert.True(window.IsVisible); Assert.Equal(1, http.Logouts);
+            await shell.AcceptStaffTest();
+            Assert.True(shell.StaffVerifiedTest); Assert.Equal(shell.StaffStateTest.Context, window.DeviceContext);
+            Assert.Null(shell.StaffWindowTest); Assert.Equal(1, http.Logouts); shell.StopStaffTest();
         }
     }
 
@@ -433,29 +500,35 @@ namespace CustomerDisplay
     public partial class MainWindow
     {
         private DateTimeOffset _staffTestNow = DateTimeOffset.Parse("2026-11-10T00:00:00Z");
-        private readonly StaffTestMonotonicTime _staffTestTime = new();
         private StaffSessionObservation _staffTestObservation = new("database_unavailable");
         private const string StaffTestProcess = "42:639296064000000000";
+        private string _staffTestCurrentProcess = StaffTestProcess;
         private System.Windows.Forms.Screen PharmacistScreen() => new();
-        internal StaffProcessPresence StaffPresenceTest => new("resolved", StaffTestProcess);
+        internal StaffProcessPresence StaffPresenceTest => new("resolved", _staffTestCurrentProcess);
         internal StaffDeviceSessionState StaffStateTest => _staffSession;
         internal bool StaffVerifiedTest => _staffSession.IsAuthenticated(_staffTestNow);
         internal StaffAuthWindow? StaffWindowTest => _staffWindow;
         internal Func<StaffProcessPresence> StaffProbeTest { set => _staffProcessProbe = value; }
-        internal void ConfigureStaffTest(Core.Tests.StaffHttp http, bool knownSource = false)
+        internal void ConfigureStaffTest(Core.Tests.StaffHttp http, bool knownSource = false, bool openUnknownForm = true)
         {
             _staffClock = () => _staffTestNow; _staffProcessProbe = () => StaffPresenceTest;
-            _staffPromptThrottle = new(_staffTestTime);
             if (knownSource) _staffTestObservation = new("resolved", new(StaffTestProcess, "user-1", "session-1", "workstation-1", "000101500011", "available"));
             http.ExpiresAt = _staffTestNow.AddHours(8);
             _staffClient = new StaffAuthClient(new EpharmConfig {
                 BackendBaseUrl = "https://staff.invalid", DeviceId = "synthetic-device", DeviceKey = "synthetic-key",
             }, http);
             SetStaffCapability(true); ObserveStaffTest();
+            if (!knownSource && openUnknownForm) OpenStaffWindow(activate: true);
         }
         internal Task AcceptStaffTest() => _staffWindow!.Reply(new("authenticated", "synthetic-grant-not-valid-on-any-server",
             _staffTestNow.AddHours(8), new("synthetic-person", "Synthetic Person"), DeviceContext: _staffSession.Context));
         internal void ObserveStaffTest() => ApplyStaffObservation(StaffPresenceTest, _staffTestObservation);
+        internal void ObserveStaffSourceTest(string user = "user-1", string session = "session-1", string workstation = "workstation-1", string? process = null)
+        {
+            if (process != null) _staffTestCurrentProcess = process;
+            _staffTestObservation = new("resolved", new(_staffTestCurrentProcess, user, session, workstation, "000101500011", "available"));
+            ObserveStaffTest();
+        }
         internal bool ObserveStaffProcessTest(StaffProcessPresence process) => ApplyStaffProcessObservation(process,
             process.Status == "resolved" ? _staffTestObservation : new(process.Status));
         internal void UnconfirmedStaffProcessTest() => ApplyUnconfirmedStaffProcess();
@@ -472,16 +545,9 @@ namespace CustomerDisplay
         internal void StaffCapabilityOutageTest() => ApplyStaffCapability(new(false, "endpoint_unavailable"));
         internal void StaffCapabilityHealthyTest() => ApplyStaffCapability(new(true, "enabled", false));
         internal Task LogoutStaffTest() => LogoutStaff();
-        internal void AdvanceStaffTest(TimeSpan elapsed) { _staffTestNow += elapsed; _staffTestTime.Ticks += elapsed.Ticks; }
+        internal void AdvanceStaffTest(TimeSpan elapsed) => _staffTestNow += elapsed;
         internal void OpenStaffManuallyTest() => OpenStaffWindow(activate: true);
         internal void StopStaffTest() => StopStaffAuthentication();
-        private sealed class StaffTestMonotonicTime : TimeProvider
-        {
-            public long Ticks;
-            public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-            public override long GetTimestamp() => Ticks;
-        }
-
     }
 
     // The real window is independently exercised by App.Ui.Tests. These boundaries
@@ -490,7 +556,7 @@ namespace CustomerDisplay
     {
         public StaffAuthWindow(StaffAuthClient client, StaffAuthContext? context, System.Windows.Forms.Screen screen,
             string? sessionReason = null, bool requireSignIn = false, StaffDeviceContext? deviceContext = null,
-            bool registrationSmsRequired = true, bool kazakh = false) { Required = requireSignIn; Closed += (_, _) => _stop.Cancel(); }
+            bool registrationSmsRequired = true, bool kazakh = false) { Required = requireSignIn; DeviceContext = deviceContext; Closed += (_, _) => _stop.Cancel(); }
         private readonly CancellationTokenSource _stop = new();
         public event Action<bool>? LanguageChanged { add { } remove { } }
         public event Action? AuthenticationStarted;
@@ -503,14 +569,16 @@ namespace CustomerDisplay
         public bool WasDismissed { get; private set; }
         public string? ReleaseMessage { get; private set; }
         public string? ReleaseKazakhMessage { get; private set; }
-        public async Task Reply(StaffAuthResponse response)
+        public StaffDeviceContext? DeviceContext { get; private set; }
+        public async Task Reply(StaffAuthResponse response, Task? beforeCompletion = null)
         {
             IsRequestPending = true; AuthenticationStarted?.Invoke();
-            try { await AuthenticationCompletion!(response); } finally { IsRequestPending = false; }
+            try { if (beforeCompletion != null) await beforeCompletion; await AuthenticationCompletion!(response); } finally { IsRequestPending = false; }
         }
         public void Pending() { AssignmentPending?.Invoke(); ReleaseWork(); }
         public void SetRegistrationSmsRequired(bool required) { }
         public void UpdateSourceContext(StaffAuthContext? context) { }
+        public void UpdateDeviceContext(StaffDeviceContext context) => DeviceContext = context;
         public void ReleaseWork(string? message = null, string? kazakhMessage = null)
         {
             Required = false;

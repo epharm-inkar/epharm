@@ -16,13 +16,11 @@ public partial class MainWindow
     private StandardNDbLookup? _staffLookup;
     private readonly StaffDeviceSessionState _staffSession = new();
     private readonly StaffProcessStability _staffProcessStability = new();
-    private StaffPromptThrottle _staffPromptThrottle = new();
     private readonly CancellationTokenSource _staffStop = new();
     private System.Windows.Forms.NotifyIcon? _staffTray;
     private StaffAuthWindow? _staffWindow;
     private Window? _staffStatusWindow;
     private volatile bool _staffEnabled;
-    private bool _staffCapabilityUnavailable;
     private bool _staffRegistrationSmsRequired = true;
     private bool _staffKazakh;
     private DateTimeOffset _staffLastValidation;
@@ -188,13 +186,18 @@ public partial class MainWindow
         _staffSession.IsAuthenticated(_staffClock());
         var oldToken = _staffSession.Grant;
         var oldSource = _staffSession.LastKnownSource;
+        var oldCashierGeneration = _staffSession.CashierGeneration;
         if (_staffSession.Observe(process, observation))
         {
-            _staffWindow?.Dismiss(); _staffStatusWindow?.Close();
+            _staffStatusWindow?.Close();
             _staffLastValidation = DateTimeOffset.MinValue;
             if (oldToken != null) _ = RevokeOldStaffGrant(oldToken);
             Log("Кассовый процесс или подтверждённая сессия сотрудника ePharm изменились.");
         }
+        // Only a confirmed different native user (or confirmed cashier exit) closes
+        // an unfinished form. Session/PID churn must not discard the entered fields.
+        if (process.Status == "no_process" || oldCashierGeneration > 0 && oldCashierGeneration != _staffSession.CashierGeneration)
+            _staffWindow?.Dismiss();
         // Bind the first reliable source promptly, without treating temporary DB loss as an account switch.
         if (_staffSession.LastKnownSource != oldSource) _staffLastValidation = DateTimeOffset.MinValue;
         // Presentation follows the CURRENT source, not the last reliable binding retained
@@ -207,9 +210,6 @@ public partial class MainWindow
         RefreshStaffStatus();
         if (_staffSession.NeedsPrompt(_staffClock()))
         {
-            // Consume this generation even when presentation is throttled. A changed
-            // process still invalidates authentication immediately, but must not cause
-            // repeated windows or a delayed popup while the cashier is working.
             _staffSession.MarkPrompted();
             OpenStaffWindow();
         }
@@ -246,16 +246,14 @@ public partial class MainWindow
         }
         if (_staffSession.IsAuthenticated(_staffClock()))
         {
-            ShowStaffStatus(StaffText("Вы уже вошли в ePharm. Для смены сотрудника завершите или отмените текущий чек, полностью закройте АРМ Кассир Стандарт-Н крестиком и запустите его снова. Войдите под своим ИИН. Если окно не открылось, выберите «Вход / регистрация сотрудника» через значок ePharm в трее.",
-                "Сіз ePharm жүйесіне кірдіңіз. Қызметкерді ауыстыру үшін ағымдағы чекті аяқтаңыз немесе жойыңыз, Standard-N кассир бағдарламасын айқышпен толық жауып, қайта іске қосыңыз. Өз ЖСН-іңізбен кіріңіз. Терезе ашылмаса, трейдегі ePharm белгішесінен «Қызметкердің кіруі / тіркелуі» тармағын таңдаңыз."));
+            ShowStaffStatus(StaffText("Вы уже вошли в ePharm. Повторный вход сейчас не нужен. При смене сотрудника войдите в Стандарт-Н под пользователем новой смены: после определения нового пользователя окно ePharm появится автоматически. Вход также доступен через значок ePharm в трее.",
+                "Сіз ePharm жүйесіне кірдіңіз. Қазір қайта кіру қажет емес. Қызметкер ауысқанда Standard-N жүйесіне жаңа ауысымның есептік жазбасымен кіріңіз: жаңа пайдаланушы анықталған соң ePharm терезесі автоматты түрде ашылады. Трейдегі ePharm белгішесі арқылы да кіруге болады."));
             return;
         }
         var context = _staffSession.Context;
         if (context == null) { if (activate) ShowStaffStatus(ExplainStaffObservation(_staffSession.Observation.Status)); return; }
         if (_staffWindow == null)
         {
-            if (!activate && !_staffPromptThrottle.TryShowAutomatically()) return;
-            if (activate) _staffPromptThrottle.RecordShown();
             var generation = _staffSession.Generation;
             _staffSession.MarkPrompted();
             var window = new StaffAuthWindow(_staffClient, context.StandardNContext, PharmacistScreen(),
@@ -263,8 +261,15 @@ public partial class MainWindow
                 requireSignIn: false,
                 deviceContext: context, registrationSmsRequired: _staffRegistrationSmsRequired, kazakh: _staffKazakh);
             window.LanguageChanged += kazakh => { _staffKazakh = kazakh; RefreshStaffStatus(); };
-            window.AuthenticationStarted += () => generation = _staffWindow == window && _staffSession.ProcessInstanceId == context.ProcessInstanceId
-                ? _staffSession.Generation : -1;
+            window.AuthenticationStarted += () => {
+                // Refresh only on explicit submit, never replay credentials after a
+                // source/process change or replace the context of an in-flight request.
+                if (_staffWindow == window && _staffSession.Context is { } current) {
+                    context = current; generation = _staffSession.Generation;
+                    window.UpdateDeviceContext(current);
+                }
+                else generation = -1;
+            };
             window.AuthenticationCompletion = response => CompleteStaffAuthentication(window, generation, context, response);
             window.AssignmentPending += () => {
                 if (_staffWindow == window && _staffSession.ProcessInstanceId == context.ProcessInstanceId) {
@@ -296,15 +301,12 @@ public partial class MainWindow
             _staffWindow?.SetRegistrationSmsRequired(required);
         }
         var unavailable = capability.Status is "network_unavailable" or "endpoint_unavailable";
-        var recovering = _staffCapabilityUnavailable && capability.Enabled;
-        _staffCapabilityUnavailable = unavailable;
         if (_staffEnabled && unavailable) {
             BypassStaffPrompt(StaffPromptBypassReason.ServiceUnavailable, backgroundCheck: true);
             return;
         }
         SetStaffCapability(capability.Enabled);
         if (!capability.Enabled) SetStaffAuthenticationStatus(capability.Status);
-        else if (recovering && _staffWindow == null) _staffSession.AllowServiceRecoveryPrompt();
     }
 
     private async Task CompleteStaffAuthentication(StaffAuthWindow window, long generation, StaffDeviceContext context, StaffAuthResponse response)
@@ -373,8 +375,7 @@ public partial class MainWindow
         }
         if (reason == StaffPromptBypassReason.ServiceUnavailable && _staffSession.RecoveryExpired)
         {
-            // Capability is polled before source observation. Do not replace the
-            // expiry's pending one-shot prompt with a permanent bypass here.
+            // Capability polling must neither restart recovery nor re-arm presentation.
             RefreshStaffStatus(); return;
         }
         var token = _staffSession.Grant;

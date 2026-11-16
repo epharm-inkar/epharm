@@ -5,6 +5,28 @@ Path: `App/` and `Models/`.
 Current client is C#/WPF/.NET 10. Older Electron references are historical and no longer describe the
 implementation.
 
+## Cashier-driven RPS presentation — 2026-11-16
+
+Automatic sign-in presentation is independent of the security grant lifecycle. POSM
+opens one ordinary, closable form for the first reliably resolved Standard-N USER,
+then for a different confirmed USER (including A → B → A). A conflicting known
+source database namespace also establishes a different identity domain. Changes to
+native SESSION, workstation, process PID/set, IIN/name diagnostics, grant expiry,
+401/403, transport recovery or capability polling do not re-arm automatic presentation.
+The last confirmed presentation identity survives temporary unknown observations.
+An unknown native user never proves a switch: cashier operation continues and the
+tray provides explicit sign-in/registration. Restarting POSM starts a new observation
+lifetime; this is not persistent employee authentication across app restarts.
+
+A same-user technical context change retains the open form and its in-memory fields.
+Only a new explicit submission refreshes its process/source context; credentials are
+never replayed. A confirmed different employee or confirmed process exit dismisses
+and clears the old form. Strict authorization generations, stale-response rejection,
+revocation, eight-hour server expiry and the bounded two-minute unverified recovery
+remain unchanged. Suppressing a popup never authorizes an expired grant or a bonus.
+New-employee registration stays SMS-free. Backend, data, `/learn` and the public
+domain are unchanged. Tests/release evidence are recorded in the current PLAN entry.
+
 ## Post-release hardening candidate — 2026-11-15
 
 The new-employee registration form contains no SMS wording, request button or code

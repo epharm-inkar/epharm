@@ -19,8 +19,8 @@ namespace CustomerDisplay;
 public sealed class StaffAuthWindow : Window
 {
     private readonly StaffAuthClient _client;
-    private readonly StaffAuthContext? _context;
-    private readonly StaffDeviceContext? _deviceContext;
+    private StaffAuthContext? _context;
+    private StaffDeviceContext? _deviceContext;
     private readonly StaffRegistrationPolicy _registrationPolicy = new();
     private readonly string _sessionRequiredMessage;
     private readonly string _sessionRequiredMessageKk;
@@ -141,6 +141,13 @@ public sealed class StaffAuthWindow : Window
     public bool IsRequestPending => _busy;
     public CancellationToken ClosedToken => _stop.Token;
     public void Dismiss() { _dismissAllowed = true; Close(); }
+
+    /// <summary>Called synchronously at explicit submit, before sending credentials.</summary>
+    public void UpdateDeviceContext(StaffDeviceContext context)
+    {
+        _deviceContext = context;
+        _context = context.StandardNContext;
+    }
 
     /// <summary>Fail-open releases presentation, not the filled form or an outstanding SMS challenge.</summary>
     public void ReleaseWork(string? message = null, string? kazakhMessage = null)
