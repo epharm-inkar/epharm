@@ -2,6 +2,20 @@
 
 Database: PostgreSQL 16.
 
+Candidate V107 (`promo_unlimited_budget`) adds `promos.budget_unlimited BOOLEAN NOT
+NULL DEFAULT FALSE`. It does not enable existing campaigns or alter budget/spend.
+All monetary writers and the admin must be upgraded and verified before an approved
+campaign is explicitly switched. Mixed old/new writers are not a supported unlimited
+rollout: older binaries treat zero as exhausted/invalid and may not expose the mode.
+The two financial feature flags, approved campaign IDs and sale/user evidence remain
+separate release gates. Do not enable all zero-budget rows with a bulk predicate.
+
+Rollback must preserve the column, spent totals and reservations. Before returning
+to a capped policy, use the guarded update with a cap covering committed spend;
+otherwise stop new credits through the existing controlled release procedure. Do
+not drop the flag, reset spend or replay receipts as a rollback. PostgreSQL migration,
+prepared-publication and concurrent-credit tests must pass for the candidate SHA.
+
 Candidate V106 (`historical_staff_source_proofs`) adds a minimal, bounded archive for
 receipt-time source authorization. Hourly cleanup atomically removes expired device
 login grants and archives only verified source proof. The existing 24-hour post-expiry

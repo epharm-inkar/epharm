@@ -1,5 +1,24 @@
 # Backend
 
+## Explicit campaign funding mode — candidate 2026-11-16
+
+`PromoDto` and create accept `budgetUnlimited=false` by default; update accepts a
+nullable flag, where omission preserves the stored mode. Changes require
+`MotivationPermissions.configureBonus` through the existing permission policy. Prepared
+publication freezes the selected mode; old limited-draft fingerprints remain valid,
+but a published mode change invalidates a stale prepared draft. The changes response
+exposes `canConfigureBudget`; this UI hint does not replace server authorization.
+
+The evidence-bound recommendation reward writer reads budget, mode and spend under
+the existing campaign row lock. Only explicit true bypasses a finite cap; limited
+zero still refuses payment. Every new reservation increments `spent` exactly once,
+including unlimited campaigns. Overflow goes to HQ (`reward_budget_overflow`), not
+an overflowing SQL update. Existing identity, payment, return and retry guards stay
+in force. Atomic funding updates prevent a switch to a cap below committed spend;
+fresh scalar state under the lock prevents stale ORM data from resetting the mode.
+No legacy writer is silently converted, no financial flag is enabled, and no past
+receipt is replayed by this feature. See database rollout notes before enabling it.
+
 ## Financial product identity — repeated audit candidate 2026-11-16
 
 Ordinary sale items and attribution retain general catalog resolution for diagnostics.

@@ -253,6 +253,24 @@ describe('PromoPage — отображение списка', () => {
     expect(screen.getByText('Майская кампания')).toBeInTheDocument()
   })
 
+  it.each(['grid', 'list'])('безлимитная кампания в режиме %s сохраняет расходы без фиктивного процента или лимита', (mode) => {
+    localStorage.setItem('epharm.promoView', mode)
+    setPromosResponse([mkPromo({ budget: 12345, budgetUnlimited: true, spent: 3210 })])
+    renderPromo()
+    expect(screen.getByText('Без лимита: 1 кампаний')).toBeInTheDocument()
+    expect(screen.getByText('Сумма ограниченных бюджетов')).toBeInTheDocument()
+    expect(screen.getByText(/3 210 ₸ \/ Без лимита бюджета/)).toBeInTheDocument()
+    expect(screen.queryByText(/26%/)).not.toBeInTheDocument()
+    expect(screen.queryByText('12 345 ₸')).not.toBeInTheDocument()
+  })
+
+  it('нулевой бюджет старого API не становится безлимитным', () => {
+    setPromosResponse([mkPromo({ budget: 0, spent: 0 })])
+    renderPromo()
+    expect(screen.getByTestId('promo-card-pr_001')).toHaveTextContent('0 ₸ / 0 ₸')
+    expect(screen.queryByText('Без лимита бюджета')).not.toBeInTheDocument()
+  })
+
   it('метрики корректно считают активные кампании и бюджет', () => {
     setPromosResponse([
       mkPromo({ id: 'pr_1', status: 'active', budget: 1_000_000, spent: 500_000 }),
@@ -448,6 +466,7 @@ describe('PromoPage — trigger-first campaign creation', () => {
         }),
       }),
     )
+    expect(mutateAsync.mock.calls[0][0].budgetUnlimited).not.toBe(true)
     expect(screen.getByTestId('location-probe')).toHaveTextContent('/promo/pr_new')
   })
 

@@ -1,4 +1,5 @@
 import type { RewardState } from './recommendation-rewards-api'
+import { translate, type Lang } from '@/i18n'
 
 export const rewardStates: Record<RewardState, string> = {
   waiting_evidence: 'Ожидает доказательств',
@@ -38,6 +39,7 @@ const reasons: Record<string, string> = {
   reward_budget_missing: 'Бюджет акции не задан',
   reward_budget_invalid: 'Бюджет акции требует проверки',
   reward_budget_exhausted: 'Бюджет акции исчерпан',
+  reward_budget_overflow: 'Сумма учтённых расходов выходит за допустимый технический диапазон; требуется проверка HQ',
   employee_unverified: 'Нет подтверждённого сопоставления сотрудника с этой аптекой',
   device_not_enabled: 'На этой кассе автоматические начисления ещё не включены',
   rps_identity_mismatch: 'Подтверждённый сотрудник ePharm не совпадает с получателем бонуса',
@@ -51,6 +53,7 @@ const reasons: Record<string, string> = {
   refund_requires_review: 'Возврат требует отдельной проверки',
   refund_review: 'Возврат требует отдельной проверки',
 }
-export function rewardReason(code: string): string {
+export function rewardReason(code: string, language: Lang = 'ru'): string {
+  if (code === 'reward_budget_overflow') return translate(language, 'budget.overflowReason')
   return reasons[code] ?? `Требуется проверка (${code || 'причина не передана'})`
 }

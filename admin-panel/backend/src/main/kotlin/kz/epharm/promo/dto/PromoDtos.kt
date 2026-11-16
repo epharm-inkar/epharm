@@ -74,6 +74,7 @@ data class PromoDto(
     val createdAt: Instant,
     val updatedAt: Instant,
     val barcodes: List<String> = emptyList(),
+    val budgetUnlimited: Boolean = false,
 ) {
     companion object {
         fun of(e: PromoEntity, effectivePharmacies: Int = e.pharmacies): PromoDto = PromoDto(
@@ -84,6 +85,7 @@ data class PromoDto(
             period = e.period,
             pharmacies = effectivePharmacies,
             budget = e.budget,
+            budgetUnlimited = e.budgetUnlimited,
             spent = e.spent,
             kpi = e.kpi,
             cover = e.cover,
@@ -158,6 +160,7 @@ data class CreatePromoRequest(
     val initialRecommendation: InitialPromoRecommendationDto? = null,
     @field:Size(max = BarcodeNormalizer.MAX_CODES)
     val barcodes: List<String> = emptyList(),
+    val budgetUnlimited: Boolean = false,
 )
 
 /** A single trigger for the first replacement or cross-sell rule of a new campaign. */
@@ -210,4 +213,6 @@ data class UpdatePromoRequest(
     val dateEnd: LocalDate? = null,
     @field:Size(max = BarcodeNormalizer.MAX_CODES)
     val barcodes: List<String>? = null,
+    /** Omission from an older editor must preserve the existing financial mode. */
+    val budgetUnlimited: Boolean? = null,
 )

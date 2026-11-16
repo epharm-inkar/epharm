@@ -292,6 +292,87 @@ class PromoPublicationIntegrationTest {
         assertThat(promos.findById("pub-promo").orElseThrow().spent).isZero()
     }
 
+    @Test fun `explicit unlimited mode is reviewed published and omitted old-editor fields preserve it`() {
+        val initial = state()
+        assertThat(initial.bundle.campaign.budgetUnlimited).isFalse()
+        assertThat(initial.canConfigureBudget).isTrue()
+        val pending = save(initial.bundle.copy(campaign = initial.bundle.campaign.copy(budgetUnlimited = true, budget = 0)))
+        assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isFalse()
+        apply(pending.revision)
+        assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isTrue()
+
+        jdbc.update("update promos set spent=900 where id='pub-promo'")
+        grants(*allGrants().filter { it.action != "configure_bonus" }.toTypedArray())
+        val reopened = state()
+        assertThat(reopened.canConfigureBudget).isFalse()
+        val oldEditor = scripted(reopened.bundle, "Old editor text").let {
+            it.copy(campaign = it.campaign.copy(budgetUnlimited = null))
+        }
+        val textOnly = save(oldEditor)
+        assertThat(textOnly.bundle.campaign.budgetUnlimited).isTrue()
+        apply(textOnly.revision)
+        assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isTrue()
+        assertThat(promos.findById("pub-promo").orElseThrow().spent).isEqualTo(900)
+
+        val attempt = state()
+        request("PUT", "/api/admin/promo/pub-promo/changes", SavePromoChangesRequest(attempt.revision,
+            attempt.bundle.copy(campaign = attempt.bundle.campaign.copy(budgetUnlimited = false, budget = 1000))))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test fun `older editor resave preserves prepared financial mode in both directions before publication`() {
+        // First prepare unlimited over a published capped campaign, then the reverse transition.
+        for (nextMode in listOf(true, false)) {
+            val published = state()
+            assertThat(published.bundle.campaign.budgetUnlimited).isEqualTo(!nextMode)
+            val pending = save(published.bundle.copy(
+                campaign = published.bundle.campaign.copy(budgetUnlimited = nextMode),
+            ))
+            assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isEqualTo(!nextMode)
+
+            val edited = scripted(pending.bundle, "Old editor must keep prepared mode $nextMode").let {
+                it.copy(campaign = it.campaign.copy(budgetUnlimited = null))
+            }
+            val resaved = save(edited, pending.revision)
+            assertThat(resaved.bundle.campaign.budgetUnlimited).isEqualTo(nextMode)
+            assertThat(state().bundle.campaign.budgetUnlimited).isEqualTo(nextMode)
+            assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isEqualTo(!nextMode)
+            apply(resaved.revision)
+            assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isEqualTo(nextMode)
+        }
+    }
+
+    @Test fun `unlimited prepared publication cannot cap below committed spend or silently override a mode change`() {
+        jdbc.update("update promos set budget_unlimited=true,spent=900,budget=0 where id='pub-promo'")
+        val initial = state()
+        val pending = save(initial.bundle.copy(campaign = initial.bundle.campaign.copy(budgetUnlimited = false, budget = 899)))
+        request("POST", "/api/admin/promo/pub-promo/changes/apply", ApplyPromoChangesRequest(pending.revision))
+            .andExpect(status().isConflict)
+        assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isTrue()
+        assertThat(promos.findById("pub-promo").orElseThrow().spent).isEqualTo(900)
+        val corrected = save(pending.bundle.copy(campaign = pending.bundle.campaign.copy(budget = 900)), pending.revision)
+        apply(corrected.revision)
+        assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isFalse()
+        assertThat(promos.findById("pub-promo").orElseThrow().budget).isEqualTo(900)
+
+        val stale = save(scripted(state().bundle, "Do not publish stale financial mode"))
+        jdbc.update("update promos set budget_unlimited=true where id='pub-promo'")
+        assertThat(state().conflict).isTrue()
+        request("POST", "/api/admin/promo/pub-promo/changes/apply", ApplyPromoChangesRequest(stale.revision))
+            .andExpect(status().isConflict)
+        assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isTrue()
+    }
+
+    @Test fun `legacy prepared capped bundle omitting new mode remains applicable without financial reset`() {
+        val pending = save(scripted(state().bundle, "Legacy pending text"))
+        jdbc.update("""update promo_publication_changes
+            set bundle_json=(bundle_json::jsonb #- '{campaign,budgetUnlimited}')::text where promo_id='pub-promo'""")
+        assertThat(state().conflict).isFalse()
+        apply(pending.revision)
+        assertThat(promos.findById("pub-promo").orElseThrow().budgetUnlimited).isFalse()
+        assertThat(rules.findById("pub-rule").orElseThrow().script).isEqualTo("Legacy pending text")
+    }
+
     @Test fun `identical active replacement and crosssell cannot be published but can be corrected without deleting history`() {
         val initial = state().bundle
         val trigger = initial.rules.replacements.single()

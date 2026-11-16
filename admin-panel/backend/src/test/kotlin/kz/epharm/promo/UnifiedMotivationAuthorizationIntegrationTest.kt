@@ -132,11 +132,13 @@ class UnifiedMotivationAuthorizationIntegrationTest {
         val id = json.readTree(change("POST", "/api/admin/promo", body).andExpect(status().isOk)
             .andReturn().response.contentAsString)["id"].asText()
         change("PATCH", "/api/admin/promo/$id", mapOf("title" to "Edited draft", "pharmacistBonus" to 0)).andExpect(status().isOk)
-        for (patch in listOf(mapOf("status" to "active"), mapOf("pharmacistBonus" to 200), mapOf("budget" to 1000))) {
+        for (patch in listOf(mapOf("status" to "active"), mapOf("pharmacistBonus" to 200), mapOf("budget" to 1000),
+            mapOf("budgetUnlimited" to true))) {
             change("PATCH", "/api/admin/promo/$id", patch).andExpect(status().isForbidden)
         }
         assertThat(promos.findById(id).orElseThrow().status).isEqualTo(PromoStatus.draft)
         assertThat(promos.findById(id).orElseThrow().pharmacistBonus).isZero()
+        change("POST", "/api/admin/promo", body + ("budgetUnlimited" to true)).andExpect(status().isForbidden)
     }
 
     @Test fun `publishing and editing live campaign require publication independently from financial permission`() {

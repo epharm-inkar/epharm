@@ -121,12 +121,14 @@ export default function PromoPage() {
 
   const metrics = useMemo(() => {
     const active = promos.filter((p) => p.status === 'active')
-    const totalBudget = promos.reduce((a, p) => a + p.budget, 0)
+    const totalBudget = promos.filter((p) => p.budgetUnlimited !== true).reduce((a, p) => a + p.budget, 0)
+    const unlimitedCount = promos.filter((p) => p.budgetUnlimited === true).length
     const totalSpent = promos.reduce((a, p) => a + p.spent, 0)
     return {
       activeCount: active.length,
       totalCount: promos.length,
       totalBudget,
+      unlimitedCount,
       totalSpent,
       spentPct: totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0,
     }
@@ -205,15 +207,16 @@ export default function PromoPage() {
           icon={<IconPromo size={18} />}
         />
         <Metric
-          label={t('pm.mBudget')}
+          label={t(metrics.unlimitedCount > 0 ? 'budget.finiteTotal' : 'pm.mBudget')}
           value={formatKzt(metrics.totalBudget)}
+          sub={metrics.unlimitedCount > 0 ? t('budget.unlimitedCount', { n: metrics.unlimitedCount }) : undefined}
           accent="blue"
           icon={<IconFinance size={18} />}
         />
         <Metric
           label={t('pm.mSpent')}
           value={formatKzt(metrics.totalSpent)}
-          sub={`${metrics.spentPct}%`}
+          sub={metrics.unlimitedCount === 0 && metrics.totalBudget > 0 ? `${metrics.spentPct}%` : undefined}
           accent="amber"
           icon={<IconArrowUp size={18} />}
         />
@@ -412,10 +415,10 @@ function PromoCard({ promo, onOpen, onToggle, onArchive, onRestore }: PromoCardP
         <div className="mb-1 flex items-center justify-between text-[12px] font-bold">
           <span className="text-ink-500">{t('pm.cardBudget')}</span>
           <span className="num text-ink-900">
-            {formatKzt(promo.spent)} / {formatKzt(promo.budget)}
+            {formatKzt(promo.spent)} / {promo.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(promo.budget)}
           </span>
         </div>
-        <ProgressBar value={promo.spent} max={Math.max(promo.budget, 1)} />
+        {promo.budgetUnlimited !== true && promo.budget > 0 && <ProgressBar value={promo.spent} max={promo.budget} />}
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="truncate text-[12px] font-bold text-ink-700">
             {promo.kpi || t('pm.openDetails')}
@@ -631,10 +634,10 @@ function PromoRow({ promo, onOpen, onToggle, onArchive, onRestore }: PromoRowPro
         <div className="min-w-[150px]">
           <div className="mb-1 flex items-center justify-between gap-2 text-[12px] font-bold">
             <span className="num text-ink-900">
-              {formatKzt(promo.spent)} / {formatKzt(promo.budget)}
+              {formatKzt(promo.spent)} / {promo.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(promo.budget)}
             </span>
           </div>
-          <ProgressBar value={promo.spent} max={Math.max(promo.budget, 1)} />
+          {promo.budgetUnlimited !== true && promo.budget > 0 && <ProgressBar value={promo.spent} max={promo.budget} />}
         </div>
       </td>
       <td className="px-4 py-3">
