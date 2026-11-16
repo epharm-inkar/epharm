@@ -91,7 +91,7 @@ export default function PharmacistsPage() {
   } | null>(null)
   const currentAccount = useUiStore((state) => state.authedUser?.id)
   const adminRole = useUiStore((state) => state.authedUser?.role)
-  const canManageStandardN = adminRole === 'SYSTEM_ADMIN' || adminRole === 'HQ_HEAD'
+  const canManageStandardN = access.canManageStandardNMappings
   const canManageCredentials = canManagePharmacistCredentials(adminRole)
   const personalDataContext = JSON.stringify([currentAccount, adminRole, access.data?.version])
   const personalDataVisible =
@@ -726,7 +726,7 @@ export default function PharmacistsPage() {
           onClose={() => setTrainingProfileId(null)}
         />
       )}
-      {standardNMappingsOpen && (
+      {standardNMappingsOpen && canManageStandardN && (
         <StandardNSellerMappingsModal
           pharmacists={pharmacists}
           onClose={() => setStandardNMappingsOpen(false)}

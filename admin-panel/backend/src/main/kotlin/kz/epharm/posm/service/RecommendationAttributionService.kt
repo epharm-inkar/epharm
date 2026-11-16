@@ -37,7 +37,7 @@ class RecommendationAttributionService(
     fun attributeSale(sale: PosSaleEntity, soldProductIds: Set<String>) {
         if (sale.rewardEvidence?.completion?.status == "refund" || soldProductIds.isEmpty()) return
         val sessionId = sale.sessionId
-        if (sessionId.isNullOrBlank()) return // без сессии корреляции нет — не угадываем по аптеке
+        if (sessionId.isNullOrBlank() || sale.pharmacyId.isBlank()) return
 
         val candidates = eventRepository.findBySessionIdAndSoldAtIsNull(sessionId)
         if (candidates.isEmpty()) return
@@ -46,6 +46,10 @@ class RecommendationAttributionService(
         // shown the same offer for two different scanned products; attributing both would inflate
         // conversion/revenue. Prefer the accepted event, otherwise the most recent actual show.
         val winners = candidates
+            // Receipt IDs are generated at the register, not globally scoped identities.
+            // Unknown sellers still have analytical conversion; conflicting known people do not.
+            .filter { it.pharmacyId == sale.pharmacyId &&
+                (it.pharmacistId.isBlank() || sale.pharmacistId.isBlank() || it.pharmacistId == sale.pharmacistId) }
             .filter { it.recommendSku.isNotBlank() && it.recommendSku in soldProductIds }
             .groupBy { it.recommendSku }
             .values.mapNotNull { group ->
@@ -63,8 +67,10 @@ class RecommendationAttributionService(
             val origin = ev.displayedAt ?: ev.shownAt
             ev.soldAt = sale.printedAt
             ev.saleId = sale.id
-            // clamp >= 0: при расхождении часов кассы и сервера показ мог оказаться «позже» продажи.
-            ev.secondsToSale = Duration.between(origin, sale.printedAt).seconds.coerceAtLeast(0).toInt()
+            // Keep the conversion, but unknown/skewed timings must not become a zero-second sale.
+            // Also avoid wrapping a malformed very large interval into an Int measurement.
+            val duration = Duration.between(origin, sale.printedAt)
+            ev.secondsToSale = duration.seconds.takeIf { !duration.isNegative && it <= Int.MAX_VALUE }?.toInt()
             eventRepository.save(ev)
             attributed++
         }

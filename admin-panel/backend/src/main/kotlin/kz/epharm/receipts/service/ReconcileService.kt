@@ -25,12 +25,12 @@ import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
-import kotlin.math.abs
 
 /**
  * Сверка чеков (ТЗ §3.5). Источники истины — ТОЛЬКО лог Стандарт-Н (программа на C#) +
@@ -55,6 +55,7 @@ class ReconcileService(
     private val jdbc: JdbcTemplate,
     private val entityManager: EntityManager,
     private val rewardCreditPolicy: RecommendationRewardCreditPolicy,
+    private val excelPharmacies: ExcelPharmacyMappingProperties,
 ) {
 
     private val log = LoggerFactory.getLogger(ReconcileService::class.java)
@@ -234,18 +235,36 @@ class ReconcileService(
                 .findAllByPharmacistIdAndSkuAndStatusRawOrderByCreatedAtDesc(
                     input.pharmacistId, item.sku, PendingBonusStatus.awaiting_receipt.name,
                 )
-                .firstOrNull { it.sourceSaleId == null && withinTimeWindow(input.soldAt, it.createdAt) }
+                .firstOrNull {
+                    input.pharmacyId.isNotBlank() && it.pharmacyId == input.pharmacyId &&
+                        it.sourceSaleId == null && withinTimeWindow(input.soldAt, it.createdAt)
+                }
                 ?: continue
             val pending = lockPending(candidate.id) ?: continue
-            if (pending.sourceSaleId != null || pending.status != PendingBonusStatus.awaiting_receipt) continue
+            if (pending.sourceSaleId != null || pending.status != PendingBonusStatus.awaiting_receipt ||
+                pending.pharmacyId != input.pharmacyId || pending.pharmacistId != input.pharmacistId ||
+                pending.sku != item.sku || !withinTimeWindow(input.soldAt, pending.createdAt)) continue
 
             val receipt = receiptRepository.findFirstByPendingBonusId(pending.id)
                 ?.let { loadForDecision(it.id) }
                 ?: newReceiptForPending(pending, input.fiscalId, input.cashier, input.soldAt, item.total)
             if (receipt.status in setOf(ReceiptStatus.approved, ReceiptStatus.rejected)) continue
+            if (receipt.pharmacyId != pending.pharmacyId || receipt.pharmacistId != pending.pharmacistId ||
+                receipt.parsedSku != pending.sku) continue
+            if (fiscalIdsConflict(receipt.fiscalId, input.fiscalId)) continue
 
             receipt.source = ReceiptSource.posm
-            receipt.confirmedByLog = true
+            val amountIssue = sourceAmountIssue(item.total)
+            if (amountIssue != null) {
+                if (receipt.flagReason.isNullOrBlank()) receipt.flagReason = amountIssue
+            } else {
+                // Excel may have arrived first. Compare before marking the log confirmed;
+                // the tolerance denominator is always the log amount, independent of order.
+                if (receipt.confirmedByExcel && !amountWithinTolerance(receipt.parsedAmount, item.total)) {
+                    if (receipt.flagReason.isNullOrBlank()) receipt.flagReason = "amount_mismatch"
+                }
+                receipt.confirmedByLog = true
+            }
             if (receipt.fiscalId.isNullOrBlank()) receipt.fiscalId = input.fiscalId
             if (receipt.parsedCashier.isBlank()) receipt.parsedCashier = input.cashier ?: ""
             if (receipt.parsedAt == null) receipt.parsedAt = input.soldAt
@@ -344,6 +363,10 @@ class ReconcileService(
     /** Сверка одной строки Excel. true если сматчили с pending-бонусом/чеком. */
     @Transactional
     fun ingestExcelRow(row: ExcelRowInput): Boolean {
+        // The parser trims cell boundaries, but codes/SKUs remain exact opaque identifiers.
+        val sku = row.sku?.takeIf { it.isNotBlank() } ?: return false
+        val code = row.pharmacyCode?.takeIf { it.isNotBlank() } ?: return false
+        val pharmacyId = excelPharmacies.resolve(code) ?: return false
         // (1) сильный матч по фискальному номеру
         if (!row.fiscalId.isNullOrBlank()) {
             val candidates = receiptRepository.findAllByFiscalId(row.fiscalId).filter { it.pendingBonusId != null }
@@ -351,43 +374,56 @@ class ReconcileService(
             if (candidates.size > 1) return false
             val existing = candidates.singleOrNull()?.let { loadForDecision(it.id) }
             if (existing != null) {
+                if (existing.fiscalId != row.fiscalId) return false
+                val pending = lockPending(existing.pendingBonusId!!) ?: return false
                 if (existing.status in setOf(ReceiptStatus.approved, ReceiptStatus.rejected) ||
-                    pendingBonusRepository.findById(existing.pendingBonusId!!).orElse(null)?.sourceSaleId != null) return false
+                    pending.sourceSaleId != null || pending.status != PendingBonusStatus.awaiting_receipt) return false
+                if (existing.parsedSku != sku || pending.sku != sku || existing.pharmacyId.isBlank() ||
+                    existing.pharmacyId != pending.pharmacyId || existing.pharmacistId != pending.pharmacistId) return false
+                if (existing.pharmacyId != pharmacyId) return false
                 return applyExcelToReceipt(existing, row)
             }
         }
         // (2) Excel раньше лога — матч по SKU + сумме к единственному подходящему pending
-        val sku = row.sku ?: return false
+        // Without an explicit pharmacy crosswalk SKU+amount is not a scoped proof.
         val amount = row.amount ?: return false
         val candidate = pendingBonusRepository
             .findAllBySkuAndStatusRaw(sku, PendingBonusStatus.awaiting_receipt.name)
             .filter {
-                it.sourceSaleId == null && amountWithinTolerance(amount, it.expectedAmount) &&
+                it.pharmacyId == pharmacyId && it.sourceSaleId == null && amountWithinTolerance(amount, it.expectedAmount) &&
                     receiptRepository.findFirstByPendingBonusId(it.id) == null
             }
             .singleOrNull() ?: return false // только однозначный матч — иначе ждём лог
         val pending = lockPending(candidate.id) ?: return false
-        if (pending.sourceSaleId != null || pending.status != PendingBonusStatus.awaiting_receipt) return false
+        if (pending.sourceSaleId != null || pending.status != PendingBonusStatus.awaiting_receipt ||
+            pending.pharmacyId != pharmacyId || pending.sku != sku ||
+            !amountWithinTolerance(amount, pending.expectedAmount)) return false
 
         val receipt = receiptRepository.findFirstByPendingBonusId(pending.id)?.let { loadForDecision(it.id) }
             ?: newReceiptForPending(pending, row.fiscalId, row.cashier, row.soldAt ?: Instant.now(), amount)
+        if (receipt.pharmacyId != pharmacyId || receipt.parsedSku != sku ||
+            receipt.pharmacistId != pending.pharmacistId) return false
+        if (fiscalIdsConflict(receipt.fiscalId, row.fiscalId)) return false
         return applyExcelToReceipt(receipt, row)
     }
 
     private fun applyExcelToReceipt(receipt: ReceiptEntity, row: ExcelRowInput): Boolean {
         if (receipt.status in setOf(ReceiptStatus.approved,ReceiptStatus.rejected)) return false
         receipt.source = ReceiptSource.posm
-        receipt.confirmedByExcel = true
-        if (receipt.fiscalId.isNullOrBlank()) receipt.fiscalId = row.fiscalId
-        if (receipt.parsedAmount == 0L) row.amount?.let { receipt.parsedAmount = it }
-
-        // Cross-check суммы лог vs Excel — расхождение помечаем на ручную проверку.
         val excelAmount = row.amount
-        if (receipt.confirmedByLog && excelAmount != null && receipt.parsedAmount > 0 &&
-            !amountWithinTolerance(excelAmount, receipt.parsedAmount)
-        ) {
-            receipt.flagReason = "amount_mismatch"
+        val amountIssue = sourceAmountIssue(excelAmount)
+        if (amountIssue != null) {
+            // Retain an exact fiscal match for HQ, but incomplete/nonpositive amounts are
+            // not financial confirmation. Other nullable Excel metadata stays compatible.
+            if (receipt.flagReason.isNullOrBlank()) receipt.flagReason = amountIssue
+        } else {
+            if (receipt.confirmedByLog && !amountWithinTolerance(excelAmount!!, receipt.parsedAmount)) {
+                if (receipt.flagReason.isNullOrBlank()) receipt.flagReason = "amount_mismatch"
+            }
+            receipt.confirmedByExcel = true
         }
+        if (receipt.fiscalId.isNullOrBlank()) receipt.fiscalId = row.fiscalId
+        if (receipt.parsedAmount == 0L && !receipt.confirmedByLog) row.amount?.let { receipt.parsedAmount = it }
         decideFromSources(receipt)
         receiptRepository.save(receipt)
         return true
@@ -398,7 +434,8 @@ class ReconcileService(
         if (receipt.status in setOf(ReceiptStatus.approved,ReceiptStatus.rejected)) return
         val both = receipt.confirmedByLog && receipt.confirmedByExcel
         when {
-            both && receipt.flagReason == "amount_mismatch" -> receipt.status = ReceiptStatus.flagged
+            // A later retry/correction must not silently erase already recorded bad evidence.
+            !receipt.flagReason.isNullOrBlank() -> receipt.status = ReceiptStatus.flagged
             both -> {
                 creditFor(receipt)
                 receipt.status = ReceiptStatus.approved
@@ -484,9 +521,21 @@ class ReconcileService(
         return true
     }
 
+    private fun fiscalIdsConflict(existing: String?, incoming: String?): Boolean =
+        !existing.isNullOrBlank() && !incoming.isNullOrBlank() && existing != incoming
+
     private fun amountWithinTolerance(actual: Long, expected: Long): Boolean {
-        if (expected <= 0) return false
-        return abs(actual - expected) * 100 <= expected * AMOUNT_TOLERANCE_PCT
+        if (actual <= 0 || expected <= 0) return false
+        // No subtraction/multiplication in Long: extreme imported values must fail closed.
+        return BigDecimal.valueOf(actual).subtract(BigDecimal.valueOf(expected)).abs()
+            .multiply(BigDecimal.valueOf(100)) <=
+            BigDecimal.valueOf(expected).multiply(BigDecimal.valueOf(AMOUNT_TOLERANCE_PCT.toLong()))
+    }
+
+    private fun sourceAmountIssue(amount: Long?): String? = when {
+        amount == null -> "amount_missing"
+        amount <= 0 -> "amount_invalid"
+        else -> null
     }
 
     private fun withinTimeWindow(parsedAt: Instant?, posmAt: Instant): Boolean {

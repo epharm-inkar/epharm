@@ -90,6 +90,42 @@ multi-sale replay locks its full sorted recipient/account set before receipt and
 locks. Existing valid payouts are not reversed, and real auto-credit gates remain off
 until a funded campaign and scoped pilot are approved.
 
+Legacy receipt reconciliation accepts financial confirmation only from the existing
+`posm_internal` and `standardn_explicit_mapping` sale identities. Name-only matches
+remain stored analytics, and ordinary RPS attribution still does not enter legacy
+payments. This does not change full reward-evidence authorization or enable money flags.
+Log/Excel amounts must be positive and agree within inclusive 2% of the log amount,
+regardless of arrival order; comparison is overflow-safe. Missing, invalid or conflicting
+amounts retain an exact matched receipt for HQ with `amount_missing`, `amount_invalid`
+or `amount_mismatch`, without granting financial confirmation to invalid evidence.
+No nonblank existing review reason is cleared or bypassed by automatic retries;
+explicit HQ review retains its existing permissions and decision path.
+An Excel-first row lacking a positive amount
+cannot select a pending by amount and remains unmatched until sufficient evidence exists.
+No historical repair, reassignment or automatic backfill is performed.
+
+Legacy log matching also requires the pending reservation's exact pharmacy, seller and
+canonical SKU, rechecked under its row lock. Excel fiscal matching requires an exact
+canonical SKU and consistent receipt/pending pharmacy; a fiscal number is never proof
+of a different product or pharmacy. Conflicting known fiscal IDs from log and Excel cannot confirm
+each other in either arrival order and do not flag the unrelated receipt.
+Nonblank Excel pharmacy codes resolve only through
+the explicit Spring configuration map `epharm.receipts.excel.pharmacy-codes`, whose
+default is empty. Example operator-supplied configuration (synthetic identifiers):
+`epharm.receipts.excel.pharmacy-codes[pilot-export-code]=canonical-pharmacy-id`.
+Use bracketed map keys for opaque codes with punctuation/case; values are canonical
+pharmacy IDs. The parser trims Excel cell boundaries, but the crosswalk never applies
+fuzzy matching, case folding or implicit ID/name/CRM/storefront aliases. Every mapping
+must be verified against the actual export and the canonical pharmacy before rollout.
+Unknown or mismatching supplied codes remain persisted unmatched Excel rows (import
+continues); they neither confirm nor flag an unrelated receipt. Missing codes also
+remain unmatched: a currently unique fiscal number cannot prove the export's pharmacy.
+Both fiscal matching and Excel-first SKU/amount selection require an explicit resolved
+pharmacy mapping. **Rollout gate:** validate and configure the export crosswalk before
+deployment; the empty default deliberately pauses all legacy Excel confirmations until
+verified mappings are supplied. Missing/unknown codes never auto-confirm or credit;
+the raw rows remain available for HQ review. Existing rows are not deleted or replayed.
+
 ## Local candidate: recommendation sale rewards
 
 Optional evidence protocol 1 extends the existing POSM recommend/shown/sales routes;

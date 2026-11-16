@@ -119,7 +119,15 @@ class SourceStaffBindingService(private val jdbc: JdbcTemplate) {
             row["proof_method"] == "NAME" && !uniqueName(person, scope.pharmacy) ||
             (row["created_at"] as Timestamp).toInstant().isAfter(at)) return Resolution(true)
         val instant = Timestamp.from(at)
-        val grants = jdbc.queryForList("""SELECT source_proof_method,source_proof_hash FROM posm_device_staff_sessions
+        val grants = jdbc.queryForList("""SELECT source_proof_method,source_proof_hash FROM (
+            SELECT pharmacist_id,pharmacy_id,device_id,source_namespace,standard_n_user_id,created_at,
+                   source_verified_at,expires_at,revoked_at,password_fingerprint,standard_n_session_id,
+                   workstation_id,source_proof_method,source_proof_hash FROM posm_device_staff_sessions
+            UNION ALL
+            SELECT pharmacist_id,pharmacy_id,device_id,source_namespace,standard_n_user_id,created_at,
+                   source_verified_at,expires_at,revoked_at,password_fingerprint,standard_n_session_id,
+                   workstation_id,source_proof_method,source_proof_hash FROM posm_staff_source_proofs WHERE retained_until>now()
+            ) receipt_proofs
             WHERE pharmacist_id=? AND pharmacy_id=? AND device_id=? AND source_namespace=? AND standard_n_user_id=?
             AND created_at<=? AND source_verified_at<=? AND expires_at>? AND (revoked_at IS NULL OR revoked_at>?)
             AND password_fingerprint=? AND (?::text IS NULL OR standard_n_session_id=?)

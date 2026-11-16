@@ -5,6 +5,11 @@ namespace CustomerDisplay.Services;
 
 internal static class StandardNSellerSource
 {
+    // Missing legacy provenance is not proof of a source switch. Two known, different
+    // namespaces are a contradiction and must stop the receipt, not just omit evidence.
+    internal static bool HasConflictingNamespaces(params string?[] sources) =>
+        sources.Where(source => !string.IsNullOrWhiteSpace(source)).Distinct(System.StringComparer.Ordinal).Skip(1).Any();
+
     public static SaleSellerSource? FromObservedGroup(StandardNObservedReceiptGroup? group,
         CheckoutSession checkout, StandardNReceiptDocument document, StandardNReceiptSnapshot? completion)
     {

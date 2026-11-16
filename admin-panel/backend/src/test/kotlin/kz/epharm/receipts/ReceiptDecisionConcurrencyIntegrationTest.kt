@@ -29,7 +29,7 @@ import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 
-@SpringBootTest
+@SpringBootTest(properties = ["epharm.receipts.excel.pharmacy-codes.pilot-branch=test-pharmacy"])
 @ActiveProfiles("test")
 @Testcontainers
 class ReceiptDecisionConcurrencyIntegrationTest {
@@ -93,7 +93,7 @@ class ReceiptDecisionConcurrencyIntegrationTest {
                     assertThat(stale.status).isEqualTo(ReceiptStatus.moderation_required)
                     loaded.countDown()
                     check(rejected.await(10,TimeUnit.SECONDS))
-                    reconcile.ingestExcelRow(ExcelRowInput(stale.fiscalId,null,null,"test-product","TEST",java.math.BigDecimal.ONE,1000,java.time.Instant.now()))
+                    reconcile.ingestExcelRow(ExcelRowInput(stale.fiscalId,"pilot-branch",null,"test-product","TEST",java.math.BigDecimal.ONE,1000,java.time.Instant.now()))
                 }
             })
             val reject=pool.submit(Callable {

@@ -20,6 +20,7 @@ import kz.epharm.receipts.entity.ReceiptStatus
 import kz.epharm.receipts.repository.PendingBonusRepository
 import kz.epharm.receipts.repository.ReceiptRepository
 import kz.epharm.receipts.service.ReconcileService
+import kz.epharm.receipts.service.ExcelPharmacyMappingProperties
 import kz.epharm.shared.error.AppException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -51,6 +52,7 @@ class RecommendationRewardCreditIntegrationTest {
         }
     }
     @Autowired lateinit var reconcile: ReconcileService
+    @Autowired lateinit var excelPharmacies: ExcelPharmacyMappingProperties
     @Autowired lateinit var pending: PendingBonusRepository
     @Autowired lateinit var receipts: ReceiptRepository
     @Autowired lateinit var sales: PosSaleRepository
@@ -144,10 +146,11 @@ class RecommendationRewardCreditIntegrationTest {
 
     @Test fun `manual approval uses the same quantity and budget policy and cannot approve a review case`() {
         val valid = fixture()
+        excelPharmacies.pharmacyCodes = mapOf("pilot-branch" to valid.pharmacy)
         val id = reconcile.ingestVerifiedRecommendationReward(valid.pending, valid.sale, 1200, false)
         assertThat(balance(valid)).isZero()
         assertThat(reconcile.ingestExcelRow(ExcelRowInput(
-            receipts.findById(id).orElseThrow().fiscalId, null, null, "product", "TEST", java.math.BigDecimal.valueOf(3), 1200, Instant.now(),
+            receipts.findById(id).orElseThrow().fiscalId, "pilot-branch", null, "product", "TEST", java.math.BigDecimal.valueOf(3), 1200, Instant.now(),
         ))).isFalse()
         assertThat(balance(valid)).isZero()
         reconcile.approve(id, "HQ-test")

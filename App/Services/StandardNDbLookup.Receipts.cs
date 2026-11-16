@@ -42,6 +42,10 @@ public sealed partial class StandardNDbLookup
         try
         {
             using var connection = OpenConnection();
+            var connectionNamespace = ReceiptConnectionNamespace(connection);
+            if (groups.Any(group => StandardNSellerSource.HasConflictingNamespaces(
+                    group.SourceNamespace, group.Snapshot.ObservedSourceNamespace, connectionNamespace)))
+                throw new InvalidDataException("Observed receipt belongs to a different source database.");
             using var transaction = connection.BeginTransaction(new FbTransactionOptions
             { TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.Wait });
             var humanQuantityAvailable = HasPostedHumanQuantity(connection, transaction);
@@ -111,7 +115,7 @@ public sealed partial class StandardNDbLookup
                 if (counters.Distinct().Count() != counters.Length)
                     throw new InvalidDataException("Physical fiscal counter identity is ambiguous.");
                 result.Add(observed with { Documents = documents, Lines = lines, WorkstationId = verifiedWorkstationId,
-                    ObservedSourceNamespace = ReceiptConnectionNamespace(connection) });
+                    ObservedSourceNamespace = connectionNamespace });
             }
             states = result;
             return true;
@@ -188,7 +192,8 @@ public sealed partial class StandardNDbLookup
             if (!key.HasValue)
             {
                 // Posting precedes the human print/save dialog; only the later real cue may finish this group.
-                if (KnownReceiptMatchesSession(knownCurrent, session.SessionId, session.UserId,
+                if (!StandardNSellerSource.HasConflictingNamespaces(knownCurrent?.ObservedSourceNamespace, ReceiptConnectionNamespace(connection)) &&
+                    KnownReceiptMatchesSession(knownCurrent, session.SessionId, session.UserId,
                     session.WorkstationId?.ToString(System.Globalization.CultureInfo.InvariantCulture), session.WorkstationName))
                 {
                     var posted = ReadReceiptHeaders(connection, transaction, knownCurrent!.LinkId is > 0
@@ -252,7 +257,7 @@ public sealed partial class StandardNDbLookup
         }
         var selected = StandardNReceiptProjection.ExactLocalSession(machine, rows, heartbeatTimestamp);
         if (selected == null) return null;
-        _userNameCache.TryGet(ReceiptConnectionNamespace(connection), selected.UserId, out var name);
+        _userNameCache.TryGet(ReceiptConnectionNamespace(connection), selected.UserId, out var name, selected.SessionId);
         return new(selected.SessionId, selected.UserId, name, selected.WorkstationId, selected.WorkstationName, true);
     }
 

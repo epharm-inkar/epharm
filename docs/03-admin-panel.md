@@ -2,6 +2,11 @@
 
 ## Seller attribution repair candidate — 2026-11-16
 
+The Standard-N mappings action requires a freshly confirmed LEGACY access profile
+and HQ_HEAD/SYSTEM_ADMIN role. MANAGED, unknown and failed access profiles do not
+show or mount the mapping dialog; server NOT_READY restrictions remain unchanged.
+This is not a grant of mapping permissions to managed accounts.
+
 HQ → Pharmacists → Standard-N sellers now distinguishes missing native USER_ID,
 missing names/accounts, inactive recipients and source conflicts. Different observed
 names under one USER_ID warn about shared/reused accounts. The displayed name is the

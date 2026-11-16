@@ -2,6 +2,31 @@
 
 Database: PostgreSQL 16.
 
+Candidate V106 (`historical_staff_source_proofs`) adds a minimal, bounded archive for
+receipt-time source authorization. Hourly cleanup atomically removes expired device
+login grants and archives only verified source proof. The existing 24-hour post-expiry
+raw-session cleanup remains; active sessions are never archived or renewed. Archived
+rows contain scoped internal/native IDs, proof/password digests and the original
+creation, verification, expiration and revocation times, but no token hash, process ID,
+raw IIN, name, phone or password. Authentication never queries this table.
+
+`app.posm.staff.source-proof-retention-days` defaults to 90, accepts 1–365, and counts
+from the original grant expiration. This is technical evidence retention, not a new
+eligibility/backfill window: exact device/database/USER/SESSION/workstation, proof
+validity at payment, current account/password and mapping checks remain enforced.
+The resolver reads live and archived proof in one SQL snapshot and refuses expired
+archive rows even before the next cleanup. Lowering retention prunes older archives
+at the next cleanup; increasing it cannot restore deleted evidence. Once proof ages
+out, attribution fails closed for HQ review rather than trusting a later login.
+
+V106 is additive, has no historical backfill, and does not recover already-purged
+grants. It must pass PostgreSQL/Flyway integration checks before deployment. Returning
+to an older cleanup binary would again discard unarchived expired proof; rollback must
+preserve this table and use a reviewed forward recovery image, not delete evidence.
+This also applies during rollout: do not leave an old scheduler replica running
+alongside the new one. Its hourly cleanup at minute 17 can delete grants before
+the new archival cleanup sees them. Coordinate all scheduler replicas before rollout.
+
 Candidate V105 (`sale_seller_source`) adds nullable JSONB `pos_sales.seller_source`
 for the immutable namespace/native USER/SESSION/workstation of ordinary receipts.
 It does not backfill identities or rewrite financial records. Server rejects source,
@@ -32,7 +57,7 @@ rewritten. Money is still written only through existing `pending_bonuses`, `rece
 and `pharmacist_wallet_entries`; no parallel balance or historical credit is created.
 Both sale-bonus flags remain off by default. See [backend monetary contract](02-backend.md).
 
-Current migration range in source: V001-V100. At the historical unification verification,
+Current migration range in source: V001-V106. At the historical unification verification,
 V066 and V067 were applied only to the isolated candidate; that verification did not deploy
 them. All original business-table
 column, primary-key and row-count fingerprints survived the upgrade; Flyway history gained

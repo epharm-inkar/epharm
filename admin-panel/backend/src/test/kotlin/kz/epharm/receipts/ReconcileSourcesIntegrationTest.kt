@@ -19,17 +19,21 @@ import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.posm.dto.PosSaleItemDto
 import kz.epharm.posm.dto.PosSaleRequest
+import kz.epharm.posm.dto.SaleSellerSource
 import kz.epharm.posm.repository.PosSaleRepository
 import kz.epharm.posm.entity.PosmPharmacistMappingEntity
 import kz.epharm.posm.repository.PosmPharmacistMappingRepository
 import kz.epharm.receipts.entity.PendingBonusEntity
 import kz.epharm.receipts.repository.ExcelImportRepository
+import kz.epharm.receipts.repository.ExcelSaleRowRepository
 import kz.epharm.receipts.repository.PendingBonusRepository
 import kz.epharm.receipts.repository.ReceiptRepository
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
@@ -50,7 +54,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.io.ByteArrayOutputStream
 import java.time.Instant
 
-@SpringBootTest
+@SpringBootTest(properties = ["epharm.receipts.excel.pharmacy-codes.pilot-branch=ph_t"])
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -82,6 +86,7 @@ class ReconcileSourcesIntegrationTest {
     @Autowired private lateinit var posSaleRepository: PosSaleRepository
     @Autowired private lateinit var posmPharmacistMappingRepository: PosmPharmacistMappingRepository
     @Autowired private lateinit var excelImportRepository: ExcelImportRepository
+    @Autowired private lateinit var excelRows: ExcelSaleRowRepository
     @Autowired private lateinit var pharmacistRepository: PharmacistRepository
     @Autowired private lateinit var productRepository: ProductRepository
     @Autowired private lateinit var pharmacyRepository: PharmacyRepository
@@ -207,6 +212,36 @@ class ReconcileSourcesIntegrationTest {
         assertEquals("33", stored.reportedPharmacistId)
         assertEquals("standardn_explicit_mapping", stored.pharmacistSource)
         assertEquals(true, receiptForPending().confirmedByLog)
+        importExcel(listOf(Triple("FSN33", "p_x", 1_000L)))
+        assertEquals("approved", receiptForPending().status.name)
+        assertEquals(300L, pharmacistRepository.findById("u_t").get().balance)
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `name only seller stays analytic and cannot confirm an Excel pending even on retry`(withSource: Boolean) {
+        importExcel(listOf(Triple("FNAME", "p_x", 1_000L)))
+        val request = saleReq("sale_name_only", "FNAME", 1_000).copy(
+            pharmacistId = "33", pharmacistName = "Тест Фарм",
+            sellerSource = if (withSource) SaleSellerSource("a".repeat(64), "33", 41, "ws") else null,
+        )
+        repeat(2) {
+            mockMvc.perform(post("/api/posm/sales").header("X-Posm-Key", POSM_KEY)
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk)
+        }
+        val stored = posSaleRepository.findById(request.saleId).orElseThrow()
+        assertEquals("u_t", stored.pharmacistId)
+        assertEquals("33", stored.reportedPharmacistId)
+        assertEquals("standardn_name_match", stored.pharmacistSource)
+        assertEquals(request.sellerSource, stored.sellerSource)
+        val receipt = receiptForPending()
+        assertEquals(true, receipt.confirmedByExcel)
+        assertEquals(false, receipt.confirmedByLog)
+        assertEquals("moderation_required", receipt.status.name)
+        assertEquals(0L, receipt.bonusCredited)
+        assertEquals(0L, pharmacistRepository.findById("u_t").get().balance)
+        assertEquals("awaiting_receipt", pendingBonusRepository.findById("pb_t").orElseThrow().status.name)
     }
 
     @Test
@@ -350,6 +385,28 @@ class ReconcileSourcesIntegrationTest {
     private fun receiptForPending() =
         receiptRepository.findAll().first { it.pendingBonusId == "pb_t" }
 
+    @ParameterizedTest
+    @ValueSource(strings = ["unknown-branch", ""])
+    fun `missing or unmapped pharmacy code preserves imported row without confirming another receipt`(pharmacyCode: String) {
+        postSale("sale_code_review", "FCODE", 1_000)
+        val response = mockMvc.perform(
+            multipart("/api/admin/reconcile/import-excel")
+                .file(MockMultipartFile("file", "sales.xlsx", "application/octet-stream",
+                    buildXlsx(listOf(Triple("FCODE", "p_x", 1_000L)), pharmacyCode)))
+                .header("Authorization", bearer),
+        ).andExpect(status().isOk).andReturn()
+        val result = objectMapper.readTree(response.response.contentAsString)
+        assertEquals(1, result["rowsTotal"].asInt())
+        assertEquals(0, result["rowsMatched"].asInt())
+        val row = excelRows.findAll().single { it.importId == result["importId"].asText() }
+        assertEquals(pharmacyCode.takeIf { it.isNotBlank() }, row.pharmacyCode)
+        assertEquals(false, row.matched)
+        val receipt = receiptRepository.findFirstByPendingBonusId("pb_t")!!
+        assertEquals(false, receipt.confirmedByExcel)
+        assertEquals(null, receipt.flagReason)
+        assertEquals(0L, pharmacistRepository.findById("u_t").get().balance)
+    }
+
     private fun postSale(saleId: String, fiscal: String, total: Long) {
         mockMvc.perform(
             post("/api/posm/sales").header("X-Posm-Key", POSM_KEY)
@@ -372,18 +429,20 @@ class ReconcileSourcesIntegrationTest {
         ).andExpect(status().isOk)
     }
 
-    private fun buildXlsx(rows: List<Triple<String, String, Long>>): ByteArray {
+    private fun buildXlsx(rows: List<Triple<String, String, Long>>, pharmacyCode: String = "pilot-branch"): ByteArray {
         XSSFWorkbook().use { wb ->
             val sheet = wb.createSheet("sales")
             val header = sheet.createRow(0)
             header.createCell(0).setCellValue("Чек")
             header.createCell(1).setCellValue("Артикул")
             header.createCell(2).setCellValue("Сумма")
+            header.createCell(3).setCellValue("Аптека")
             rows.forEachIndexed { i, (fiscal, sku, amount) ->
                 val row = sheet.createRow(i + 1)
                 row.createCell(0).setCellValue(fiscal)
                 row.createCell(1).setCellValue(sku)
                 row.createCell(2).setCellValue(amount.toDouble())
+                row.createCell(3).setCellValue(pharmacyCode)
             }
             val bos = ByteArrayOutputStream()
             wb.write(bos)

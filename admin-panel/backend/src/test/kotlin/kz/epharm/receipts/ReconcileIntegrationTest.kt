@@ -40,7 +40,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Instant
 
-@SpringBootTest
+@SpringBootTest(properties = ["epharm.receipts.excel.pharmacy-codes.pilot-branch=ph_t"])
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -220,7 +220,7 @@ class ReconcileIntegrationTest {
         reconcileService.ingestExcelRows(
             listOf(
                 kz.epharm.receipts.dto.ExcelRowInput(
-                    fiscalId = "fp-1", pharmacyCode = null, cashier = "Кассир №1",
+                    fiscalId = "fp-1", pharmacyCode = "pilot-branch", cashier = "Кассир №1",
                     sku = "p_x", productName = "Товар X", qty = null,
                     amount = 1_000, soldAt = Instant.now(),
                 ),

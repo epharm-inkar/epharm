@@ -390,6 +390,8 @@ export const ru: Dict = {
   'rec.flag.wrong_pharmacy': 'Чужая аптека',
   'rec.flag.forged': 'Поддельный',
   'rec.flag.amount_mismatch': 'Расхождение сумм',
+  'rec.flag.amount_missing': 'Сумма источника не указана',
+  'rec.flag.amount_invalid': 'Некорректная сумма источника',
   'rec.tab.moderation': 'Ручная проверка',
   'rec.body.moderation_required':
     'Подтверждён только одним источником (лог кассы ИЛИ Excel-выгрузка). Нужно решение модератора.',
@@ -1666,6 +1668,8 @@ export const kk: Dict = {
   'rec.flag.wrong_pharmacy': 'Бөтен дәріхана',
   'rec.flag.forged': 'Жалған',
   'rec.flag.amount_mismatch': 'Сома сәйкессіздігі',
+  'rec.flag.amount_missing': 'Дереккөз сомасы көрсетілмеген',
+  'rec.flag.amount_invalid': 'Дереккөз сомасы дұрыс емес',
   'rec.tab.moderation': 'Қолмен тексеру',
   'rec.body.moderation_required':
     'Тек бір дереккөзбен расталған (касса логы НЕМЕСЕ Excel-түсіру). Модератор шешімі қажет.',

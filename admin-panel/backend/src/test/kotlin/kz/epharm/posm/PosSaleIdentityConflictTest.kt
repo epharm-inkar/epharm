@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.EnumSource
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
@@ -163,6 +164,28 @@ class PosSaleIdentityConflictTest {
         assertEquals("17", captured.captured.reportedPharmacistId)
         assertEquals("standardn_rps_binding", captured.captured.pharmacistSource)
         verify { reconcile wasNot Called; rewards wasNot Called }
+    }
+
+    @ParameterizedTest
+    @EnumSource(PharmacistIdentitySource::class)
+    fun `only legacy internal and explicit mapping identities may financially confirm a pending`(source: PharmacistIdentitySource) {
+        val resolved = identity.copy(pharmacistId = "person", pharmacistName = "Synthetic Person", source = source,
+            reportedPharmacistId = "17", reportedPharmacistName = "Synthetic Person")
+        val captured = io.mockk.slot<PosSaleEntity>()
+        every { repository.findById(request.saleId) } returns Optional.empty()
+        every { rules.resolveToProductIds(emptyList()) } returns emptyList()
+        every { repository.save(capture(captured)) } answers { firstArg<PosSaleEntity>() }
+        every { attribution.attributeSale(any(), emptySet()) } returns Unit
+        every { reconcile.ingestLogSale(any()) } returns Unit
+
+        org.junit.jupiter.api.Assertions.assertTrue(service.record(request.copy(pharmacistId = "person"), resolved, "device"))
+        // Diagnostic attribution remains available even when it is not financial authority.
+        assertEquals("person", captured.captured.pharmacistId)
+        assertEquals(source.wireValue, captured.captured.pharmacistSource)
+        verify(exactly = 1) { attribution.attributeSale(any(), emptySet()) }
+        val trusted = source in setOf(PharmacistIdentitySource.POSM_INTERNAL, PharmacistIdentitySource.STANDARDN_EXPLICIT_MAPPING)
+        verify(exactly = if (trusted) 1 else 0) { reconcile.ingestLogSale(any()) }
+        verify { rewards wasNot Called }
     }
 
     private fun captureLogs(action: () -> Unit): List<String> {

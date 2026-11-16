@@ -119,6 +119,12 @@ namespace CustomerDisplay
                 return;
             }
 
+            if (ReceiptConflictsWithObservedSource(receipt))
+            {
+                InvalidateRewardObservation();
+                Log("Наблюдение из другой базы не заменяет сохранённую группу чека; требуется проверка источника.");
+                return;
+            }
             ApplyStandardNPharmacist(receipt.Pharmacist);
 
             // Print-log marker can arrive slightly before DOCS stops exposing the active receipt.
@@ -352,6 +358,12 @@ namespace CustomerDisplay
             StandardNObservedReceiptGroup? capturedGroup = null)
         {
             var sourceDocumentId = proof.DocumentId;
+            if (StandardNSellerSource.HasConflictingNamespaces(capturedGroup?.SourceNamespace,
+                    capturedGroup?.Snapshot.ObservedSourceNamespace, completionSource?.ObservedSourceNamespace))
+            {
+                Log("Завершение чека отклонено: противоречащие источники базы; исходные наблюдения сохранены.");
+                return false;
+            }
             if (!ReceiptFinalizationRules.IsConfirmedPrint(captureSource) ||
                 !StandardNReceiptProjection.IsPostedPhysicalSale(proof) || capturedSession.StandardNSessionId != proof.SessionId)
             {

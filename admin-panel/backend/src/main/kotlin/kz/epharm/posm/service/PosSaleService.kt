@@ -155,12 +155,11 @@ class PosSaleService(
         attributionService.attributeSale(sale, productIds.filterNotNull().toSet())
         if (sale.rewardEvidence == null) saleBonuses.afterSale(sale) else rewards.sale(sale)
 
-        // Сверка/начисление допустимы только для доверенного внутреннего pharmacistId.
-        // Сырой Standard-N USER_ID всё равно сохранён выше и отображается в аналитике.
-        // Receipt-time RPS attribution is independent of reward enrollment. It must not
-        // introduce an alternative legacy payout route without complete reward evidence.
+        // A resolved id alone is not financial authority: name matches remain analytics only.
+        // Preserve the existing internal/HQ legacy paths. Receipt-time RPS attribution must
+        // not introduce a legacy payout route without complete reward evidence either.
         if (req.pharmacistId.isNotBlank() && req.rewardEvidence == null &&
-            identity.source != PharmacistIdentitySource.STANDARDN_RPS_BINDING) {
+            identity.source in setOf(PharmacistIdentitySource.POSM_INTERNAL, PharmacistIdentitySource.STANDARDN_EXPLICIT_MAPPING)) {
             reconcileService.ingestLogSale(
                 LogSaleInput(
                     pharmacistId = req.pharmacistId,

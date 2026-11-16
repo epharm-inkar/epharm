@@ -7,6 +7,19 @@ namespace CustomerDisplay.Core.Tests;
 
 public sealed class StandardNSellerSourceTests
 {
+    [Theory]
+    [InlineData(null, null, "a", false)]
+    [InlineData("a", null, "a", false)]
+    [InlineData("a", "a", null, false)]
+    [InlineData("a", "a", "b", true)]
+    [InlineData("a", "b", "a", true)]
+    [InlineData(null, "a", "b", true)]
+    public void ProvenNamespaceConflictIsDifferentFromMissingLegacyProvenance(
+        string? group, string? observation, string? completion, bool conflict)
+    {
+        Assert.Equal(conflict, StandardNSellerSource.HasConflictingNamespaces(group, observation, completion));
+    }
+
     private static readonly string Source = new('a', 64);
     private static StandardNObservedReceiptGroup Group()
     {

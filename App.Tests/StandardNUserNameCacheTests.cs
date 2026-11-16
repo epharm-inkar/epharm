@@ -11,6 +11,35 @@ public sealed class StandardNUserNameCacheTests
         Assert.Contains("SESSION_ID = @sessionId and USER_ID = @userId", StandardNDbLookup.ExactSessionUserNameSql);
     }
 
+    [Fact]
+    public void MissingCurrentSessionNameDoesNotQueryAnotherSession()
+    {
+        var requested = new List<long>();
+        var name = StandardNDbLookup.ReadExactSessionUserName(42, session => {
+            requested.Add(session);
+            return session == 7 ? "Historical Other Person" : null;
+        });
+        Assert.Null(name);
+        Assert.Equal(new long[] { 42 }, requested);
+        Assert.Equal("Current Person", StandardNDbLookup.ReadExactSessionUserName(42, _ => "Current Person"));
+        Assert.Null(StandardNDbLookup.ReadExactSessionUserName(null, _ => throw new InvalidOperationException()));
+        Assert.Null(StandardNDbLookup.ReadExactSessionUserName(0, _ => throw new InvalidOperationException()));
+    }
+
+    [Fact]
+    public void CachedNameCannotCrossNativeSessionsOfTheSameUser()
+    {
+        var cache = new StandardNUserNameCache();
+        cache.Store("source-a", "17", "Historical Other Person", 7);
+        Assert.False(cache.TryGet("source-a", "17", out _, 42));
+        Assert.False(cache.TryGet("source-a", "17", out _));
+        Assert.True(cache.TryGet("source-a", "17", out var original, 7));
+        Assert.Equal("Historical Other Person", original);
+        cache.Store("source-a", "17", "Current Person", 42);
+        Assert.True(cache.TryGet("source-a", "17", out var current, 42));
+        Assert.Equal("Current Person", current);
+    }
+
     private sealed class Clock : TimeProvider
     {
         public long Ticks;
