@@ -161,7 +161,8 @@ public sealed class StaffDeviceSessionStateTests
         }
         Assert.False(state.ConfirmValidation(generation, token, context, Response(context), now));
         Assert.False(state.IsAuthenticated(now)); Assert.Null(state.Grant);
-        Assert.True(state.NeedsPrompt(now)); state.MarkPrompted(); Assert.False(state.NeedsPrompt(now));
+        Assert.Equal(invalidation == "cashier", state.NeedsPrompt(now));
+        state.MarkPrompted(); Assert.False(state.NeedsPrompt(now));
     }
 
     [Fact]
@@ -183,7 +184,7 @@ public sealed class StaffDeviceSessionStateTests
         state.Observe(new("resolved", Process), new("database_unavailable")); Login(state);
         state.MarkTransportFailure(Now); clock.Ticks += TimeSpan.FromMinutes(2).Ticks;
         Assert.False(state.CanValidate(Now.AddHours(-1))); Assert.Null(state.Grant);
-        Assert.True(state.NeedsPrompt(Now.AddHours(-1)));
+        Assert.False(state.NeedsPrompt(Now.AddHours(-1)));
     }
 
     private sealed class MonotonicTestTime : TimeProvider
@@ -210,10 +211,10 @@ public sealed class StaffDeviceSessionStateTests
     }
 
     [Fact]
-    public void ARealProcessPromptsWithoutAnyDatabaseOrInventedCashierIdentifiers()
+    public void ARealProcessPermitsManualLoginWithoutAutomaticallyPromptingOrInventingCashierIdentifiers()
     {
         var state = State();
-        Assert.True(state.NeedsPrompt(Now)); Assert.Null(state.Context!.StandardNContext);
+        Assert.False(state.NeedsPrompt(Now)); Assert.Null(state.Context!.StandardNContext);
         Assert.Equal(Process, state.Context.ProcessInstanceId);
         state.MarkPrompted();
         Assert.False(state.NeedsPrompt(Now));
@@ -227,7 +228,7 @@ public sealed class StaffDeviceSessionStateTests
         state.Observe(new("no_process"), new("no_process"));
         Assert.False(state.NeedsPrompt(Now)); Assert.Null(state.Context); Assert.Null(state.Grant);
         state.Observe(new("resolved", "42:639295055776695956"), new("database_disabled"));
-        Assert.True(state.Generation > generation); Assert.True(state.NeedsPrompt(Now));
+        Assert.True(state.Generation > generation); Assert.False(state.NeedsPrompt(Now));
     }
 
     [Theory]
@@ -251,7 +252,7 @@ public sealed class StaffDeviceSessionStateTests
         // A fast restart need not produce an empty observation; a reused PID still has a new start time.
         Assert.True(state.Observe(new("resolved", nextProcess), new("database_unavailable")));
         Assert.Null(state.Grant); Assert.Null(state.LastKnownSource);
-        Assert.True(state.NeedsPrompt(Now));
+        Assert.False(state.NeedsPrompt(Now));
         Assert.False(state.Accept(previousGeneration, previousContext, Response(previousContext), Now));
         state.MarkPrompted(); Assert.False(state.NeedsPrompt(Now));
         var currentContext = state.Context!;
@@ -270,7 +271,7 @@ public sealed class StaffDeviceSessionStateTests
         Assert.Equal(one, reordered); Assert.Equal("ambiguous_process", one.Status);
         Assert.Equal(68, one.Identity!.Length);
         var state = new StaffDeviceSessionState(); state.Observe(one, new("ambiguous_process"));
-        Assert.True(state.NeedsPrompt(Now)); Assert.Null(state.Context!.StandardNContext);
+        Assert.False(state.NeedsPrompt(Now)); Assert.Null(state.Context!.StandardNContext);
         Assert.NotEqual(one, StaffProcessPresence.FromInstances([Process]));
     }
 
@@ -301,12 +302,13 @@ public sealed class StaffDeviceSessionStateTests
     [InlineData("other-user", "session-1", "ws-1")]
     [InlineData("user-1", "other-session", "ws-1")]
     [InlineData("user-1", "session-1", "other-ws")]
-    public void ATrueCashierSwitchAfterAnUnknownIntervalRevokesAndPrompts(string user, string session, string workstation)
+    public void AChangedSecurityContextRevokesButOnlyADifferentUserPrompts(string user, string session, string workstation)
     {
         var state = State(Source()); Login(state); var generation = state.Generation;
         state.Observe(new("resolved", Process), new("database_unavailable"));
         Assert.True(state.Observe(new("resolved", Process), Source(user, session, workstation)));
-        Assert.True(state.Generation > generation); Assert.Null(state.Grant); Assert.True(state.NeedsPrompt(Now));
+        Assert.True(state.Generation > generation); Assert.Null(state.Grant);
+        Assert.Equal(user != "user-1", state.NeedsPrompt(Now));
     }
 
     [Fact]
@@ -346,7 +348,7 @@ public sealed class StaffDeviceSessionStateTests
     [InlineData(StaffPromptBypassReason.SmsUnavailable)]
     public void ClosingOrBypassingUnknownSourceNeverSpamsAndRejectsAnInFlightReply(StaffPromptBypassReason reason)
     {
-        var state = State(); var context = state.Context!; var generation = state.Generation;
+        var state = State(); state.MarkPrompted(); var context = state.Context!; var generation = state.Generation;
         state.Bypass(reason);
         Assert.False(state.Accept(generation, context, Response(context), Now));
         state.Observe(new("resolved", Process), new("ambiguous_session"));
@@ -369,10 +371,55 @@ public sealed class StaffDeviceSessionStateTests
     }
 
     [Fact]
-    public void ExpirationStartsANewPromptGenerationWithoutAcceptingAnOldResponse()
+    public void ExpirationRejectsAnOldResponseWithoutRearmingTheCashierPresentation()
     {
-        var state = State(); var context = state.Context!; var generation = state.Generation; Login(state);
-        Assert.False(state.IsAuthenticated(Now.AddHours(9))); Assert.True(state.NeedsPrompt(Now.AddHours(9)));
+        var state = State(Source()); var context = state.Context!; var generation = state.Generation; Login(state);
+        var cashierGeneration = state.CashierGeneration;
+        Assert.False(state.IsAuthenticated(Now.AddHours(9))); Assert.False(state.NeedsPrompt(Now.AddHours(9)));
+        Assert.Equal(cashierGeneration, state.CashierGeneration);
         Assert.False(state.Accept(generation, context, Response(context) with { ExpiresAt = Now.AddHours(10) }, Now.AddHours(9)));
+    }
+
+    [Fact]
+    public void InitialUnknownSourceWaitsForTheFirstConfirmedNativeUserAndPromptsOnlyOnce()
+    {
+        var state = State();
+        Assert.Equal(0, state.CashierGeneration); Assert.False(state.NeedsPrompt(Now));
+        foreach (var status in new[] { "no_session", "ambiguous_session", "database_unavailable" }) {
+            state.Observe(new("resolved", Process), new(status));
+            Assert.False(state.NeedsPrompt(Now)); Assert.Equal(0, state.CashierGeneration);
+        }
+        state.Observe(new("resolved", Process), Source());
+        Assert.Equal(1, state.CashierGeneration); Assert.True(state.NeedsPrompt(Now));
+        state.MarkPrompted(); state.Observe(new("resolved", Process), Source());
+        Assert.False(state.NeedsPrompt(Now)); Assert.Equal(1, state.CashierGeneration);
+    }
+
+    [Fact]
+    public void CashierPresentationSurvivesInvalidationAndGapsButEachConfirmedUserSwitchPrompts()
+    {
+        var state = State(Source()); state.MarkPrompted(); var cashierGeneration = state.CashierGeneration;
+        state.Invalidate();
+        state.Observe(new("no_process"), new("no_process"));
+        state.Observe(new("resolved", Process), new("database_unavailable"));
+        state.Observe(new("resolved", Process), Source(session: "renewed-session", workstation: "renewed-ws"));
+        Assert.Equal(cashierGeneration, state.CashierGeneration); Assert.False(state.NeedsPrompt(Now.AddMinutes(30)));
+        foreach (var user in new[] { "other-user", "user-1" }) {
+            state.Observe(new("resolved", Process), Source(user));
+            Assert.True(state.NeedsPrompt(Now)); Assert.Equal(++cashierGeneration, state.CashierGeneration);
+            state.MarkPrompted(); Assert.False(state.NeedsPrompt(Now));
+        }
+    }
+
+    [Fact]
+    public void AConfirmedDifferentNamespacePromptsButMissingNamespaceCannotForgetTheBaseline()
+    {
+        var first = Source() with { Session = Source().Session! with { SourceNamespace = new string('a', 64) } };
+        var state = State(first); state.MarkPrompted(); var generation = state.CashierGeneration;
+        state.Observe(new("resolved", Process), Source());
+        Assert.Equal(generation, state.CashierGeneration); Assert.False(state.NeedsPrompt(Now));
+        var changed = first with { Session = first.Session! with { SourceNamespace = new string('b', 64) } };
+        state.Observe(new("resolved", Process), changed);
+        Assert.Equal(generation + 1, state.CashierGeneration); Assert.True(state.NeedsPrompt(Now));
     }
 }

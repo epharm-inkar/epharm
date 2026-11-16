@@ -5,6 +5,13 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- POSM 1.0.89 separates automatic RPS presentation from grant/session invalidation:
+  prompt for a confirmed Standard-N user change, preserve an unfinished same-user
+  form through technical context changes, and refresh context only on explicit
+  submit. Expired or revoked grants remain invalid; cashier operation stays available.
+
 ## [0.2.19] - 2026-11-16
 
 ### Fixed
