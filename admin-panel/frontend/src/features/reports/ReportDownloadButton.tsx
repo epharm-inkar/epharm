@@ -3,15 +3,7 @@ import { Button } from '@/ui'
 import { describeError } from '@/lib/describeError'
 import { downloadReport, saveReport } from './ledgerReports'
 
-export default function ReportDownloadButton({
-  allowed,
-  path,
-  params,
-  filename,
-  label,
-  invalid,
-  note,
-}: {
+type ReportDownloadProps = {
   allowed: boolean
   path: string
   params: Record<string, string | undefined>
@@ -19,7 +11,23 @@ export default function ReportDownloadButton({
   label: string
   invalid?: string
   note?: string
-}) {
+}
+
+export default function ReportDownloadButton(props: ReportDownloadProps) {
+  // A cancelled request must not leave a pending state that resurfaces when the
+  // operator restores a filter or export permission. Each context owns its lifecycle.
+  return <ReportDownloadAction key={JSON.stringify([props.path, props.params, props.allowed, props.filename, Boolean(props.invalid)])} {...props} />
+}
+
+function ReportDownloadAction({
+  allowed,
+  path,
+  params,
+  filename,
+  label,
+  invalid,
+  note,
+}: ReportDownloadProps) {
   const key = JSON.stringify([path, params])
   const request = useRef<AbortController | null>(null)
   const [state, setState] = useState<{

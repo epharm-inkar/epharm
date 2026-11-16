@@ -1,11 +1,13 @@
 // Тесты DashboardPage — KPI из real API, топ-списки, loading/error.
 
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { ToastHost } from '@/ui'
+import { useUiStore } from '@/app/store'
+import { formatKzt } from '@/mocks/fixtures'
 import type { DashboardSummaryDto, RecommendationAnalyticsDto } from '@/lib/api-types'
 import DashboardPage from './DashboardPage'
 
@@ -135,8 +137,34 @@ function setAnalytics(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  useUiStore.setState({ language: 'ru' })
   setSummary(mkSummary())
   setAnalytics(mkAnalytics())
+})
+
+afterEach(() => useUiStore.setState({ language: 'ru' }))
+
+it.each([
+  ['ru', 'Последние 30 дней', 'Сумма цен проданных рекомендаций', 'Одобрено к выплате', 'не фактическая выручка'],
+  ['kk', 'Соңғы 30 күн', 'Сатылған ұсыныстар бағасының сомасы', 'Төлеуге мақұлданды', 'нақты түсім де'],
+] as const)('explains amount sources and rolling period in %s', (language, period, metric, payout, note) => {
+  useUiStore.setState({ language })
+  setAnalytics(mkAnalytics({ windowDays: 30 }))
+  renderPage()
+
+  expect(screen.getByTestId('recan-period')).toHaveTextContent(period)
+  expect(screen.getByText(metric)).toBeInTheDocument()
+  expect(screen.getByTestId('recan-amount-note')).toHaveTextContent(note)
+  expect(screen.getByText(payout)).toBeInTheDocument()
+  expect(screen.getByTestId('dash-payout-note')).not.toBeEmptyDOMElement()
+  expect(screen.getByTestId('dash-amount-note')).not.toBeEmptyDOMElement()
+  // Accepted-offer prices, converted-offer prices and receipt item totals differ.
+  const moneyText = (amount: number) => formatKzt(amount).replace(/\s/g, ' ')
+  expect(screen.getByTestId('dash-top-products-p_1')).toHaveTextContent(moneyText(500_000))
+  expect(screen.getByTestId('recan-kpis')).toHaveTextContent(moneyText(4500))
+  expect(screen.getByTestId('recan-row-rec_1')).toHaveTextContent(moneyText(4500))
+  expect(screen.getByTestId('recan-row-sale_1#0')).toHaveTextContent(moneyText(2100))
+  expect(screen.getByTestId('recan-row-sale_1#0')).not.toHaveTextContent(moneyText(4500))
 })
 
 function renderPage() {
@@ -188,8 +216,9 @@ describe('DashboardPage — рендер', () => {
 
   it('time-series блоки — Empty (данных нет)', () => {
     renderPage()
-    expect(screen.getByText(/Недостаточно данных/i)).toBeInTheDocument()
-    expect(screen.getByText(/Нет активности/i)).toBeInTheDocument()
+    expect(screen.getByText(/Данные для графика пока недоступны/i)).toBeInTheDocument()
+    expect(screen.getByText(/Карта активности пока недоступна/i)).toBeInTheDocument()
+    expect(screen.getByText(/Это не означает отсутствия продаж/i)).toBeInTheDocument()
   })
 })
 
@@ -282,6 +311,30 @@ describe('DashboardPage — Журнал показов и продаж (V032)',
     expect(screen.getByText(/Пока нет событий за период/i)).toBeInTheDocument()
   })
 
+  it.each([null, -30])('не выдумывает нулевой или отрицательный интервал продажи при времени %s', (seconds) => {
+    const analytics = mkAnalytics()
+    analytics.log[0].secondsToSale = seconds
+    analytics.log[1].secondsToSale = seconds
+    setAnalytics(analytics)
+    renderPage()
+
+    const show = screen.getByTestId('recan-row-rec_1')
+    expect(within(show).getByText('Продажа')).toBeInTheDocument()
+    expect(show).not.toHaveTextContent('Продано ·')
+    expect(screen.getByTestId('recan-row-sale_1#0')).not.toHaveTextContent('после показа')
+  })
+
+  it('сохраняет достоверный нулевой интервал продажи', () => {
+    const analytics = mkAnalytics()
+    analytics.log[0].secondsToSale = 0
+    analytics.log[1].secondsToSale = 0
+    setAnalytics(analytics)
+    renderPage()
+
+    expect(screen.getByTestId('recan-row-rec_1')).toHaveTextContent('Продано · 0 с')
+    expect(screen.getByTestId('recan-row-sale_1#0')).toHaveTextContent('через 0 с после показа')
+  })
+
   it('переключает страницы и показывает полный размер журнала', async () => {
     setAnalytics(mkAnalytics({ totalElements: 123, totalPages: 3 }))
     const user = userEvent.setup()
@@ -294,10 +347,14 @@ describe('DashboardPage — Журнал показов и продаж (V032)',
 })
 
 describe('DashboardPage — loading/error', () => {
-  it('isLoading без data — метрики с нулями + «загрузка…»', () => {
+  it('isLoading без data — загрузка без ложных нулевых метрик и пустых топов', () => {
     setSummary(undefined, { isLoading: true })
     renderPage()
-    expect(screen.getByText(/загрузка…/i)).toBeInTheDocument()
+    expect(screen.getByTestId('dash-summary-state')).toHaveTextContent('загрузка…')
+    expect(screen.queryByTestId('dash-summary-kpis')).not.toBeInTheDocument()
+    expect(screen.queryByText('Нет активности')).not.toBeInTheDocument()
+    expect(screen.queryByText('Нет данных')).not.toBeInTheDocument()
+    expect(screen.getByTestId('recan-table')).toBeInTheDocument()
   })
 
   it('isError без data — баннер + Повторить', async () => {
@@ -306,7 +363,31 @@ describe('DashboardPage — loading/error', () => {
     const user = userEvent.setup()
     renderPage()
     expect(screen.getByText(/Не удалось загрузить сводку/i)).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('boom')
+    expect(screen.queryByTestId('dash-summary-kpis')).not.toBeInTheDocument()
+    expect(screen.queryByText('Нет данных')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Повторить/ }))
     expect(refetch).toHaveBeenCalled()
+  })
+
+  it('ошибка обновления сводки сохраняет числа и топы с явным предупреждением', async () => {
+    const refetch = vi.fn()
+    setSummary(mkSummary(), { isError: true, error: new Error('summary refresh failed'), refetch })
+    const user = userEvent.setup()
+    renderPage()
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('summary refresh failed')
+    expect(alert).toHaveTextContent('Показаны последние сохранённые')
+    expect(screen.getByTestId('dash-summary-kpis')).toHaveTextContent('33.3% конверсия')
+    expect(screen.getByTestId('dash-top-rules-r_1')).toBeInTheDocument()
+    await user.click(within(alert).getByRole('button', { name: 'Повторить' }))
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
+  it('повтор сводки недоступен, пока запрос уже выполняется', () => {
+    setSummary(undefined, { isError: true, isFetching: true, error: new Error('retrying') })
+    renderPage()
+    expect(within(screen.getByRole('alert')).getByRole('button', { name: 'Повторить' })).toBeDisabled()
   })
 })

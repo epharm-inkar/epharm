@@ -49,6 +49,7 @@ class AdministrativeRosterScopeTest {
         every { scope.pharmacy(any()) } answers { firstArg<PharmacyDto>() }
         every { scope.requirePharmacistUpdate(any()) } returns Unit
         every { scope.requirePharmacyUpdate(any()) } returns Unit
+        every { pharmacies.deviceCounts(any(), any(), any()) } returns emptyList()
     }
 
     @Test

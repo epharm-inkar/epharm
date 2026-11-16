@@ -48,19 +48,12 @@ class PharmacyMetricsScheduler(
         val acceptsByPharmacy = recommendationEventRepository.aggregateByPharmacySince(Instant.EPOCH)
             .associate { it.pharmacyId to it.accepts.toInt() }
 
-        val pharmacies = pharmacyRepository.findAll()
+        val pharmacyIds = pharmacyRepository.findAllIdsForMetrics()
         var changed = 0
-        for (ph in pharmacies) {
-            val receipts = receiptsByPharmacy[ph.id] ?: 0
-            val gmv = gmvByPharmacy[ph.id] ?: 0L
-            val accepts = acceptsByPharmacy[ph.id] ?: 0
-            if (ph.receipts30d != receipts || ph.gmv30d != gmv || ph.rulesAccepted != accepts) {
-                ph.receipts30d = receipts
-                ph.gmv30d = gmv
-                ph.rulesAccepted = accepts
-                pharmacyRepository.save(ph)
-                changed++
-            }
+        for (id in pharmacyIds) {
+            changed += pharmacyRepository.updateMetricsIfChanged(
+                id, receiptsByPharmacy[id] ?: 0, gmvByPharmacy[id] ?: 0L, acceptsByPharmacy[id] ?: 0,
+            )
         }
         return changed
     }

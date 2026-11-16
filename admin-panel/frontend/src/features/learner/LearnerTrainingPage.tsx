@@ -1068,8 +1068,22 @@ export default function LearnerTrainingPage() {
     }
   }, [assignmentId, loadAssignment, tokens])
 
+  function beginAuthenticationRequest() {
+    // Identity/phone changes, navigation and unmount invalidate every authentication
+    // response, including transports that finish after cancellation. Never replay a mutation.
+    const version = ++recoveryVersion.current
+    recoveryRequest.current?.abort()
+    const controller = new AbortController()
+    recoveryRequest.current = controller
+    return {
+      signal: controller.signal,
+      isCurrent: () => version === recoveryVersion.current && !controller.signal.aborted,
+    }
+  }
+
   async function checkIin(event: React.FormEvent) {
     event.preventDefault()
+    const attempt = beginAuthenticationRequest()
     setBusy(true)
     setError('')
     try {
@@ -1077,19 +1091,23 @@ export default function LearnerTrainingPage() {
         passwordSet: boolean
         phoneMasked: string
         registrationRequired?: boolean
-      }>('/api/mobile/auth/activation/status', { method: 'POST', body: JSON.stringify({ iin }) })
+      }>('/api/mobile/auth/activation/status', {
+        method: 'POST', body: JSON.stringify({ iin }), signal: attempt.signal,
+      })
+      if (!attempt.isCurrent()) return
       setPhoneMasked(status.phoneMasked)
       setIsNewRegistration(Boolean(status.registrationRequired))
       setAuthStep(status.passwordSet ? 'password' : 'phone')
     } catch (statusError) {
-      setError(messageFrom(statusError))
+      if (attempt.isCurrent()) setError(messageFrom(statusError))
     } finally {
-      setBusy(false)
+      if (attempt.isCurrent()) setBusy(false)
     }
   }
 
   async function login(event: React.FormEvent) {
     event.preventDefault()
+    const attempt = beginAuthenticationRequest()
     setBusy(true)
     setError('')
     try {
@@ -1099,13 +1117,15 @@ export default function LearnerTrainingPage() {
       }>('/api/mobile/auth/login', {
         method: 'POST',
         body: JSON.stringify({ iin, password }),
+        signal: attempt.signal,
       })
+      if (!attempt.isCurrent()) return
       persistTokens(result.tokens)
       setPharmacist(result.pharmacist)
     } catch (loginError) {
-      setError(messageFrom(loginError))
+      if (attempt.isCurrent()) setError(messageFrom(loginError))
     } finally {
-      setBusy(false)
+      if (attempt.isCurrent()) setBusy(false)
     }
   }
 
@@ -1115,6 +1135,7 @@ export default function LearnerTrainingPage() {
 
   async function requestActivationCode(event: React.FormEvent) {
     event.preventDefault()
+    const attempt = beginAuthenticationRequest()
     setBusy(true)
     setError('')
     try {
@@ -1123,12 +1144,15 @@ export default function LearnerTrainingPage() {
         {
           method: 'POST',
           body: JSON.stringify({ iin, phone: `+7${phone}` }),
+          signal: attempt.signal,
         },
       )
+      if (!attempt.isCurrent()) return
       setPhoneMasked(result.phoneMasked)
       setOtpCode('')
       setAuthStep('otp')
     } catch (requestError) {
+      if (!attempt.isCurrent()) return
       if (requestError instanceof LearnerApiError && requestError.code === 'CONFLICT') {
         setPassword('')
         setPasswordConfirmation('')
@@ -1138,23 +1162,27 @@ export default function LearnerTrainingPage() {
         setError(messageFrom(requestError))
       }
     } finally {
-      setBusy(false)
+      if (attempt.isCurrent()) setBusy(false)
     }
   }
 
   async function verifyActivationCode(event: React.FormEvent) {
     event.preventDefault()
+    const attempt = beginAuthenticationRequest()
     setBusy(true)
     setError('')
     try {
       await request('/api/mobile/auth/activation/sms/verify', {
         method: 'POST',
         body: JSON.stringify({ iin, phone: `+7${phone}`, code: otpCode }),
+        signal: attempt.signal,
       })
+      if (!attempt.isCurrent()) return
       setPassword('')
       setPasswordConfirmation('')
       setAuthStep('create-password')
     } catch (verifyError) {
+      if (!attempt.isCurrent()) return
       if (verifyError instanceof LearnerApiError && verifyError.code === 'CONFLICT') {
         setPassword('')
         setPasswordConfirmation('')
@@ -1164,7 +1192,7 @@ export default function LearnerTrainingPage() {
         setError(messageFrom(verifyError))
       }
     } finally {
-      setBusy(false)
+      if (attempt.isCurrent()) setBusy(false)
     }
   }
 
@@ -1179,6 +1207,7 @@ export default function LearnerTrainingPage() {
       setError(t(policyError))
       return
     }
+    const attempt = beginAuthenticationRequest()
     setBusy(true)
     setError('')
     try {
@@ -1192,11 +1221,14 @@ export default function LearnerTrainingPage() {
             password,
             ...(isNewRegistration ? { name: fullName.trim() } : {}),
           }),
+          signal: attempt.signal,
         },
       )
+      if (!attempt.isCurrent()) return
       persistTokens(result.tokens)
       setPharmacist(result.pharmacist)
     } catch (passwordError) {
+      if (!attempt.isCurrent()) return
       if (passwordError instanceof LearnerApiError && passwordError.code === 'CONFLICT') {
         setPassword('')
         setPasswordConfirmation('')
@@ -1206,7 +1238,7 @@ export default function LearnerTrainingPage() {
         setError(messageFrom(passwordError))
       }
     } finally {
-      setBusy(false)
+      if (attempt.isCurrent()) setBusy(false)
     }
   }
 
@@ -1696,7 +1728,10 @@ export default function LearnerTrainingPage() {
                         inputMode="tel"
                         autoComplete="tel"
                         value={phone}
-                        onChange={(event) => setPhone(normalizePhoneInput(event.target.value))}
+                        onChange={(event) => {
+                          clearRecovery()
+                          setPhone(normalizePhoneInput(event.target.value))
+                        }}
                         placeholder="7470799353"
                         autoFocus
                         required
@@ -1744,7 +1779,10 @@ export default function LearnerTrainingPage() {
                   <button
                     type="button"
                     className="w-full text-sm font-bold text-brand-green-700"
-                    onClick={() => setAuthStep('phone')}
+                    onClick={() => {
+                      clearRecovery()
+                      setAuthStep('phone')
+                    }}
                   >
                     {t('Изменить номер')}
                   </button>

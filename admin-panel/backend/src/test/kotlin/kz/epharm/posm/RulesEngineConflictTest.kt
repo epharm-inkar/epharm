@@ -21,7 +21,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.Optional
 
 /**
  * Детект конфликтов правил (T2): несколько аналогов — валидный multi-offer,
@@ -78,8 +77,9 @@ class RulesEngineConflictTest {
             val wanted = firstArg<Collection<String>>().toSet()
             (cartProducts + recommends).filter { product -> product.scanBarcodes().any { it in wanted } }
         }
-        (cartProducts + recommends).forEach { p ->
-            every { productRepo.findById(p.id) } returns Optional.of(p)
+        every { productRepo.findAllById(any<Iterable<String>>()) } answers {
+            val ids = firstArg<Iterable<String>>().toSet()
+            (cartProducts + recommends).filter { it.id in ids }
         }
     }
 

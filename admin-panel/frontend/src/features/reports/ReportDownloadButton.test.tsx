@@ -95,4 +95,55 @@ describe('separate XLSX action', () => {
     })
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
+
+  it.each(['filters', 'permission', 'invalid'] as const)(
+    'can retry after restoring %s without reviving the cancelled request',
+    async (change) => {
+      const completions: Array<(value: unknown) => void> = []
+      const get = vi.spyOn(api, 'get').mockImplementation(
+        () => new Promise((resolve) => { completions.push(resolve) }),
+      )
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      const NativeUrl = URL
+      vi.stubGlobal('URL', class extends NativeUrl {
+        static createObjectURL() { return 'blob:synthetic-only' }
+        static revokeObjectURL() {}
+      })
+      const props = {
+        path: '/api/admin/reports/campaigns/example/xlsx',
+        params: { from: '2026-10-01', to: '2026-10-31' },
+        filename: 'campaign.xlsx', label: 'Excel', allowed: true,
+      }
+      const { rerender } = render(<ReportDownloadButton {...props} />)
+      await userEvent.click(screen.getByRole('button'))
+      expect(screen.getByRole('button')).toBeDisabled()
+      const originalSignal = get.mock.calls[0][1]?.signal
+
+      rerender(<ReportDownloadButton {...props}
+        allowed={change === 'permission' ? false : true}
+        params={change === 'filters' ? { ...props.params, to: '2026-10-30' } : props.params}
+        invalid={change === 'invalid' ? 'Apply filters first' : undefined}
+      />)
+      expect(originalSignal?.aborted).toBe(true)
+      rerender(<ReportDownloadButton {...props} />)
+      expect(screen.getByRole('button', { name: 'Excel' })).toBeEnabled()
+      await userEvent.click(screen.getByRole('button'))
+      expect(get).toHaveBeenCalledTimes(2)
+      expect(get.mock.calls[1][1]?.signal?.aborted).toBe(false)
+
+      const response = {
+        data: new Blob(['synthetic-xlsx']),
+        headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+      }
+      await act(async () => { completions[0](response) })
+      expect(click).not.toHaveBeenCalled()
+      expect(screen.getByRole('button')).toBeDisabled()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+      await act(async () => { completions[1](response) })
+      expect(click).toHaveBeenCalledOnce()
+      expect(screen.getByRole('status')).toHaveTextContent('Excel передан браузеру')
+      expect(screen.getByRole('button')).toBeEnabled()
+    },
+  )
 })

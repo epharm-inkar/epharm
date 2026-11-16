@@ -2,7 +2,6 @@ package kz.epharm.posm
 
 import io.mockk.every
 import io.mockk.mockk
-import java.util.Optional
 import kz.epharm.catalog.entity.ProductEntity
 import kz.epharm.catalog.repository.ProductRepository
 import kz.epharm.catalog.service.AccCatalogClassification
@@ -37,8 +36,9 @@ class RulesEngineBarcodeAliasesTest {
     @BeforeEach
     fun setUp() {
         every { repository.findAllByStatusRawOrderByUpdatedAtDesc("active") } answers { active }
-        every { products.findById(any()) } answers {
-            Optional.ofNullable(catalog.firstOrNull { it.id == firstArg<String>() })
+        every { products.findAllById(any<Iterable<String>>()) } answers {
+            val ids = firstArg<Iterable<String>>().toSet()
+            catalog.filter { it.id in ids }
         }
         every { products.findAllByBarcodeIn(any()) } answers {
             val keys = firstArg<Collection<String>>().toSet()

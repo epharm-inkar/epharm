@@ -27,7 +27,7 @@ import { useT } from '@/i18n'
 export default function DashboardPage() {
   const t = useT()
   const user = useUiStore((state) => state.authedUser)
-  const { data: s, isLoading, isError, error, refetch } = useDashboardSummary()
+  const { data: s, isLoading, isFetching, isError, error, refetch } = useDashboardSummary()
 
   return (
     <div className="flex flex-col gap-5">
@@ -43,17 +43,31 @@ export default function DashboardPage() {
         }
       />
 
-      {isError && !s && (
-        <Empty
-          title={t('dash.errTitle')}
-          body={describeError(error)}
-          icon={<IconReconcile size={26} />}
-          action={<Button onClick={() => refetch()}>{t('common.retry')}</Button>}
-        />
+      {!s && (
+        <div role={isError ? 'alert' : 'status'} data-testid="dash-summary-state">
+          <Empty
+            title={isError ? t('dash.errTitle') : t('dash.loading')}
+            body={isError ? describeError(error) : undefined}
+            icon={<IconReconcile size={26} />}
+            action={isError ? (
+              <Button onClick={() => refetch()} disabled={isFetching}>{t('common.retry')}</Button>
+            ) : undefined}
+          />
+        </div>
       )}
 
+      {s && isError && (
+        <div role="alert" className="hairline flex items-center gap-3 rounded-md border bg-accent-warning/10 px-4 py-2 text-[12px] font-semibold text-ink-700">
+          <span>{t('common.staleWarn', { e: describeError(error) })}</span>
+          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>
+            {t('common.retry')}
+          </Button>
+        </div>
+      )}
+
+      {s && <>
       {/* 4 KPI tiles */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-4 gap-4" data-testid="dash-summary-kpis">
         <Metric
           label={t('dash.mImpr')}
           value={formatNum(s?.impressions ?? 0)}
@@ -83,6 +97,7 @@ export default function DashboardPage() {
           meta={t('dash.pending', { v: formatKzt(s?.pendingPayout ?? 0) })}
         />
       </div>
+      <p className="text-[12px] text-ink-500" data-testid="dash-payout-note">{t('dash.payoutNote')}</p>
 
       {/* Двухколоночный блок: график lift + heatmap (time-series — данных пока нет) */}
       <div className="grid grid-cols-2 gap-5">
@@ -130,6 +145,7 @@ export default function DashboardPage() {
           />
         </SectionCard>
         <SectionCard title={t('dash.topProd')} subtitle={t('dash.topProdSub')}>
+          <p className="mb-3 text-[12px] text-ink-500" data-testid="dash-amount-note">{t('dash.amountNote')}</p>
           <TopList
             rows={(s?.topProducts ?? []).map((p) => ({
               id: p.id,
@@ -142,6 +158,7 @@ export default function DashboardPage() {
           />
         </SectionCard>
       </div>
+      </>}
 
       {/* Показано рекомендаций — конверсия показ→продажа + время до продажи (V032) */}
       <RecommendationsSection />
@@ -236,6 +253,9 @@ function RecommendationsSection() {
 
   return (
     <SectionCard title={t('recan.title')} subtitle={t('recan.subtitle')}>
+      <p className="mb-3 text-[12px] font-semibold text-ink-600" data-testid="recan-period">
+        {t('recan.period', { n: a.windowDays })}
+      </p>
       {isError && (
         <div
           role="alert"
@@ -270,6 +290,7 @@ function RecommendationsSection() {
         />
         <MiniKpi label={t('recan.revenue')} value={formatKzt(a?.attributedRevenue ?? 0)} />
       </div>
+      <p className="mb-4 text-[12px] text-ink-500" data-testid="recan-amount-note">{t('recan.amountNote')}</p>
 
       {log.length === 0 ? (
         <Empty title={t('recan.empty')} icon={<IconEye size={22} />} />
@@ -307,10 +328,12 @@ function RecommendationsSection() {
                         {e.title}
                         {e.type === 'show' && e.converted && (
                           <span className="chip chip-green ml-2 whitespace-nowrap font-normal">
-                            {t('recan.soldIn', { t: fmtSecs(e.secondsToSale ?? 0) })}
+                            {e.secondsToSale != null && e.secondsToSale >= 0
+                              ? t('recan.soldIn', { t: fmtSecs(e.secondsToSale) })
+                              : t('recan.kindSale')}
                           </span>
                         )}
-                        {e.type === 'sale' && e.secondsToSale != null && (
+                        {e.type === 'sale' && e.secondsToSale != null && e.secondsToSale >= 0 && (
                           <span className="chip chip-green ml-2 whitespace-nowrap font-normal">
                             {t('recan.soldAfter', { t: fmtSecs(e.secondsToSale) })}
                           </span>

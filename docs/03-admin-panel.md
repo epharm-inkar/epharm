@@ -1,5 +1,29 @@
 # Admin Console
 
+## Registration, analytics and pharmacy computers — candidate 2026-11-16
+
+The separate `/learn` login cancels outstanding identity/authentication requests when
+the IIN, activation phone, step or component changes. A response from the previous
+identity cannot persist tokens or replace the current form. Failed current requests
+retain entered passwords; no automatic password submission or OTP retry is added.
+POSM new-employee registration remains SMS-free; existing learner activation and
+password recovery are separate protected flows.
+
+The pharmacy network shows three independent counters on desktop and mobile:
+inventory PCs (`inventoryDeviceCount`), registered POSM device identities, and devices
+with a fresh heartbeat. Unknown inventory is "Не сверено", not zero. The inventory
+source and observation timestamp are shown separately from server heartbeat freshness.
+An old backend lacking counters displays an unavailable state. These counters do not
+assert physical installations or use fuzzy AnyDesk/address matching.
+
+Analytics keeps loading, failure, real zero and stale previous data distinct. Monetary
+offer values are labelled as offered/accepted product prices, not paid receipt revenue;
+approved statement totals are not proof of bank transfers. Missing sale duration is
+unknown, while an actual zero-second duration is valid. The journal's rolling window
+is explicit and is not silently presented as the selected calendar month. Unimplemented
+time-series charts are labelled unavailable, not "no activity". Changing report context
+cancels the previous export without leaving its button stuck when the context returns.
+
 ## Local audit fixes: responsive shell, safe actions and readable state
 
 The authenticated HQ shell now uses a responsive drawer below the desktop

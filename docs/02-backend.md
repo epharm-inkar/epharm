@@ -1,5 +1,29 @@
 # Backend
 
+## Pharmacy inventory and analytics audit — candidate 2026-11-16
+
+Pharmacy DTOs expose nullable `inventoryDeviceCount`, `inventorySource` and
+`inventoryUpdatedAt`, plus `registeredDeviceCount`, `onlineDeviceCount`,
+`deviceCountsObservedAt` and `deviceOnlineWindowSeconds`. Inventory updates require
+both count and a nonblank, bounded, control-character-free source; the timestamp is
+server-generated. Null/null leaves inventory unchanged; unknown is not inferred as zero.
+The existing pharmacy edit permission and scope apply independently of read access.
+
+POSM counts use one grouped query restricted to visible pharmacy IDs, not one query
+per pharmacy. Registered means distinct active, non-revoked device IDs; online also
+requires an active pharmacy and a heartbeat within the configured window up to the
+observation time. Future heartbeat timestamps are not online. Inventory and the durable
+POSM device registry are different evidence sources, not physical-machine reconciliation.
+
+The metrics scheduler writes only calculated metric columns with a conditional SQL
+update, never merges a stale pharmacy entity. Both scoped and unrestricted pharmacy
+edits acquire the row lock before reading; inventory/passport updates are not lost
+when metrics refresh concurrently.
+
+Recommendation duration analytics excludes unknown/negative durations from timing
+statistics without dropping converted events. The even-sized median averages the two
+middle values with overflow-safe arithmetic; actual zero durations remain valid.
+
 ## Current training auto-assignment
 
 An opt-in reconciler assigns one explicitly selected published online training

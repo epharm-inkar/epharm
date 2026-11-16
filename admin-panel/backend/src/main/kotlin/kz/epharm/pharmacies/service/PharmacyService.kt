@@ -16,9 +16,11 @@ import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
 import org.springframework.http.HttpStatus
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
+import java.time.Instant
 
 @Service
 class PharmacyService(
@@ -26,6 +28,7 @@ class PharmacyService(
     private val chainRepository: ChainRepository,
     private val pharmacistRepository: PharmacistRepository,
     private val administrativeScope: AdministrativeScope,
+    @Value("\${app.posm.heartbeat-ttl-seconds:90}") private val heartbeatTtlSeconds: Long = 90,
 ) {
 
     @Transactional(readOnly = true)
@@ -98,7 +101,7 @@ class PharmacyService(
             chainId != null -> pharmacyRepository.findAllByChainIdOrderByNameAsc(chainId)
             else -> pharmacyRepository.findAllByOrderByNameAsc()
         }
-        return rows.map { projected(it) }
+        return projected(rows)
     }
 
     @Transactional(readOnly = true)
@@ -134,6 +137,17 @@ class PharmacyService(
     fun update(id: String, req: UpdatePharmacyRequest): PharmacyDto {
         administrativeScope.requirePharmacyUpdate(req)
         val entity = loadOrThrow(id, forUpdate = true)
+        val inventoryChanged = req.inventoryDeviceCount != null || req.inventorySource != null
+        if (inventoryChanged) {
+            val count = req.inventoryDeviceCount
+            val source = req.inventorySource
+            if (count == null || count < 0 || source.isNullOrBlank() ||
+                source.length > 255 || source.any { Character.isISOControl(it) }) {
+                throw AppException(ErrorCode.VALIDATION_FAILED,
+                    "Inventory requires a nonnegative count and a nonblank source of at most 255 characters without control characters",
+                    HttpStatus.BAD_REQUEST)
+            }
+        }
         req.name?.let { entity.name = it.trim() }
         req.city?.let { entity.city = it.trim() }
         req.district?.let { entity.district = it.trim() }
@@ -143,6 +157,11 @@ class PharmacyService(
         req.receipts30d?.let { entity.receipts30d = it }
         req.gmv30d?.let { entity.gmv30d = it }
         req.rulesAccepted?.let { entity.rulesAccepted = it }
+        if (inventoryChanged) {
+            entity.inventoryDeviceCount = req.inventoryDeviceCount
+            entity.inventorySource = req.inventorySource!!.trim()
+            entity.inventoryUpdatedAt = Instant.now()
+        }
         return projected(pharmacyRepository.save(entity))
     }
 
@@ -168,6 +187,7 @@ class PharmacyService(
     private fun loadOrThrow(id: String, forUpdate: Boolean = false): PharmacyEntity {
         val scope = administrativeScope.currentPharmacyIds()
         val entity = when {
+            scope == null && forUpdate -> pharmacyRepository.findByIdForUpdate(id).orElse(null)
             scope == null -> pharmacyRepository.findById(id).orElse(null)
             scope.isEmpty() -> null
             forUpdate -> pharmacyRepository.findInAdministrativeScopeForUpdate(id, scope).orElse(null)
@@ -176,8 +196,26 @@ class PharmacyService(
         return entity ?: throw AppException(ErrorCode.NOT_FOUND, "Pharmacy $id not found", HttpStatus.NOT_FOUND)
     }
 
-    private fun projected(entity: PharmacyEntity): PharmacyDto =
-        administrativeScope.pharmacy(PharmacyDto.of(entity))
+    private fun projected(entity: PharmacyEntity): PharmacyDto = projected(listOf(entity)).single()
+
+    private fun projected(entities: List<PharmacyEntity>): List<PharmacyDto> {
+        if (entities.isEmpty()) return emptyList()
+        val observedAt = Instant.now()
+        // IDs have already passed administrative scope and list filters. One aggregate query
+        // for the returned pharmacies; never one per row or an unrestricted fleet lookup.
+        val counts = pharmacyRepository.deviceCounts(
+            entities.map { it.id }.toSet(), observedAt.minusSeconds(heartbeatTtlSeconds), observedAt,
+        ).associateBy { it.pharmacyId }
+        return entities.map { entity ->
+            val count = counts[entity.id]
+            administrativeScope.pharmacy(PharmacyDto.of(entity).copy(
+                registeredDeviceCount = count?.registered ?: 0,
+                onlineDeviceCount = count?.online ?: 0,
+                deviceCountsObservedAt = observedAt,
+                deviceOnlineWindowSeconds = heartbeatTtlSeconds,
+            ))
+        }
+    }
 
     private fun generateId(): String = "ph_${UUID.randomUUID().toString().substring(0, 8)}"
 }

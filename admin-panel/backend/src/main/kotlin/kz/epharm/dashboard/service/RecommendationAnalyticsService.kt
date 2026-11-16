@@ -64,11 +64,17 @@ class RecommendationAnalyticsService(
         val shown = shows.size
         val convertedEvents = shows.filter { it.soldAt != null }
         val converted = convertedEvents.size
-        val secs = convertedEvents.mapNotNull { it.secondsToSale }.sorted()
+        // Missing/invalid legacy timing is not a zero-second sale. Preserve the sale count,
+        // but only measured nonnegative intervals participate in time statistics.
+        val secs = convertedEvents.mapNotNull { it.secondsToSale?.takeIf { seconds -> seconds >= 0 } }.sorted()
         val convRate = if (shown > 0) round1(converted * 100.0 / shown) else 0.0
         val under2m = secs.count { it <= TWO_MIN }
         val avg = if (secs.isNotEmpty()) secs.average().roundToInt() else null
-        val median = if (secs.isNotEmpty()) secs[secs.size / 2] else null
+        val median = when {
+            secs.isEmpty() -> null
+            secs.size % 2 == 1 -> secs[secs.size / 2]
+            else -> ((secs[secs.size / 2 - 1].toLong() + secs[secs.size / 2]) / 2.0).roundToInt()
+        }
         val revenue = convertedEvents.sumOf { it.expectedAmount }
 
         // ── Единый журнал: PostgreSQL возвращает только запрошенную страницу ────

@@ -283,6 +283,27 @@ class UnifiedAdminAccessIntegrationTest {
         mvc.perform(get("/api/admin/pharmacies").header("Authorization", auth())).andExpect(status().isForbidden)
     }
 
+    @Test fun `inventory observation needs existing pharmacy edit permission and stays in assigned scope`() {
+        val body = """{"inventoryDeviceCount":2,"inventorySource":"Synthetic reviewed inventory"}"""
+        grants(grant("pharmacies_products", "pharmacies", "view"))
+        mvc.perform(patch("/api/admin/pharmacies/scope-a").header("Authorization", auth())
+            .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden)
+        grants(grant("pharmacies_products", "pharmacies", "edit"))
+        mvc.perform(patch("/api/admin/pharmacies/scope-b").header("Authorization", auth())
+            .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isNotFound)
+        mvc.perform(patch("/api/admin/pharmacies/scope-a").header("Authorization", auth())
+            .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk)
+            .andExpect(jsonPath("$.inventoryDeviceCount").value(2))
+            .andExpect(jsonPath("$.inventorySource").value("Synthetic reviewed inventory"))
+            .andExpect(jsonPath("$.inventoryUpdatedAt").isNotEmpty)
+            .andExpect(jsonPath("$.registeredDeviceCount").value(0))
+        assertThat(jdbc.queryForObject("select inventory_device_count from pharmacies where id='scope-b'", Int::class.java)).isNull()
+        grants(grant("pharmacies_products", "pharmacies", "view"))
+        mvc.perform(get("/api/admin/pharmacies").header("Authorization", auth())).andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].inventoryDeviceCount").value(2))
+    }
+
     @Test fun `editing name cannot modify balance password results or counters`() {
         grants(grant("pharmacists", "registry", "edit"), grant("pharmacies_products", "pharmacies", "edit"))
         for (body in listOf("{\"balance\":900}", "{\"password\":\"Synthetic-password\"}", "{\"coursesDone\":4}")) {

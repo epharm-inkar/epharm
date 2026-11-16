@@ -70,6 +70,13 @@ data class PharmacyDto(
     val active: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val registeredDeviceCount: Long? = null,
+    val onlineDeviceCount: Long? = null,
+    val deviceCountsObservedAt: Instant? = null,
+    val deviceOnlineWindowSeconds: Long? = null,
+    val inventoryDeviceCount: Int? = null,
+    val inventorySource: String? = null,
+    val inventoryUpdatedAt: Instant? = null,
 ) {
     companion object {
         fun of(e: PharmacyEntity): PharmacyDto = PharmacyDto(
@@ -89,6 +96,9 @@ data class PharmacyDto(
             active = e.active,
             createdAt = e.createdAt,
             updatedAt = e.updatedAt,
+            inventoryDeviceCount = e.inventoryDeviceCount,
+            inventorySource = e.inventorySource,
+            inventoryUpdatedAt = e.inventoryUpdatedAt,
         )
     }
 }
@@ -123,4 +133,6 @@ data class UpdatePharmacyRequest(
     @field:Min(0) val receipts30d: Int? = null,
     @field:Min(0) val gmv30d: Long? = null,
     @field:Min(0) val rulesAccepted: Int? = null,
+    @field:Min(0) val inventoryDeviceCount: Int? = null,
+    @field:Size(max = 255) val inventorySource: String? = null,
 )
