@@ -98,3 +98,15 @@ available in this checkout. Older extraction/reconciliation files have different
 row partitions and are not a substitute. This release deploys the API and nullable
 schema; inventory import remains separate. V104 compatibility must be exercised
 with the actual preceding backend before production migration.
+
+Release readiness exposed a pre-existing v0.2.20 hot-path scaling defect: every scan
+loaded each active rule's product separately before matching. With 981 active rules,
+this produces hundreds of product queries per scan. Product-ID and legacy-INN reads
+are now batched separately, reconstructing the previous candidate ordering without
+cross-request caching or changing global barcode ownership checks. A 981-rule test
+first failed on old query counts, then passed with the patch. All 21 focused engine
+tests pass; independent review found no change to ranking, four advertised trigger
+types, product-any, ACC AND, missing-ID or ambiguity behavior. Full CI must run again
+on this additional change. Live disconnect/pool-timeout observations establish an
+operational risk; they are not a controlled capacity benchmark or proof that this
+is the only production bottleneck.

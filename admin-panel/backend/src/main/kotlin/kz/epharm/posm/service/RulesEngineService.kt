@@ -366,9 +366,14 @@ class RulesEngineService(
                 "mnn" -> (rule.trigger.value as? String)?.let(mnns::add)
             }
         }
+        // A scan may see thousands of active rules; load each key set once, not one SQL query per product/MNN.
+        val byId = if (productIds.isEmpty()) emptyMap()
+            else productRepository.findAllById(productIds).associateBy(ProductEntity::id)
+        val byMnn = if (mnns.isEmpty()) emptyMap()
+            else productRepository.findAllByMnnInOrderByNameAsc(mnns).groupBy(ProductEntity::mnn)
         return buildList {
-            productIds.mapNotNullTo(this) { productRepository.findById(it).orElse(null) }
-            mnns.flatMapTo(this) { productRepository.findAllByMnnOrderByNameAsc(it) }
+            productIds.mapNotNullTo(this, byId::get)
+            mnns.forEach { addAll(byMnn[it].orEmpty()) }
         }.distinctBy(ProductEntity::id)
     }
 

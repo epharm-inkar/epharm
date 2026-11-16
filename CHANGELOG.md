@@ -28,6 +28,8 @@ All notable production changes to Epharm are recorded here. The format follows
 - Release cancelled Excel export state when filters or permissions change.
 - Preserve pharmacy passport and inventory edits during background metrics refresh
   through column-specific updates and locked administrative writes.
+- Batch recommendation product and legacy INN reads instead of issuing a separate
+  query for every active rule's product, preserving trigger and ranking semantics.
 
 ## [0.2.20] - 2026-11-16
 

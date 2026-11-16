@@ -11,6 +11,7 @@ interface ProductRepository : JpaRepository<ProductEntity, String> {
     fun findAllByOrderByNameAsc(): List<ProductEntity>
     fun findAllByBrandOrderByNameAsc(brand: String): List<ProductEntity>
     fun findAllByMnnOrderByNameAsc(mnn: String): List<ProductEntity>
+    fun findAllByMnnInOrderByNameAsc(mnns: Collection<String>): List<ProductEntity>
 
     /** Товары каталога, привязанные к Medusa — для регулярного рефреша цены планировщиком. */
     fun findAllByMedusaProductIdIsNotNull(): List<ProductEntity>
