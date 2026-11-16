@@ -758,6 +758,68 @@ class RecommendationRewardFlowIntegrationTest {
             WHERE p.pharmacy_id=? AND e.source='receipt_bonus'""", first.pharmacy)).isEqualTo(16)
     }
 
+    @Test fun `a conflicting source login cannot commit between HQ identity verification and wallet credit`() {
+        val f = flow()
+        acknowledge(f)
+        val paid = payment(f)
+        deliver(f, paid.copy(rewardEvidence=paid.rewardEvidence!!.let { evidence ->
+            evidence.copy(completion=evidence.completion.copy(lines=evidence.completion.lines.map { it.copy(unitSemantics="unknown") }))
+        }))
+        val reward = cases(f).single()
+        val reviewer = reviewer(setOf(f.employee.pharmacy), approve=true)
+        val claimant = employee(f.employee, mapped=false).copy(rawUser=f.employee.rawUser)
+        val workers = Executors.newFixedThreadPool(3)
+        val budgetHeld = CountDownLatch(1)
+        val releaseBudget = CountDownLatch(1)
+        val budgetPid = java.util.concurrent.atomic.AtomicInteger()
+        try {
+            val holder = workers.submit {
+                org.springframework.transaction.support.TransactionTemplate(transactions).execute {
+                    budgetPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!)
+                    jdbc.queryForList("SELECT id FROM promos WHERE id=? FOR NO KEY UPDATE", f.world.offers.single().promo)
+                    budgetHeld.countDown()
+                    check(releaseBudget.await(30, TimeUnit.SECONDS))
+                }
+            }
+            assertThat(budgetHeld.await(10, TimeUnit.SECONDS)).isTrue()
+            val approval = workers.submit {
+                decide(reward["id"].toString(), reviewer, RewardReviewDecision("approve", "Verified original paid packages",
+                    f.employee.person, 2, confirmedPayment=true, confirmedPackages=true))
+            }
+            // Waiting on funding means the real review already passed identity.resolve().
+            val reviewPid = waitForBlockedBackend(budgetPid.get(), approval)
+            assertThat(reviewPid).describedAs("review must reach the held funding row").isNotNull()
+            val login = workers.submit<SourceLogin> { sourceLogin(claimant) }
+            assertThat(waitForBlockedBackend(reviewPid!!, login))
+                .describedAs("conflicting password login must wait for the review's source account lock").isNotNull()
+            releaseBudget.countDown()
+            holder.get(10, TimeUnit.SECONDS)
+            approval.get(10, TimeUnit.SECONDS)
+            login.get(10, TimeUnit.SECONDS)
+            assertThat(balance(f.employee)).isEqualTo(400)
+            assertThat(balance(claimant)).isZero()
+            assertThat(rows("SELECT state FROM posm_source_staff_bindings WHERE pharmacy_id=? AND native_user_id=?",
+                f.employee.pharmacy, f.employee.rawUser).single()["state"]).isEqualTo("conflict")
+            assertThat(number("SELECT count(*) FROM pharmacist_wallet_entries WHERE pharmacist_id=?", f.employee.person)).isEqualTo(1)
+        } finally {
+            releaseBudget.countDown()
+            workers.shutdown()
+            if (!workers.awaitTermination(15, TimeUnit.SECONDS)) workers.shutdownNow()
+        }
+    }
+
+    private fun waitForBlockedBackend(blocker: Int, request: java.util.concurrent.Future<*>): Int? {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            val waiting = jdbc.query("SELECT pid FROM pg_stat_activity WHERE ?=ANY(pg_blocking_pids(pid))",
+                { rs, _ -> rs.getInt(1) }, blocker).firstOrNull()
+            if (waiting != null) return waiting
+            if (request.isDone) return null
+            Thread.sleep(25)
+        }
+        return null
+    }
+
     @Test fun `HQ scope restricts list detail export and decisions while verified unknown units can be approved once`() {
         val local = flow()
         val foreign = flow()

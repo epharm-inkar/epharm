@@ -160,18 +160,26 @@ class PosSaleService(
         // not introduce a legacy payout route without complete reward evidence either.
         if (req.pharmacistId.isNotBlank() && req.rewardEvidence == null &&
             identity.source in setOf(PharmacistIdentitySource.POSM_INTERNAL, PharmacistIdentitySource.STANDARDN_EXPLICIT_MAPPING)) {
-            reconcileService.ingestLogSale(
-                LogSaleInput(
-                    pharmacistId = req.pharmacistId,
-                    pharmacyId = req.pharmacyId,
-                    fiscalId = req.fiscalId,
-                    cashier = req.cashier,
-                    soldAt = req.printedAt,
-                    items = req.items.mapIndexed { i, it ->
-                        LogSaleItem(sku = productIds[i] ?: it.sku ?: "", qty = it.qty, price = it.price, total = it.total)
-                    },
-                ),
-            )
+            // Diagnostic name matches and unverified raw SKU values cannot confirm money.
+            // Resolve financial lines independently, preserving the strict EAN/SKU contract.
+            val financialProductIds = rulesEngineService.resolveStrongProductIds(cartItems)
+            val financialItems = req.items.mapIndexedNotNull { index, item ->
+                financialProductIds[index]?.let { productId ->
+                    LogSaleItem(sku = productId, qty = item.qty, price = item.price, total = item.total)
+                }
+            }
+            if (financialItems.isNotEmpty()) {
+                reconcileService.ingestLogSale(
+                    LogSaleInput(
+                        pharmacistId = req.pharmacistId,
+                        pharmacyId = req.pharmacyId,
+                        fiscalId = req.fiscalId,
+                        cashier = req.cashier,
+                        soldAt = req.printedAt,
+                        items = financialItems,
+                    ),
+                )
+            }
         }
         return true
     }

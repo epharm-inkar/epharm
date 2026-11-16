@@ -560,6 +560,12 @@ namespace CustomerDisplay.Services
                 if (Directory.Exists(finalDir))
                 {
                     var existing = ReadSale(finalDir);
+                    // The legacy stable id is pharmacy + DOCS.ID, not database/session.
+                    // A known collision must not overwrite the outbox or acknowledge/retire
+                    // a different native receipt using this sale's immutable pending/ACK.
+                    if (existing.SellerSource != null && sale.SellerSource != null &&
+                        existing.SellerSource != sale.SellerSource)
+                        throw new InvalidDataException("Receipt source identity conflicts with the preserved sale; unresolved receipt retained.");
                     if (ReceiptFinalizationRules.IsKnownUnconfirmedLegacySource(existing.CaptureSource) &&
                         ReceiptFinalizationRules.IsConfirmedPrint(sale.CaptureSource) &&
                         !TryReadStoredMetadata(finalDir, out _))

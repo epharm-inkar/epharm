@@ -18,6 +18,17 @@ healthy current-source receipts to proceed. Successful partition reads still sha
 print-cue ambiguity check. An unreadable candidate cannot be discarded unless its known
 namespace provably differs from every successfully read completion for that cue.
 Missing provenance is not separation; an already anchored cue cannot be reassigned.
+The short-lived suppression of an already finalized receipt also checks its native
+group/session/workstation and known database namespace, not just DOCS.ID. A proven
+new source or native session may reuse a numeric document ID without disappearing
+from the display; a repeated observation of the original receipt stays suppressed.
+The legacy sale ID remains `pharmacyId + DOCS.ID`. If both saved and new native
+seller proofs are known but differ, completion fails closed: the new group stays
+visible/unresolved and the original pending payload, outbox and delivery ACK remain
+unchanged. Automatic delivery of two distinct receipts with that same legacy ID
+across databases or sessions is not supported by this fix; it needs a coordinated
+identity/replay migration. Missing legacy provenance is not proof of a collision
+or permission to invent a new identity. This guard does not migrate historical IDs.
 Name lookup is source/user/session-scoped
 and expires (30 seconds for missing names, five minutes for found names); action-log
 lookup requires both SESSION_ID and USER_ID and never falls back to another session.

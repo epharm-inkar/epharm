@@ -254,9 +254,13 @@ class ReconcileService(
             if (fiscalIdsConflict(receipt.fiscalId, input.fiscalId)) continue
 
             receipt.source = ReceiptSource.posm
-            val amountIssue = sourceAmountIssue(item.total)
-            if (amountIssue != null) {
-                if (receipt.flagReason.isNullOrBlank()) receipt.flagReason = amountIssue
+            val sourceIssue = sourceAmountIssue(item.total) ?: when {
+                !item.qty.isFinite() || item.qty <= 0 -> "quantity_invalid"
+                item.price <= 0 -> "price_invalid"
+                else -> null
+            }
+            if (sourceIssue != null) {
+                if (receipt.flagReason.isNullOrBlank()) receipt.flagReason = sourceIssue
             } else {
                 // Excel may have arrived first. Compare before marking the log confirmed;
                 // the tolerance denominator is always the log amount, independent of order.

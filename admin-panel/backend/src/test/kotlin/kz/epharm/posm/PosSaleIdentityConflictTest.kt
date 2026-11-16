@@ -7,6 +7,7 @@ import io.mockk.every
 import io.mockk.Called
 import io.mockk.mockk
 import io.mockk.verify
+import kz.epharm.posm.dto.PosSaleItemDto
 import kz.epharm.posm.dto.PosSaleRequest
 import kz.epharm.posm.dto.SaleSellerSource
 import kz.epharm.posm.entity.PosSaleEntity
@@ -172,19 +173,22 @@ class PosSaleIdentityConflictTest {
         val resolved = identity.copy(pharmacistId = "person", pharmacistName = "Synthetic Person", source = source,
             reportedPharmacistId = "17", reportedPharmacistName = "Synthetic Person")
         val captured = io.mockk.slot<PosSaleEntity>()
+        val item = PosSaleItemDto(sku = "synthetic-local", qty = 1.0, price = 1234, total = 1234)
         every { repository.findById(request.saleId) } returns Optional.empty()
-        every { rules.resolveToProductIds(emptyList()) } returns emptyList()
+        every { rules.resolveToProductIds(any()) } returns listOf("synthetic-product")
+        every { rules.resolveStrongProductIds(any()) } returns listOf("synthetic-product")
         every { repository.save(capture(captured)) } answers { firstArg<PosSaleEntity>() }
-        every { attribution.attributeSale(any(), emptySet()) } returns Unit
+        every { attribution.attributeSale(any(), setOf("synthetic-product")) } returns Unit
         every { reconcile.ingestLogSale(any()) } returns Unit
 
-        org.junit.jupiter.api.Assertions.assertTrue(service.record(request.copy(pharmacistId = "person"), resolved, "device"))
+        org.junit.jupiter.api.Assertions.assertTrue(service.record(request.copy(pharmacistId = "person", items = listOf(item)), resolved, "device"))
         // Diagnostic attribution remains available even when it is not financial authority.
         assertEquals("person", captured.captured.pharmacistId)
         assertEquals(source.wireValue, captured.captured.pharmacistSource)
-        verify(exactly = 1) { attribution.attributeSale(any(), emptySet()) }
+        verify(exactly = 1) { attribution.attributeSale(any(), setOf("synthetic-product")) }
         val trusted = source in setOf(PharmacistIdentitySource.POSM_INTERNAL, PharmacistIdentitySource.STANDARDN_EXPLICIT_MAPPING)
         verify(exactly = if (trusted) 1 else 0) { reconcile.ingestLogSale(any()) }
+        verify(exactly = if (trusted) 1 else 0) { rules.resolveStrongProductIds(any()) }
         verify { rewards wasNot Called }
     }
 

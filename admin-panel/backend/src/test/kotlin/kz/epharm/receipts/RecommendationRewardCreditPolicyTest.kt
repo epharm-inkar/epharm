@@ -14,6 +14,8 @@ import kz.epharm.shared.error.AppException
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.springframework.jdbc.core.JdbcTemplate
 
 class RecommendationRewardCreditPolicyTest {
@@ -60,6 +62,17 @@ class RecommendationRewardCreditPolicyTest {
         policy.afterCredit(pending,receipt,200)
         verify { sales wasNot Called }
         verify(exactly=0) { jdbc.update(any<String>(), *anyVararg()) }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PendingBonusStatus::class, names = ["expired", "matched"])
+    fun `legacy credit cannot reopen a closed reservation without a v2 reward case`(status: PendingBonusStatus) {
+        every { jdbc.queryForList(match { it.contains("FROM recommendation_sale_rewards") }, *anyVararg()) } returns emptyList()
+        pending.sourceSaleId = null
+        pending.status = status
+        assertEquals(409, assertThrows(AppException::class.java) { policy.beforeCredit(pending, receipt) }.status.value())
+        verify { sales wasNot Called }
+        verify(exactly = 0) { jdbc.update(any<String>(), *anyVararg()) }
     }
 
     @Test fun `three paid packages use total bonus while preserving the unit pending snapshot`() {

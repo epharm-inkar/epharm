@@ -34,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.CsvSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
@@ -121,6 +122,8 @@ class ReconcileSourcesIntegrationTest {
                 pharmacyId = "ph_t", pharmacyName = "Аптека Т", city = "Алматы", balance = 0, earned30d = 0)
                 .also { it.status = PharmacistStatus.active },
         )
+        // The native SKU is explicitly mapped; a bare canonical product ID is not financial proof.
+        productRepository.save(ProductEntity(id = "p_x", name = "Товар X", ipartId = "p_x"))
         pendingBonusRepository.save(
             PendingBonusEntity(id = "pb_t", pharmacistId = "u_t", pharmacistName = "Тест Фарм",
                 pharmacyId = "ph_t", pharmacyName = "Аптека Т", sku = "p_x", productName = "Товар X",
@@ -384,6 +387,26 @@ class ReconcileSourcesIntegrationTest {
 
     private fun receiptForPending() =
         receiptRepository.findAll().first { it.pendingBonusId == "pb_t" }
+
+    @ParameterizedTest
+    @CsvSource("qty,0", "qty,-1", "price,0", "price,-1")
+    fun `ordinary raw sale with invalid quantity or price stays reviewable without wallet credit`(field: String, value: Long) {
+        val request = saleReq("sale_invalid_line", "FLINE", 1_000).let { req ->
+            req.copy(items=req.items.map { if (field == "qty") it.copy(qty=value.toDouble()) else it.copy(price=value) })
+        }
+        mockMvc.perform(post("/api/posm/sales").header("X-Posm-Key", POSM_KEY).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(request))).andExpect(status().isOk)
+        importExcel(listOf(Triple("FLINE", "p_x", 1_000L)))
+        val raw = posSaleRepository.findById(request.saleId).orElseThrow()
+        assertEquals(if (field == "qty") value.toDouble() else 1.0, raw.items.single().qty)
+        assertEquals(if (field == "price") value else 1_000L, raw.items.single().price)
+        val receipt = receiptRepository.findFirstByPendingBonusId("pb_t")!!
+        assertEquals(false, receipt.confirmedByLog)
+        assertEquals(true, receipt.confirmedByExcel)
+        assertEquals(if (field == "qty") "quantity_invalid" else "price_invalid", receipt.flagReason)
+        assertEquals(0L, receipt.bonusCredited)
+        assertEquals(0L, pharmacistRepository.findById("u_t").get().balance)
+    }
 
     @ParameterizedTest
     @ValueSource(strings = ["unknown-branch", ""])

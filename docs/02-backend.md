@@ -1,5 +1,16 @@
 # Backend
 
+## Financial product identity — repeated audit candidate 2026-11-16
+
+Ordinary sale items and attribution retain general catalog resolution for diagnostics.
+Legacy financial reconciliation independently uses `resolveStrongProductIds`: only
+unambiguous exact EAN/local SKU mappings enter the monetary log. An unknown or
+conflicting supplied EAN cannot fall through to a name, and an unverified raw SKU
+cannot be treated as a canonical product ID. Mixed receipts retain all raw/analytics
+items but only strong lines confirm a pending bonus; a receipt without strong lines
+does not invoke legacy reconciliation. Replay, seller-source whitelist, feature flags,
+budgets and the separate evidence-bound reward protocol are unchanged.
+
 ## Ordinary sale seller-source candidate — 2026-11-16
 
 `POST /api/posm/sales` accepts optional `sellerSource` with `sourceNamespace`,
@@ -98,8 +109,16 @@ Log/Excel amounts must be positive and agree within inclusive 2% of the log amou
 regardless of arrival order; comparison is overflow-safe. Missing, invalid or conflicting
 amounts retain an exact matched receipt for HQ with `amount_missing`, `amount_invalid`
 or `amount_mismatch`, without granting financial confirmation to invalid evidence.
+Legacy log confirmation also requires finite positive quantity and positive unit price;
+invalid lines remain in the raw sale journal and the matched receipt stays for HQ review
+with `quantity_invalid` or `price_invalid`. Positive fractional quantities remain valid:
+this check does not infer full-package semantics or multiply a legacy reward by quantity.
 No nonblank existing review reason is cleared or bypassed by automatic retries;
 explicit HQ review retains its existing permissions and decision path.
+The common new-credit gate requires an `awaiting_receipt` reservation even without
+a v2 reward case: manual review cannot revive an expired or already matched legacy
+reservation. Retrying an already approved receipt remains idempotent and does not
+request a second credit.
 An Excel-first row lacking a positive amount
 cannot select a pending by amount and remains unmatched until sufficient evidence exists.
 No historical repair, reassignment or automatic backfill is performed.
@@ -168,6 +187,11 @@ view permission. Review requires a reason, explicit payment/package confirmation
 same-pharmacy active beneficiary, verified source-user mapping and canonical receipt
 keys. Conflicting source evidence cannot be approved through a checkbox. XLSX respects
 the same scopes/filters and rejects more than 10,000 rows instead of truncating.
+Before an HQ approval reads seller authorization, it locks the recipient row and exact
+native account, then pending/receipt/reward rows. The existing administrative authority
+gate already serializes HQ mapping changes; the account lock additionally prevents a
+concurrent password-login observation from creating a source conflict between that
+authorization check and the wallet credit. No login permission or mapping is created.
 
 Recovery after V100 requires a reviewed reward-capable forward image; the release
 transition guard rejects an older generic wallet binary even on empty V100 tables.

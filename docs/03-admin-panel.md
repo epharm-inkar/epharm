@@ -19,6 +19,13 @@ proof. Old clients without the field show unknown, not successful source verific
 
 ## Registration, analytics and pharmacy computers — candidate 2026-11-16
 
+Authenticated learner requests and mutations are bound to the originating page/session.
+Logout, account replacement or unmount prevents late responses from restoring another
+learner's assignment, overview, error or navigation, and stops refresh-driven retries
+and follow-up reads from that obsolete session. Current-session errors remain visible.
+This does not cancel a mutation already accepted by the server, alter saved progress,
+or change the SMS-free initial RPS registration and verified recovery flows.
+
 The separate `/learn` login cancels outstanding identity/authentication requests when
 the IIN, activation phone, step or component changes. A response from the previous
 identity cannot persist tokens or replace the current form. Failed current requests

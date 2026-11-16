@@ -32,6 +32,41 @@ import org.springframework.jdbc.core.RowMapper
 /** Real source-order decisions with isolated storage/locking doubles; PostgreSQL tests cover the real ledger. */
 class ReconcileLegacyAmountsTest {
     @ParameterizedTest
+    @CsvSource("true,qty,0", "false,qty,0", "true,qty,-1", "false,qty,-1",
+        "true,qty,NaN", "false,qty,NaN", "true,qty,Infinity", "false,qty,Infinity",
+        "true,qty,-Infinity", "false,qty,-Infinity", "true,price,0", "false,price,0",
+        "true,price,-1", "false,price,-1")
+    fun `invalid log quantities or prices retain evidence without confirming a paid sale`(
+        excelFirst: Boolean, field: String, value: String,
+    ) {
+        val f = Fixture(1000)
+        val valid = f.log(1000)
+        val item = valid.items.single().let { if (field == "qty") it.copy(qty=value.toDouble()) else it.copy(price=value.toLong()) }
+        val invalid = valid.copy(items=listOf(item))
+        if (excelFirst) assertTrue(f.service.ingestExcelRow(f.excel(1000)))
+        f.service.ingestLogSale(invalid)
+        if (!excelFirst) assertTrue(f.service.ingestExcelRow(f.excel(1000)))
+        assertFalse(f.stored!!.confirmedByLog)
+        assertTrue(f.stored!!.confirmedByExcel)
+        assertEquals(ReceiptStatus.flagged, f.stored!!.status)
+        assertEquals(if (field == "qty") "quantity_invalid" else "price_invalid", f.stored!!.flagReason)
+        f.service.ingestLogSale(valid)
+        assertEquals(ReceiptStatus.flagged, f.stored!!.status)
+        assertEquals(0L, f.stored!!.bonusCredited)
+        verify { f.wallet wasNot Called; f.policy wasNot Called }
+    }
+
+    @Test
+    fun `positive fractional legacy quantity stays valid without inventing full package semantics`() {
+        val f = Fixture(1000)
+        val valid = f.log(1000)
+        f.service.ingestLogSale(valid.copy(items=listOf(valid.items.single().copy(qty=0.5, price=2000))))
+        assertTrue(f.service.ingestExcelRow(f.excel(1000)))
+        assertEquals(ReceiptStatus.approved, f.stored!!.status)
+        verify(exactly=1) { f.wallet.credit(any(), "pending", "person", 100, any()) }
+    }
+
+    @ParameterizedTest
     @ValueSource(booleans = [true, false])
     fun `different known fiscal IDs cannot confirm each other in either arrival order`(excelFirst: Boolean) {
         val f = Fixture(1000)
@@ -134,6 +169,8 @@ class ReconcileLegacyAmountsTest {
         f.service.approve(f.stored!!.id, "synthetic-hq-reviewer")
         assertEquals(ReceiptStatus.approved, f.stored!!.status)
         assertFalse(f.stored!!.autoApproved)
+        f.service.approve(f.stored!!.id, "synthetic-hq-retry")
+        assertEquals(PendingBonusStatus.matched, f.pending.status)
         verify(exactly = 1) { f.wallet.credit(any(), "pending", "person", 100, any()) }
     }
 

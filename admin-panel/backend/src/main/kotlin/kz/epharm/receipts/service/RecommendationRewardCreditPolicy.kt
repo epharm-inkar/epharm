@@ -25,6 +25,9 @@ class RecommendationRewardCreditPolicy(private val jdbc: JdbcTemplate, private v
     }
 
     fun beforeCredit(pending: PendingBonusEntity, receipt: ReceiptEntity): RecommendationRewardCreditDecision {
+        // The absence of a v2 case is not permission to revive a closed legacy reservation.
+        // Already-approved receipt retries return before this new-credit decision.
+        if (pending.status != PendingBonusStatus.awaiting_receipt) conflict("reward_not_ready")
         val reward = reward(pending.id, receipt.id)
             ?: return RecommendationRewardCreditDecision(true, pending.bonus) // Preserve legacy receipt decisions.
         validateBinding(reward, pending, receipt)

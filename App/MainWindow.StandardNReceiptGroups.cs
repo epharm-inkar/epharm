@@ -282,6 +282,7 @@ public partial class MainWindow
             _physicalReceiptRetryAfter.Remove(key);
             _receiptObservations.LogChanged();
             _lastFinalizedStandardNDocumentId = state.DocumentId;
+            _lastFinalizedStandardNReceipt = state;
             if (_standardNCurrentReceipt == null || ObservedGroupKey(_standardNCurrentReceipt) != key) continue;
             _activeReceiptDraftId = null;
             _standardNDocumentId = null;
@@ -299,6 +300,11 @@ public partial class MainWindow
 
     private static string? ObservedSourceNamespace(StandardNObservedReceiptGroup group) =>
         group.SourceNamespace ?? group.Snapshot.ObservedSourceNamespace;
+
+    private bool IsLastFinalizedReceipt(StandardNReceiptSnapshot? receipt) =>
+        receipt != null && _lastFinalizedStandardNDocumentId == receipt.DocumentId && _lastFinalizedStandardNReceipt is { } finalized &&
+        ObservedGroupKey(receipt) == ObservedGroupKey(finalized) &&
+        !StandardNSellerSource.HasConflictingNamespaces(receipt.ObservedSourceNamespace, finalized.ObservedSourceNamespace);
 
     private bool ReceiptConflictsWithObservedSource(StandardNReceiptSnapshot receipt) =>
         LoadObservedReceiptGroups() && _observedReceiptGroups.TryGetValue(ObservedGroupKey(receipt), out var previous) &&

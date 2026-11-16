@@ -14,6 +14,7 @@ namespace CustomerDisplay
         private bool _standardNReceiptInitialized;
         private long? _standardNDocumentId;
         private long? _lastFinalizedStandardNDocumentId;
+        private StandardNReceiptSnapshot? _lastFinalizedStandardNReceipt;
         private readonly ReceiptObservationGate _receiptObservations = new();
 
         private void StartStandardNReceiptPolling()
@@ -87,7 +88,7 @@ namespace CustomerDisplay
             ConfirmPhysicalReceiptPrints();
             if (receipt == null)
             {
-                if (_standardNDocumentId.HasValue && _lastFinalizedStandardNDocumentId != _standardNDocumentId)
+                if (_standardNDocumentId.HasValue && !IsLastFinalizedReceipt(_standardNCurrentReceipt))
                     InvalidateRewardObservation();
                 if (!_standardNReceiptInitialized)
                 {
@@ -102,8 +103,7 @@ namespace CustomerDisplay
                 {
                     var closingDocumentId = _standardNDocumentId;
                     Log($"Активный чек Standard-N закрыт: doc={closingDocumentId?.ToString() ?? "—"}");
-                    var finalized = closingDocumentId.HasValue &&
-                                    _lastFinalizedStandardNDocumentId == closingDocumentId;
+                    var finalized = closingDocumentId.HasValue && IsLastFinalizedReceipt(_standardNCurrentReceipt);
                     if (!finalized)
                     {
                         // An absent receipt may be suspended/cancelled; it is not payment evidence.
@@ -129,7 +129,7 @@ namespace CustomerDisplay
 
             // Print-log marker can arrive slightly before DOCS stops exposing the active receipt.
             // Do not repopulate the just-finalized cart while Firebird still returns that document.
-            if (_lastFinalizedStandardNDocumentId == receipt.DocumentId)
+            if (IsLastFinalizedReceipt(receipt))
             {
                 _standardNReceiptInitialized = true;
                 return;
@@ -141,8 +141,7 @@ namespace CustomerDisplay
                 if (_standardNDocumentId.HasValue)
                 {
                     Log($"Standard-N переключил активный чек: {_standardNDocumentId.Value} -> {receipt.DocumentId}");
-                    var previousDocumentId = _standardNDocumentId.Value;
-                    var previousFinalized = _lastFinalizedStandardNDocumentId == previousDocumentId;
+                    var previousFinalized = IsLastFinalizedReceipt(_standardNCurrentReceipt);
                     if (!previousFinalized)
                     {
                         PreserveUnconfirmedReceiptDraft();
