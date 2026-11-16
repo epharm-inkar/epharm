@@ -8,6 +8,13 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.util.Optional
+import java.time.Instant
+
+interface PharmacistReceiptCountRow {
+    val pharmacistId: String
+    val pharmacyId: String
+    val count: Long
+}
 
 @Repository
 interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
@@ -31,6 +38,23 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
     fun findByPhone(phone: String): PharmacistEntity?
     fun countByStatusRaw(statusRaw: String): Long
     fun countByPharmacyId(pharmacyId: String): Long
+
+    /** Read-only, exact resolved sellers in their current pharmacy; raw/name matches are not inferred. */
+    @Query(nativeQuery = true, value = """
+        SELECT p.id AS "pharmacistId", p.pharmacy_id AS "pharmacyId", COUNT(*) AS "count"
+        FROM pharmacists p
+        JOIN pos_sales s ON s.pharmacist_id = p.id AND s.pharmacy_id = p.pharmacy_id
+        WHERE p.id IN (:ids)
+          AND p.id <> '' AND p.pharmacy_id <> ''
+          AND s.printed_at >= :since AND s.printed_at <= :observedAt
+          AND COALESCE(s.reward_evidence #>> '{completion,status}', '') <> 'refund'
+        GROUP BY p.id, p.pharmacy_id
+    """)
+    fun receiptCounts(
+        @Param("ids") ids: Set<String>,
+        @Param("since") since: Instant,
+        @Param("observedAt") observedAt: Instant,
+    ): List<PharmacistReceiptCountRow>
 
     @Query("""
         SELECT p FROM PharmacistEntity p

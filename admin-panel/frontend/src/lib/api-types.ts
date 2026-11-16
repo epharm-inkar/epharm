@@ -692,6 +692,7 @@ export interface LogEntryDto {
   secondsToSale: number | null // показ/позиция: через сколько секунд после показа продан
   units: number | null // продажа: количество единиц ЭТОЙ позиции; null для показа
   saleId: string | null // id чека — связь позиций одного чека (для проверки чека); null для показов
+  receiptStatus?: string | null // Explicit backend completion status; absent on legacy API responses.
   pharmacistSource?:
     | 'legacy'
     | 'posm_internal'

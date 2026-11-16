@@ -891,6 +891,20 @@ scan code; `triggerBarcode` in the response stays that actual code, not the firs
 
 ## Dashboard Journal
 
+Each recommended product in one receipt retains its own nonnegative attribution
+interval. Multiple matching events cannot duplicate receipt rows or amounts;
+conflicting known sellers and foreign pharmacies cannot supply that interval.
+An explicit captured refund returns additive nullable `receiptStatus=refund` and
+no sale-attribution timing. Neither this projection nor the UI rewrites refunds,
+sale evidence or wallet entries. Unresolved sellers are not filtered from the journal.
+
+Administrative pharmacist `receipts30d` is now a read-only aggregate of `pos_sales`
+over the last 30 days through the request time, once per visible list (or detail).
+It matches the saved internal seller and current pharmacy exactly, excludes refunds,
+and applies existing financial field restrictions after projection. The stale
+`pharmacists.receipts_30d` column is not rewritten; separate legacy exports/mobile
+consumers of that column are unchanged by this display-only fix.
+
 `GET /api/admin/dashboard/recommendations?page=0&size=50` returns KPI values for the configured
 analytics window and a server-paginated combined journal of recommendation displays and POS sale
 items. Sale JSON arrays are expanded in PostgreSQL before `LIMIT/OFFSET`, so every receipt item is a

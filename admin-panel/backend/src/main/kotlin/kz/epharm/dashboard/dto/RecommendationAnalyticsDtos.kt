@@ -51,4 +51,6 @@ data class LogEntryDto(
     // Источник продавца: posm_internal / standardn_name_match / standardn_unmapped /
     // unresolved / legacy. null для показов старого формата.
     val pharmacistSource: String? = null,
+    // Only an explicit captured refund is labelled; missing legacy evidence stays unknown.
+    val receiptStatus: String? = null,
 )

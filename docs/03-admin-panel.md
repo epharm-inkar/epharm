@@ -1,5 +1,20 @@
 # Admin Console
 
+## Sales display correction — 2026-11-16
+
+The dashboard summary and paginated journal both refresh every 15 seconds while
+the screen is active. The conversion KPI explicitly counts recommendations with
+a sale, not all cash-register receipts. Refund rows use the explicit optional
+`receiptStatus=refund` field and a separate amber label; legacy responses remain
+compatible. The UI does not infer refunds from product names or change amount signs.
+
+The pharmacist registry and detail now read `receipts30d` from captured receipts,
+not the stale profile counter. One grouped query serves the visible list. Only the
+saved internal seller ID and current pharmacy match; refunds and future/out-of-window
+receipts are excluded. Existing financial masking still returns unavailable rather
+than a fabricated zero. Raw/unmapped cashiers remain visible in the dashboard
+journal but are not silently attached to a person or credited with a bonus.
+
 ## Seller attribution repair candidate — 2026-11-16
 
 The Standard-N mappings action requires a freshly confirmed LEGACY access profile

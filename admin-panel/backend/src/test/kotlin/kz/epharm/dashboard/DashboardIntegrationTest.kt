@@ -358,7 +358,7 @@ class DashboardIntegrationTest {
     }
 
     @Test
-    fun `bounded journal keeps fastest attribution and does not guess an unrelated first item`() {
+    fun `bounded journal keeps each product attribution and does not guess an unrelated first item`() {
         eventRepository.deleteAll()
         val since = Instant.now().minusSeconds(90L * 24 * 60 * 60)
         val at = Instant.now().plusSeconds(60)
@@ -385,12 +385,13 @@ class DashboardIntegrationTest {
         fun attribution(id: String, saleId: String, sku: String, name: String, seconds: Int) =
             RecommendationEventEntity(
                 id = id, saleId = saleId, recommendSku = sku, recommendName = name,
+                pharmacyId = "ph_hi",
                 shownAt = at.minusSeconds(100), soldAt = at, secondsToSale = seconds,
             )
         eventRepository.saveAll(listOf(
             attribution("attr_slow", "sale_barcode", "p_other", "Аквамарис", 50),
             attribution("attr_z", "sale_barcode", "p_other", "Аквамарис", 8),
-            // Equal fastest times retain the original re.id ASC tie-break.
+            // Two sold products retain independent attribution even at equal times.
             attribution("attr_a", "sale_barcode", "p_aquamaris", "Аквамарис", 8),
             attribution("attr_name", "sale_name", "missing", "  Нужный товар  ", 14),
             attribution("attr_fallback", "sale_fallback", "missing", "Отсутствует", 21),
@@ -405,7 +406,7 @@ class DashboardIntegrationTest {
         assertTrue(saleRows.all { it.eventType == "sale" })
         val seconds = saleRows.associate { it.id to it.secondsToSale }
         assertEquals(8, seconds["sale_barcode#1"])
-        assertNull(seconds["sale_barcode#0"])
+        assertEquals(8, seconds["sale_barcode#0"])
         assertEquals(14, seconds["sale_name#1"])
         assertNull(seconds["sale_name#0"])
         assertNull(seconds["sale_fallback#0"])
@@ -433,6 +434,7 @@ class DashboardIntegrationTest {
         eventRepository.saveAll(listOf("alias_legacy", "alias_resolved").map { id ->
             RecommendationEventEntity(
                 id = "attr_$id", saleId = id, recommendSku = "p_aquamaris", recommendName = "Аквамарис",
+                pharmacyId = "ph_hi",
                 shownAt = at.minusSeconds(20), soldAt = at, secondsToSale = 20,
             )
         })
@@ -446,6 +448,91 @@ class DashboardIntegrationTest {
             assertEquals(20, rows.single { it.id == "$id#1" }.secondsToSale)
             assertEquals(3_500L, rows.single { it.id == "$id#1" }.amount)
         }
+    }
+
+    @Test
+    fun `journal attributes two canonical products independently without duplicates or foreign seller links`() {
+        eventRepository.deleteAll()
+        val at = Instant.now().plusSeconds(60)
+        posSaleRepository.saveAndFlush(PosSaleEntity(
+            id = "two_products", pharmacyId = "ph_hi", pharmacistId = "seller", printedAt = at,
+            totalAmount = 600,
+            items = listOf(
+                PosSaleItem(name = "First", productId = "p_aquamaris", total = 100),
+                PosSaleItem(name = "Second", productId = "p_other", total = 200),
+                PosSaleItem(name = "Repeated first", productId = "p_aquamaris", total = 300),
+            ),
+        ))
+        fun event(id: String, sku: String, seconds: Int, pharmacy: String = "ph_hi", seller: String = "seller") =
+            RecommendationEventEntity(
+                id = id, saleId = "two_products", pharmacyId = pharmacy, pharmacistId = seller,
+                recommendSku = sku, recommendName = "name is not authoritative",
+                shownAt = at.minusSeconds(100), soldAt = at, secondsToSale = seconds,
+            )
+        eventRepository.saveAllAndFlush(listOf(
+            event("first", "p_aquamaris", 20),
+            event("second", "p_other", 40),
+            event("duplicate_first", "p_aquamaris", 30),
+            event("foreign_pharmacy", "p_aquamaris", 1, pharmacy = "ph_lo"),
+            event("foreign_seller", "p_other", 2, seller = "other_seller"),
+            event("invalid_time", "p_other", -5),
+        ))
+
+        val rows = eventRepository.findJournalRowsSince(at.minusSeconds(200), 100, 0)
+            .filter { it.saleId == "two_products" }
+        assertEquals(3, rows.size)
+        assertEquals(600L, rows.sumOf { it.amount })
+        assertEquals(20, rows.single { it.id == "two_products#0" }.secondsToSale)
+        assertEquals(40, rows.single { it.id == "two_products#1" }.secondsToSale)
+        assertNull(rows.single { it.id == "two_products#2" }.secondsToSale)
+        assertTrue(rows.all { it.receiptStatus == null })
+        assertEquals(9L, eventRepository.countJournalRowsSince(at.minusSeconds(200)))
+    }
+
+    @Test
+    fun `journal exposes only explicit refund status and never attributes a stale refund link`() {
+        eventRepository.deleteAll()
+        val at = Instant.now().plusSeconds(60)
+        val statuses = listOf("refund", "paid", "legacy")
+        posSaleRepository.saveAllAndFlush(statuses.map { receipt ->
+            PosSaleEntity(
+                id = receipt, pharmacyId = "ph_hi", printedAt = at,
+                totalAmount = 500,
+                items = listOf(PosSaleItem(name = "Аквамарис", productId = "p_aquamaris", total = 500)),
+            )
+        })
+        for (receipt in listOf("refund", "paid")) {
+            jdbcTemplate.update(
+                "UPDATE pos_sales SET reward_evidence = CAST(? AS jsonb) WHERE id = ?",
+                """{"completion":{"status":"$receipt"}}""", receipt,
+            )
+        }
+        eventRepository.saveAllAndFlush(statuses.map { receipt ->
+            RecommendationEventEntity(
+                id = "event_$receipt", saleId = receipt, pharmacyId = "ph_hi", recommendSku = "p_aquamaris",
+                recommendName = "Аквамарис", shownAt = at.minusSeconds(20), soldAt = at, secondsToSale = 20,
+            )
+        })
+
+        val rows = eventRepository.findJournalRowsSince(at.minusSeconds(200), 100, 0)
+        val returned = rows.single { it.saleId == "refund" }
+        assertEquals("refund", returned.receiptStatus)
+        assertEquals(500L, returned.amount)
+        assertNull(returned.secondsToSale)
+        for (receipt in listOf("paid", "legacy")) {
+            val sold = rows.single { it.saleId == receipt }
+            assertNull(sold.receiptStatus)
+            assertEquals(20, sold.secondsToSale)
+        }
+        assertTrue(rows.filter { it.eventType == "show" }.all { it.receiptStatus == null })
+
+        val response = mockMvc.perform(
+            get("/api/admin/dashboard/recommendations").header("Authorization", bearer),
+        ).andExpect(status().isOk).andReturn()
+        val log = objectMapper.readTree(response.response.contentAsString)["log"]
+        val refund = log.single { it["saleId"].asText() == "refund" }
+        assertEquals("refund", refund["receiptStatus"].asText())
+        assertTrue(refund["secondsToSale"].isNull)
     }
 
     @Test
