@@ -12,6 +12,15 @@ All notable production changes to Epharm are recorded here. The format follows
   form through technical context changes, and refresh context only on explicit
   submit. Expired or revoked grants remain invalid; cashier operation stays available.
 
+## [0.2.22] - 2026-11-16
+
+### Fixed
+
+- Read lightweight rule references on each POSM scan and hydrate rich rule cards only
+  for matching candidates. Keep global barcode ownership, the complete legacy name/SKU
+  fallback pool, campaign dates, AND conditions and ranking without a cross-request cache.
+- Use read-only ORM loaders only for matching; administrative edits remain writable.
+
 ## [0.2.21] - 2026-11-16
 
 ### Added
