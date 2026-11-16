@@ -285,6 +285,15 @@ before switching, coordinate all old scheduler replicas, and rehearse a pinned
 proof-retaining forward recovery image. Preserve grants/archive rows and existing
 eligibility dates; retention does not renew authentication or authorize backfill.
 
+V107 adds an independent funding-mode recovery boundary. The live verifier checks
+presence of `promos.budget_unlimited`, even when every value is false, and requires
+mode-aware locked reservation, atomic funding edits and publication handling.
+Packaged V107 enables the same check before migration; offline rehearsal may use
+`--unlimited-budget-protected`. A V106-capable image alone is insufficient after V107.
+Existing campaigns remain capped by default; releasing this schema does not enable
+unlimited funding, money flags or historical replay. Keep the original backup and
+use a reviewed exact-main image that understands both new boundaries for recovery.
+
 The actual v0.1.47 artifact is wallet-capable; its isolated forward-schema financial rehearsal is
 not an authorization recovery approval. Once the V066 managed-access schema exists, a recovery
 artifact must also contain the reviewed scope and fresh-revocation implementation.

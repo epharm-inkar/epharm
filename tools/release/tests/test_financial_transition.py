@@ -96,6 +96,23 @@ class FinancialTransitionTests(unittest.TestCase):
             for name,body in entries.items(): jar.writestr(name,body)
         return self.jar
 
+    def unlimited_budget_artifact(self,missing=None,obsolete=None):
+        self.source_proof_artifact()
+        with zipfile.ZipFile(self.jar) as jar:
+            entries={name:jar.read(name) for name in jar.namelist()}
+        entries['BOOT-INF/classes/db/migration/V107__promo_unlimited_budget.sql']=b'explicit funding mode schema'
+        for name,markers in guard.UNLIMITED_BUDGET_CLASSES.items():
+            path='BOOT-INF/classes/'+name
+            if name==missing:
+                entries.pop(path,None)
+                continue
+            body=entries.get(path,b'')+b' '+' '.join(markers).encode('ascii')
+            if obsolete and obsolete[0]==name: body=body.replace(obsolete[1].encode('ascii'),b'')
+            entries[path]=body
+        with zipfile.ZipFile(self.jar,'w') as jar:
+            for name,body in entries.items(): jar.writestr(name,body)
+        return self.jar
+
     def test_legacy_artifact_only_allowed_before_protected_schema(self):
         self.artifact(resource=False)
         self.assertFalse(guard.verify(self.jar,False))
@@ -400,6 +417,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
              patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
+             patch.object(guard,'unlimited_budget_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value=container) as create, \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaises(ValueError): guard.verify_image(image)
@@ -421,6 +439,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
              patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
+             patch.object(guard,'unlimited_budget_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'managed-access'):
@@ -442,6 +461,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
              patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
+             patch.object(guard,'unlimited_budget_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'session-version'):
@@ -482,6 +502,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
              patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
+             patch.object(guard,'unlimited_budget_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'compound-trigger'):
@@ -514,6 +535,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'reward_schema_is_protected',return_value=True) as reward, \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
              patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
+             patch.object(guard,'unlimited_budget_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'recommendation-reward'):
@@ -622,6 +644,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'reward_schema_is_protected',return_value=True), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=True) as binding, \
              patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
+             patch.object(guard,'unlimited_budget_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'source-binding'): guard.verify_image('sha256:'+'a'*64)
@@ -672,6 +695,98 @@ class FinancialTransitionTests(unittest.TestCase):
             guard.verify(self.jar,True,True,True,True,True,True,True)
         self.source_proof_artifact()
         self.assertTrue(guard.verify(self.jar,True,True,True,True,True,True,True))
+
+    def test_live_v107_column_denies_proof_capable_predecessor_even_with_no_unlimited_rows(self):
+        source=self.source_proof_artifact()
+        calls=[]
+        def run(command,**kwargs):
+            calls.append(command)
+            if command[1]=='cp': shutil.copyfile(source,command[-1])
+            return subprocess.CompletedProcess(command,0,'','')
+        with patch.object(guard,'_schema_is_protected',side_effect=lambda probe,kind:
+                 "column_name='budget_unlimited'" in probe), \
+             patch.object(guard.subprocess,'check_output',return_value='b'*64), \
+             patch.object(guard.subprocess,'run',side_effect=run):
+            with self.assertRaisesRegex(ValueError,'unlimited-budget'):
+                guard.verify_image('sha256:'+'a'*64)
+        self.assertEqual(calls[-1],['docker','rm','b'*64])
+
+    def test_pre107_proof_capabilities_remain_valid_before_v107_but_not_after(self):
+        self.source_proof_artifact()
+        self.assertTrue(guard.verify(self.jar,True,True,True,True,True,True,True))
+        with self.assertRaisesRegex(ValueError,'unlimited-budget'):
+            guard.verify(self.jar,True,True,True,True,True,True,True,True)
+        self.unlimited_budget_artifact()
+        self.assertTrue(guard.verify(self.jar,True,True,True,True,True,True,True,True))
+
+    def test_packaged_v107_requires_actual_funding_writers_before_migration(self):
+        self.source_proof_artifact()
+        with zipfile.ZipFile(self.jar,'a') as jar:
+            jar.writestr('BOOT-INF/classes/db/migration/V107__promo_unlimited_budget.sql','schema only')
+        with self.assertRaisesRegex(ValueError,'unlimited-budget'): guard.verify(self.jar,False)
+        self.unlimited_budget_artifact()
+        self.assertTrue(guard.verify(self.jar,False))
+
+    def test_each_unlimited_budget_component_and_enforcement_marker_is_required(self):
+        for name,markers in guard.UNLIMITED_BUDGET_CLASSES.items():
+            self.unlimited_budget_artifact(missing=name)
+            with self.subTest(component=name),self.assertRaisesRegex(ValueError,'unlimited-budget'):
+                guard.verify(self.jar,True,unlimited_budget_protected=True)
+            for marker in markers:
+                self.unlimited_budget_artifact(obsolete=(name,marker))
+                with self.subTest(component=name,marker=marker),self.assertRaisesRegex(ValueError,'unlimited-budget'):
+                    guard.verify(self.jar,True,unlimited_budget_protected=True)
+
+    def test_unlimited_budget_capability_cannot_replace_prior_guards(self):
+        self.unlimited_budget_artifact()
+        with zipfile.ZipFile(self.jar) as jar:
+            entries={name:jar.read(name) for name in jar.namelist()}
+        for missing,reason in ((next(iter(guard.WRITERS)),'financial writer'),
+                               (next(iter(guard.REWARD_CLASSES)),'recommendation-reward'),
+                               ('kz/epharm/posm/staff/StaffAuthService.class','source-binding'),
+                               (next(iter(guard.SOURCE_PROOF_CLASSES)),'historical source-proof'),
+                               (next(iter(guard.ACCESS_CLASSES)),'managed-access'),
+                               (next(iter(guard.SESSION_CLASSES)),'session-version'),
+                               (next(iter(guard.COMPOUND_CLASSES)),'compound-trigger')):
+            with zipfile.ZipFile(self.jar,'w') as jar:
+                for name,body in entries.items():
+                    if name!='BOOT-INF/classes/'+missing: jar.writestr(name,body)
+            with self.subTest(component=missing),self.assertRaisesRegex(ValueError,reason):
+                guard.verify(self.jar,True,True,True,True,True,True,True,True)
+
+    def test_unlimited_budget_probe_is_durable_read_only_and_unknown_state_fails_closed(self):
+        with patch.object(guard.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'protected\n','')) as run:
+            self.assertTrue(guard.unlimited_budget_schema_is_protected())
+        sql=run.call_args.kwargs['input'].lower()
+        self.assertIn("table_name='promos' and column_name='budget_unlimited'",sql)
+        for forbidden in ('count(', 'from promos', '=true', 'insert ', 'update ', 'delete ', 'drop ', 'alter '):
+            self.assertNotIn(forbidden,sql)
+        with patch.object(guard.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'legacy\n','')):
+            self.assertFalse(guard.unlimited_budget_schema_is_protected())
+        for output in ('','0','protected\nlegacy','private-unexpected-value'):
+            with patch.object(guard.subprocess,'run',return_value=subprocess.CompletedProcess([],0,output,'')):
+                with self.assertRaises(ValueError): guard.unlimited_budget_schema_is_protected()
+
+    def test_failed_unlimited_budget_probe_stops_before_image_inspection_without_private_errors(self):
+        def schema(probe,kind):
+            if kind=='unlimited-budget': raise subprocess.CalledProcessError(1,['docker'],stderr='private-password')
+            return False
+        with patch.object(guard,'_schema_is_protected',side_effect=schema), \
+             patch.object(guard.subprocess,'check_output') as create, \
+             patch('sys.argv',['guard','--image','sha256:'+'a'*64]):
+            with self.assertRaises(SystemExit) as error: guard.main()
+        self.assertNotIn('private-password',str(error.exception)); create.assert_not_called()
+
+    def test_real_cli_unlimited_budget_flag_rejects_old_mode_and_accepts_reviewed_chain(self):
+        command=['python3',str(Path(SPEC.origin)),'--jar',str(self.jar),'--schema-protected',
+                 '--access-protected','--session-protected','--compound-protected','--reward-protected',
+                 '--source-binding-protected','--source-proof-protected','--unlimited-budget-protected']
+        self.source_proof_artifact()
+        denied=subprocess.run(command,capture_output=True,text=True)
+        self.assertNotEqual(0,denied.returncode)
+        self.assertIn('unlimited-budget',denied.stderr)
+        self.unlimited_budget_artifact()
+        self.assertEqual(0,subprocess.run(command,capture_output=True).returncode)
 
     def test_packaged_v106_requires_actual_cleanup_and_resolver_before_migration(self):
         self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
@@ -782,7 +897,8 @@ class FinancialTransitionTests(unittest.TestCase):
                      ['--image','sha256:'+'a'*64,'--compound-protected'],
                      ['--image','sha256:'+'a'*64,'--reward-protected'],
                      ['--image','sha256:'+'a'*64,'--source-binding-protected'],
-                     ['--image','sha256:'+'a'*64,'--source-proof-protected']):
+                     ['--image','sha256:'+'a'*64,'--source-proof-protected'],
+                     ['--image','sha256:'+'a'*64,'--unlimited-budget-protected']):
             with patch('sys.argv',['guard']+args),patch.object(guard,'verify_image') as inspect:
                 with self.assertRaises(SystemExit): guard.main()
                 inspect.assert_not_called()
