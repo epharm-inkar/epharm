@@ -409,6 +409,9 @@ export interface UnmappedPosmSellerDto {
   externalUserName: string | null
   salesCount: number
   lastSeenAt: string
+  reason?: string
+  activePharmacistCount?: number
+  observedNameCount?: number
 }
 
 export interface UpsertPosmPharmacistMappingRequest {
@@ -438,6 +441,8 @@ export interface PromoDto {
   period: string
   pharmacies: number
   budget: number
+  /** Explicit financial mode; old API responses without it remain limited. */
+  budgetUnlimited?: boolean
   spent: number
   kpi: string
   cover: string
@@ -480,6 +485,7 @@ export interface CreatePromoRequest {
   brand?: string
   period?: string
   budget?: number
+  budgetUnlimited?: boolean
   kpi?: string
   cover?: string
   medusaProductId?: string | null
@@ -504,6 +510,7 @@ export interface UpdatePromoRequest {
   brand?: string
   period?: string
   budget?: number
+  budgetUnlimited?: boolean
   kpi?: string
   cover?: string
   medusaProductId?: string | null
@@ -613,6 +620,7 @@ export interface PromoChangesViewDto {
   updatedBy: string | null
   canSave: boolean
   canApply: boolean
+  canConfigureBudget?: boolean
   readinessIssues: string[]
 }
 
@@ -689,6 +697,7 @@ export interface LogEntryDto {
   secondsToSale: number | null // показ/позиция: через сколько секунд после показа продан
   units: number | null // продажа: количество единиц ЭТОЙ позиции; null для показа
   saleId: string | null // id чека — связь позиций одного чека (для проверки чека); null для показов
+  receiptStatus?: string | null // Explicit backend completion status; absent on legacy API responses.
   pharmacistSource?:
     | 'legacy'
     | 'posm_internal'
@@ -1051,6 +1060,8 @@ export interface ConnectedDeviceDto {
   appVersion: string | null
   /** Client-reported diagnostic only, never proof of a trusted employee identity. */
   staffAuthStatus?: string | null
+  /** Native cashier context diagnostic, independent of login and financial identity proof. */
+  staffSourceStatus?: string | null
   lastSeen: string
 }
 

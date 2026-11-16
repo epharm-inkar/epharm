@@ -48,6 +48,7 @@ class RecommendationAnalyticsService(
         val secondsToSale: Int?,
         val units: Double?,        // продажа: количество единиц ЭТОЙ позиции (qty); null для показа
         val saleId: String?,       // id чека (pos_sales.id); null для показов
+        val receiptStatus: String?,
     )
 
     /** Совместимость внутренних вызовов/старых тестов: `limit` означает первую страницу. */
@@ -105,6 +106,7 @@ class RecommendationAnalyticsService(
                 secondsToSale = row.secondsToSale,
                 units = row.units,
                 saleId = row.saleId,
+                receiptStatus = row.receiptStatus,
             )
         }
 
@@ -143,6 +145,7 @@ class RecommendationAnalyticsService(
                 units = r.units,
                 saleId = r.saleId,
                 pharmacistSource = r.pharmacistSource,
+                receiptStatus = r.receiptStatus,
             )
         }
 

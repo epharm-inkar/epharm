@@ -144,6 +144,243 @@ namespace CustomerDisplay.Core.Tests
         }
 
         [Fact]
+        public void OrdinarySaleCarriesExactNativeSourceWithoutEnablingRewards()
+        {
+            using var window = new MainWindow();
+            var receipt = RewardReceipt(100, 1) with { ObservedSourceNamespace = new string('a', 64) };
+            window.Observe(receipt);
+            window.PrintWithStates(Posted(receipt, 100));
+            var sale = Assert.Single(window.Reports);
+            Assert.Null(sale.RewardEvidence);
+            Assert.Equal(new SaleSellerSource(new string('a', 64), receipt.Pharmacist.Id,
+                receipt.SessionId, receipt.WorkstationId!), sale.SellerSource);
+        }
+
+        [Fact]
+        public void NewGroupUsesObservedConnectionInsteadOfMutableGlobalNamespace()
+        {
+            using var window = new MainWindow();
+            var receipt = RewardReceipt(100, 1) with { ObservedSourceNamespace = new string('b', 64) };
+            window.Observe(receipt);
+            window.PrintWithStates(Posted(receipt, 100));
+            var sale = Assert.Single(window.Reports);
+            Assert.Equal(new string('b', 64), sale.SellerSource?.SourceNamespace);
+            Assert.Null(sale.RewardEvidence);
+        }
+
+        [Theory]
+        [InlineData("database")]
+        [InlineData("session")]
+        public void CompletedDocumentNumberCannotHideANewReceiptFromAnotherNativeIdentity(string change)
+        {
+            using var window = new MainWindow();
+            var first = RewardReceipt(100, 1) with { ObservedSourceNamespace = new string('a', 64) };
+            window.Observe(first);
+            window.PrintWithStates(Posted(first, 100));
+            Assert.Single(window.Reports);
+            window.Observe(first); // A stale repeat from the original source must still stay suppressed.
+            Assert.Empty(window.ReceiptItems);
+            Assert.Empty(window.Artifacts.ReadObservedGroups());
+
+            var next = change == "database" ? first with { ObservedSourceNamespace = new string('b', 64) }
+                : first with { SessionId = 2, Pharmacist = first.Pharmacist with { SessionId = 2 },
+                    Documents = first.Documents!.Select(document => document with { SessionId = 2 }).ToArray() };
+            window.Observe(next);
+            Assert.Single(window.ReceiptItems);
+            Assert.Single(window.Artifacts.ReadObservedGroups());
+            Assert.Equal(JsonSerializer.Serialize(next, EpharmJson.Options),
+                JsonSerializer.Serialize(Assert.Single(window.Artifacts.ReadObservedGroups()).Snapshot, EpharmJson.Options));
+        }
+
+        [Theory]
+        [InlineData("database")]
+        [InlineData("session")]
+        public void NativeSourceCollisionRetainsNewGroupWithoutChangingOriginalSaleOrAck(string change)
+        {
+            using var window = new MainWindow();
+            var first = RewardReceipt(100, 1) with { ObservedSourceNamespace = new string('a', 64) };
+            window.Observe(first);
+            window.PrintWithStates(Posted(first, 100));
+            var firstSale = Assert.Single(window.Reports);
+            window.Artifacts.MarkSaleDelivered(firstSale.SaleId);
+            var directory = Path.Combine(window.StorageRoot, "receipts", "pending", firstSale.SaleId);
+            var originalSale = File.ReadAllBytes(Path.Combine(directory, "sale.json"));
+            var originalAck = File.ReadAllBytes(Path.Combine(directory, "sale-delivered.json"));
+            var next = change == "database" ? first with { ObservedSourceNamespace = new string('b', 64) }
+                : first with { SessionId = 2, Pharmacist = first.Pharmacist with { SessionId = 2 },
+                    Documents = first.Documents!.Select(document => document with { SessionId = 2 }).ToArray() };
+            window.Observe(next);
+            window.PrintWithStates(Posted(next, 100));
+            // Stable legacy sale IDs cannot distinguish this collision. It must be held for
+            // diagnosis, never silently retired or used to overwrite an already delivered sale.
+            var retained = Assert.Single(window.Artifacts.ReadObservedGroups());
+            Assert.Empty(retained.QueuedDocumentIds);
+            Assert.Empty(retained.ResolvedEmptyDocumentIds);
+            Assert.Equal(next.ObservedSourceNamespace, retained.SourceNamespace);
+            Assert.Equal(next.SessionId, retained.Snapshot.SessionId);
+            Assert.Single(window.ReceiptItems);
+            Assert.Equal(100, window.DocumentId);
+            Assert.Equal(firstSale.SellerSource, Assert.Single(window.Reports).SellerSource);
+            Assert.Equal(originalSale, File.ReadAllBytes(Path.Combine(directory, "sale.json")));
+            Assert.Equal(originalAck, File.ReadAllBytes(Path.Combine(directory, "sale-delivered.json")));
+            Assert.Contains(window.Messages, message => message.Contains("source identity conflicts", StringComparison.Ordinal));
+
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(31));
+            window.RetryPrintWithStates(Posted(next, 100));
+            Assert.Empty(Assert.Single(window.Artifacts.ReadObservedGroups()).QueuedDocumentIds);
+            Assert.Equal(firstSale.SellerSource, Assert.Single(window.Reports).SellerSource);
+            Assert.Equal(originalSale, File.ReadAllBytes(Path.Combine(directory, "sale.json")));
+            Assert.Equal(originalAck, File.ReadAllBytes(Path.Combine(directory, "sale-delivered.json")));
+        }
+
+        [Fact]
+        public void ChangedDatabaseCannotFinalizeOrRetireAnOrdinaryReceipt()
+        {
+            using var window = new MainWindow();
+            var receipt = RewardReceipt(100, 1) with { ObservedSourceNamespace = new string('a', 64) };
+            window.Observe(receipt);
+            window.PrintWithStates(Posted(receipt, 100) with { ObservedSourceNamespace = new string('b', 64) });
+            Assert.Empty(window.Reports);
+            Assert.Null(window.FinalizedDocumentId);
+            var pending = Assert.Single(window.Artifacts.ReadObservedGroups());
+            Assert.Equal(receipt.ObservedSourceNamespace, pending.SourceNamespace);
+            Assert.Equal(receipt.ObservedSourceNamespace, pending.Snapshot.ObservedSourceNamespace);
+            Assert.NotNull(pending.PendingPrint);
+            Assert.Empty(pending.QueuedDocumentIds);
+            Assert.Empty(pending.ResolvedEmptyDocumentIds);
+            Assert.Empty(pending.PrintDocumentTimes);
+            Assert.False(pending.PrintObserved);
+
+            // The original source can still finish the same receipt, without a fabricated new cue.
+            window.RetryPrintWithStates(Posted(receipt, 100));
+            Assert.Single(window.Reports);
+        }
+
+        [Fact]
+        public void ChangedDatabaseObservationCannotOverwriteTheOriginalPendingGroup()
+        {
+            using var window = new MainWindow();
+            var receipt = RewardReceipt(100, 1) with { ObservedSourceNamespace = new string('a', 64) };
+            window.Observe(receipt);
+            var original = JsonSerializer.Serialize(Assert.Single(window.Artifacts.ReadObservedGroups()), EpharmJson.Options);
+            window.Observe(receipt with { ObservedSourceNamespace = new string('b', 64) });
+            Assert.Equal(original, JsonSerializer.Serialize(Assert.Single(window.Artifacts.ReadObservedGroups()), EpharmJson.Options));
+            Assert.Empty(window.Reports);
+            window.PrintWithStates(Posted(receipt, 100) with { ObservedSourceNamespace = new string('b', 64) });
+            Assert.Empty(window.Reports);
+            Assert.Empty(window.Queue.DequeueReady(100));
+            Assert.Single(window.Artifacts.ReadObservedGroups());
+        }
+
+        [Fact]
+        public void ChangedDatabaseEmptyDocumentCannotResolveOrRetireTheOriginalGroup()
+        {
+            using var window = new MainWindow();
+            var receipt = Receipt(100) with { ObservedSourceNamespace = new string('a', 64) };
+            window.Observe(receipt);
+            window.PrintWithStates(Posted(receipt, 100) with { ObservedSourceNamespace = new string('b', 64) });
+            Assert.Empty(window.Queue.DequeueReady(100));
+            Assert.Null(window.FinalizedDocumentId);
+            var pending = Assert.Single(window.Artifacts.ReadObservedGroups());
+            Assert.Empty(pending.ResolvedEmptyDocumentIds);
+            Assert.Empty(pending.QueuedDocumentIds);
+            Assert.False(pending.PrintObserved);
+        }
+
+        [Fact]
+        public void RetainedPrintedGroupFromAnotherDatabaseCannotBlockHealthyCurrentReceipts()
+        {
+            using var window = new MainWindow();
+            var previous = FractionalReceipt(100) with { ObservedSourceNamespace = new string('a', 64) };
+            window.Observe(previous);
+            window.PrintWithStates(Posted(previous, 100));
+            var retained = Assert.Single(window.Artifacts.ReadObservedGroups());
+            Assert.True(retained.PrintObserved);
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(31));
+            window.SetPhysicalDatabaseNamespace(new string('b', 64));
+            var current = RewardReceipt(200, 1) with { ObservedSourceNamespace = new string('b', 64) };
+            window.Observe(current);
+            window.PrintWithStates(Posted(current, 200));
+            var sale = Assert.Single(window.Reports);
+            Assert.Equal(200, sale.SourceDocumentId);
+            Assert.Equal(new string('b', 64), sale.SellerSource?.SourceNamespace);
+            var preserved = Assert.Single(window.Artifacts.ReadObservedGroups());
+            Assert.Equal(retained.CheckoutSessionId, preserved.CheckoutSessionId);
+            Assert.Equal(retained.SourceNamespace, preserved.SourceNamespace);
+            Assert.Equal(retained.PrintDocumentTimes[100], preserved.PrintDocumentTimes[100]);
+            Assert.Empty(preserved.QueuedDocumentIds);
+        }
+
+        [Fact]
+        public void LegacyAndKnownSourcePartitionsStillShareTheSamePrintAmbiguityCheck()
+        {
+            using var window = new MainWindow();
+            var legacy = Receipt(100, 10);
+            Assert.True(window.Artifacts.SaveObservedGroup(new StandardNObservedReceiptGroup(1,
+                "synthetic-pharmacy", legacy, "legacy_pending", legacy.Pharmacist.Id, legacy.Pharmacist.Name,
+                false, []) { ObservedActiveDocumentIds = [100] }));
+            var current = RewardReceipt(200, 1) with { ObservedSourceNamespace = new string('b', 64) };
+            window.SetPhysicalDatabaseNamespace(new string('b', 64));
+            window.Observe(current);
+            window.PrintWithStates(Posted(legacy, 100), Posted(current, 200));
+            Assert.Empty(window.Reports);
+            Assert.Equal(2, window.Artifacts.ReadObservedGroups().Count);
+            Assert.All(window.Artifacts.ReadObservedGroups(), group => Assert.False(group.PrintObserved));
+        }
+
+        [Fact]
+        public void UnreadableLegacyCandidateCannotMakeAnotherPartitionPrintUnambiguous()
+        {
+            using var window = new MainWindow();
+            var legacy = Receipt(100, 10);
+            Assert.True(window.Artifacts.SaveObservedGroup(new StandardNObservedReceiptGroup(1,
+                "synthetic-pharmacy", legacy, "legacy_pending", legacy.Pharmacist.Id, legacy.Pharmacist.Name,
+                false, []) { ObservedActiveDocumentIds = [100] }));
+            var current = RewardReceipt(200, 1) with { ObservedSourceNamespace = new string('b', 64) };
+            window.SetPhysicalDatabaseNamespace(new string('b', 64));
+            window.Observe(current);
+            window.PrintWithStates(Posted(current, 200));
+            Assert.Empty(window.Reports);
+            Assert.Equal(2, window.Artifacts.ReadObservedGroups().Count);
+            Assert.All(window.Artifacts.ReadObservedGroups(), group => Assert.False(group.PrintObserved));
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void UnreadableKnownCandidateCannotMakeReadableLegacyPrintUnambiguous(bool completionHasNamespace)
+        {
+            using var window = new MainWindow();
+            var legacy = Receipt(100, 10);
+            Assert.True(window.Artifacts.SaveObservedGroup(new StandardNObservedReceiptGroup(1,
+                "synthetic-pharmacy", legacy, "legacy_pending", legacy.Pharmacist.Id, legacy.Pharmacist.Name,
+                false, []) { ObservedActiveDocumentIds = [100] }));
+            var current = RewardReceipt(200, 1) with { ObservedSourceNamespace = new string('b', 64) };
+            window.SetPhysicalDatabaseNamespace(new string('b', 64));
+            window.Observe(current);
+            // B's known group is unreadable, but the legacy group resolves in that same database.
+            window.PrintWithStates(Posted(legacy, 100) with {
+                ObservedSourceNamespace = completionHasNamespace ? new string('b', 64) : null });
+            Assert.Empty(window.Reports);
+            Assert.Empty(window.Queue.DequeueReady(100));
+            Assert.Equal(2, window.Artifacts.ReadObservedGroups().Count);
+            Assert.All(window.Artifacts.ReadObservedGroups(), group => Assert.False(group.PrintObserved));
+        }
+
+        [Fact]
+        public void LegacyGroupDoesNotBorrowCurrentDatabaseNamespaceForOrdinarySale()
+        {
+            using var window = new MainWindow();
+            var receipt = RewardReceipt(100, 1);
+            var legacy = new StandardNObservedReceiptGroup(1, "synthetic-pharmacy", receipt, "sess_legacy",
+                receipt.Pharmacist.Id, receipt.Pharmacist.Name, false, []) { ObservedActiveDocumentIds = [100] };
+            Assert.True(window.Artifacts.SaveObservedGroup(legacy));
+            window.Observe(receipt);
+            window.PrintWithStates(Posted(receipt, 100));
+            Assert.Null(Assert.Single(window.Reports).SellerSource);
+        }
+
+        [Fact]
         public void FreshExactCartSendsItsNamespaceWithoutEnablingMoneyCapture()
         {
             using var window = new MainWindow();
@@ -1633,6 +1870,7 @@ namespace CustomerDisplay
         }
         internal ReceiptProbeBlock BlockNextPhysicalProbe() => _standardNDb.BlockNext();
         internal void SetFreshProbeStates(params StandardNReceiptSnapshot[] states) => _standardNDb.States = states;
+        internal void SetPhysicalDatabaseNamespace(string source) => _standardNDb.PhysicalSourceNamespace = source;
         internal void CloseReceiptObservers() => Dispatcher.Invoke(StopPhysicalReceiptObservers);
         internal void AdvanceReceiptTime(TimeSpan time) => _testReceiptNow += time;
         internal void SetUnpaidAbsenceReader(Func<StandardNObservedReceiptGroup, string, StandardNUnpaidGroupAbsenceProof?> reader) => _standardNDb.AbsenceReader = reader;
@@ -1756,6 +1994,7 @@ namespace CustomerDisplay
             public bool TryGetRefundBaseline(out string sourceNamespace, out long maximumDocumentId, out DateTimeOffset databaseTime) { sourceNamespace = ""; maximumDocumentId = 0; databaseTime = default; return false; }
             public bool TryReadNativeRefunds(string sourceNamespace, NativeRefundScan scan, out NativeRefundBatch? batch) { batch = null; return false; }
             public string? RewardSourceNamespace => new('a', 64);
+            public string? PhysicalSourceNamespace;
             public Func<StandardNObservedReceiptGroup, string, StandardNUnpaidGroupAbsenceProof?>? AbsenceReader { get; set; }
             public bool AbsenceReadSucceeded { get; set; } = true;
             public bool TryGetUnpaidGroupAbsenceProof(StandardNObservedReceiptGroup group, string sourceNamespace, out StandardNUnpaidGroupAbsenceProof? proof)
@@ -1776,6 +2015,12 @@ namespace CustomerDisplay
                 _active = block;
                 block?.Wait();
                 _active = null;
+                if (PhysicalSourceNamespace != null && groups.Any(group => StandardNSellerSource.HasConflictingNamespaces(
+                        group.SourceNamespace, group.Snapshot.ObservedSourceNamespace, PhysicalSourceNamespace)))
+                {
+                    states = [];
+                    return false;
+                }
                 // Emulate only the real DB adapter's requested-group response boundary.
                 states = response?.Where(state => groups.Any(group => ObservedGroupKey(group.Snapshot) == ObservedGroupKey(state))).Select(state => {
                     if (!RebindFinalLines) return state;

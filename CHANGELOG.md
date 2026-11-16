@@ -12,6 +12,26 @@ All notable production changes to Epharm are recorded here. The format follows
   form through technical context changes, and refresh context only on explicit
   submit. Expired or revoked grants remain invalid; cashier operation stays available.
 
+## [0.2.23] - 2026-11-16
+
+### Fixed
+
+- Add an explicit unlimited funding mode protected by financial permissions and a
+  V107 recovery fence; existing campaigns remain capped and money flags stay unchanged.
+
+- Count pharmacist receipts from captured sales in the current pharmacy, refresh
+  dashboard totals, and display refunds and all recommended receipt lines correctly.
+- Preserve ordinary-sale source provenance and historical staff proof, isolate
+  receipt reconciliation and reward decisions by pharmacy, source and recipient,
+  and prevent stale learner requests from mutating a different signed-in session.
+- Refuse a pre-V106 cleanup binary on the proof-retaining schema, including when
+  the archive is empty. Recovery retains the original protected backup boundary.
+
+### POSM
+
+- Prepare POSM 1.0.90 with scoped seller/name snapshots, source-status diagnostics
+  and receipt-collision evidence preservation. The server must be upgraded first.
+
 ## [0.2.22] - 2026-11-16
 
 ### Fixed

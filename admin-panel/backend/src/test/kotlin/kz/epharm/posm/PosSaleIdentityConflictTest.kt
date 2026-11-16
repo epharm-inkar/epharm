@@ -7,7 +7,9 @@ import io.mockk.every
 import io.mockk.Called
 import io.mockk.mockk
 import io.mockk.verify
+import kz.epharm.posm.dto.PosSaleItemDto
 import kz.epharm.posm.dto.PosSaleRequest
+import kz.epharm.posm.dto.SaleSellerSource
 import kz.epharm.posm.entity.PosSaleEntity
 import kz.epharm.posm.repository.PosSaleRepository
 import kz.epharm.posm.service.PharmacistIdentitySource
@@ -24,6 +26,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.EnumSource
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
@@ -112,6 +115,81 @@ class PosSaleIdentityConflictTest {
         verify(exactly = 0) { repository.save(any()) }
         verify { reconcile wasNot Called; rules wasNot Called; attribution wasNot Called }
         verify(exactly = 0) { bonuses.afterSale(any()) }
+    }
+
+    @Test
+    fun `ordinary seller source is immutable and cannot retroactively attribute a legacy sale`() {
+        val source = SaleSellerSource("a".repeat(64), "17", 41, "ws")
+        val bound = identity.copy(reportedPharmacistId = "17")
+        every { repository.findById(request.saleId) } returns Optional.of(existing)
+        // Existing historical receipt cannot be enriched with a later identity proof.
+        assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException::class.java) {
+            service.record(request.copy(sellerSource = source), bound, "device")
+        }.statusCode)
+        existing.sellerSource = source
+        existing.reportedPharmacistId = "17"
+        existing.deviceId = "device"
+        assertFalse(service.record(request.copy(sellerSource = source), bound, "device"))
+        for (changed in listOf(null, source.copy(sourceNamespace = "b".repeat(64)),
+            source.copy(nativeSessionId = 42), source.copy(workstationId = "other"))) {
+            assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException::class.java) {
+                service.record(request.copy(sellerSource = changed), bound, "device")
+            }.statusCode)
+        }
+        assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException::class.java) {
+            service.record(request.copy(sellerSource = source), bound, "other-device")
+        }.statusCode)
+        assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException::class.java) {
+            service.record(request.copy(sellerSource = source, printedAt = request.printedAt.plusSeconds(1)), bound, "device")
+        }.statusCode)
+        verify(exactly = 0) { repository.save(any()) }
+        verify { reconcile wasNot Called; rules wasNot Called; attribution wasNot Called; rewards wasNot Called }
+        verify(exactly = 0) { bonuses.afterSale(any()) }
+    }
+
+    @Test
+    fun `ordinary RPS attribution persists source but never enters legacy reconciliation or reward credit`() {
+        val source = SaleSellerSource("a".repeat(64), "17", 41, "ws")
+        val resolved = identity.copy(pharmacistId = "person", source = PharmacistIdentitySource.STANDARDN_RPS_BINDING,
+            reportedPharmacistId = "17")
+        val captured = io.mockk.slot<PosSaleEntity>()
+        every { repository.findById(request.saleId) } returns Optional.empty()
+        every { rules.resolveToProductIds(emptyList()) } returns emptyList()
+        every { repository.save(capture(captured)) } answers { firstArg<PosSaleEntity>() }
+        every { attribution.attributeSale(any(), emptySet()) } returns Unit
+
+        org.junit.jupiter.api.Assertions.assertTrue(service.record(
+            request.copy(pharmacistId = "person", sellerSource = source), resolved, "device"))
+        assertEquals(source, captured.captured.sellerSource)
+        assertEquals("person", captured.captured.pharmacistId)
+        assertEquals("17", captured.captured.reportedPharmacistId)
+        assertEquals("standardn_rps_binding", captured.captured.pharmacistSource)
+        verify { reconcile wasNot Called; rewards wasNot Called }
+    }
+
+    @ParameterizedTest
+    @EnumSource(PharmacistIdentitySource::class)
+    fun `only legacy internal and explicit mapping identities may financially confirm a pending`(source: PharmacistIdentitySource) {
+        val resolved = identity.copy(pharmacistId = "person", pharmacistName = "Synthetic Person", source = source,
+            reportedPharmacistId = "17", reportedPharmacistName = "Synthetic Person")
+        val captured = io.mockk.slot<PosSaleEntity>()
+        val item = PosSaleItemDto(sku = "synthetic-local", qty = 1.0, price = 1234, total = 1234)
+        every { repository.findById(request.saleId) } returns Optional.empty()
+        every { rules.resolveToProductIds(any()) } returns listOf("synthetic-product")
+        every { rules.resolveStrongProductIds(any()) } returns listOf("synthetic-product")
+        every { repository.save(capture(captured)) } answers { firstArg<PosSaleEntity>() }
+        every { attribution.attributeSale(any(), setOf("synthetic-product")) } returns Unit
+        every { reconcile.ingestLogSale(any()) } returns Unit
+
+        org.junit.jupiter.api.Assertions.assertTrue(service.record(request.copy(pharmacistId = "person", items = listOf(item)), resolved, "device"))
+        // Diagnostic attribution remains available even when it is not financial authority.
+        assertEquals("person", captured.captured.pharmacistId)
+        assertEquals(source.wireValue, captured.captured.pharmacistSource)
+        verify(exactly = 1) { attribution.attributeSale(any(), setOf("synthetic-product")) }
+        val trusted = source in setOf(PharmacistIdentitySource.POSM_INTERNAL, PharmacistIdentitySource.STANDARDN_EXPLICIT_MAPPING)
+        verify(exactly = if (trusted) 1 else 0) { reconcile.ingestLogSale(any()) }
+        verify(exactly = if (trusted) 1 else 0) { rules.resolveStrongProductIds(any()) }
+        verify { rewards wasNot Called }
     }
 
     private fun captureLogs(action: () -> Unit): List<String> {

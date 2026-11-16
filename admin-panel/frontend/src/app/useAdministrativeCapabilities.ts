@@ -16,6 +16,11 @@ export function useAdministrativeCapabilities() {
   const fresh = query.isSuccess && query.isFetchedAfterMount && !query.isError
   return {
     ...query,
+    // Mapping endpoints are NOT_READY for MANAGED accounts, even an HQ owner.
+    // Never infer LEGACY from absent/stale capability data or weaken the backend gate.
+    canManageStandardNMappings:
+      fresh && query.data?.managed === false &&
+      (user?.role === 'HQ_HEAD' || user?.role === 'SYSTEM_ADMIN'),
     canViewMerchInventory:
       query.isSuccess &&
       query.isFetchedAfterMount &&

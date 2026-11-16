@@ -43,6 +43,7 @@ class PosSaleService(
 
     @Transactional
     fun record(req: PosSaleRequest, identity: PosmPharmacistIdentity, deviceId: String? = null): Boolean {
+        val sellerSource = req.validatedSellerSource(identity.reportedPharmacistId)
         saleBonuses.beforeSale(req.sessionId)
         val fiscalArtifact = validateFiscalArtifact(req)
         val existing = posSaleRepository.findById(req.saleId).orElse(null)
@@ -51,6 +52,11 @@ class PosSaleService(
             // A retry with the same id may enrich only fiscal evidence; reconciliation and sale
             // attribution must not run twice.
             validateExistingSaleIdentity(existing, req)
+            if (existing.sellerSource != sellerSource || sellerSource != null &&
+                (existing.reportedPharmacistId != identity.reportedPharmacistId || existing.deviceId != deviceId ||
+                    java.time.Duration.between(existing.printedAt, req.printedAt).abs() > java.time.Duration.ofMillis(1))) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "Immutable receipt seller source conflicts with the stored sale")
+            }
             if (existing.rewardEvidence != null || req.rewardEvidence != null) {
                 val sameItems = existing.items.size == req.items.size && existing.items.zip(req.items).all { (a, b) ->
                     a.sku == b.sku.orEmpty() && a.barcode == b.barcode && a.name == b.name && a.qty == b.qty &&
@@ -132,6 +138,7 @@ class PosSaleService(
                 printedAt = req.printedAt,
                 rewardEvidence = req.rewardEvidence,
                 deviceId = deviceId,
+                sellerSource = sellerSource,
             ),
         )
         if (identity.pharmacistId.isBlank()) {
@@ -148,21 +155,31 @@ class PosSaleService(
         attributionService.attributeSale(sale, productIds.filterNotNull().toSet())
         if (sale.rewardEvidence == null) saleBonuses.afterSale(sale) else rewards.sale(sale)
 
-        // Сверка/начисление допустимы только для доверенного внутреннего pharmacistId.
-        // Сырой Standard-N USER_ID всё равно сохранён выше и отображается в аналитике.
-        if (req.pharmacistId.isNotBlank() && req.rewardEvidence == null) {
-            reconcileService.ingestLogSale(
-                LogSaleInput(
-                    pharmacistId = req.pharmacistId,
-                    pharmacyId = req.pharmacyId,
-                    fiscalId = req.fiscalId,
-                    cashier = req.cashier,
-                    soldAt = req.printedAt,
-                    items = req.items.mapIndexed { i, it ->
-                        LogSaleItem(sku = productIds[i] ?: it.sku ?: "", qty = it.qty, price = it.price, total = it.total)
-                    },
-                ),
-            )
+        // A resolved id alone is not financial authority: name matches remain analytics only.
+        // Preserve the existing internal/HQ legacy paths. Receipt-time RPS attribution must
+        // not introduce a legacy payout route without complete reward evidence either.
+        if (req.pharmacistId.isNotBlank() && req.rewardEvidence == null &&
+            identity.source in setOf(PharmacistIdentitySource.POSM_INTERNAL, PharmacistIdentitySource.STANDARDN_EXPLICIT_MAPPING)) {
+            // Diagnostic name matches and unverified raw SKU values cannot confirm money.
+            // Resolve financial lines independently, preserving the strict EAN/SKU contract.
+            val financialProductIds = rulesEngineService.resolveStrongProductIds(cartItems)
+            val financialItems = req.items.mapIndexedNotNull { index, item ->
+                financialProductIds[index]?.let { productId ->
+                    LogSaleItem(sku = productId, qty = item.qty, price = item.price, total = item.total)
+                }
+            }
+            if (financialItems.isNotEmpty()) {
+                reconcileService.ingestLogSale(
+                    LogSaleInput(
+                        pharmacistId = req.pharmacistId,
+                        pharmacyId = req.pharmacyId,
+                        fiscalId = req.fiscalId,
+                        cashier = req.cashier,
+                        soldAt = req.printedAt,
+                        items = financialItems,
+                    ),
+                )
+            }
         }
         return true
     }

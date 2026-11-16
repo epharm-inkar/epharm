@@ -241,6 +241,99 @@ describe('PromoDetailPage — рендер', () => {
 })
 
 describe('PromoDetailPage — редактирование', () => {
+  it('снятие лимита требует подтверждения и сохраняет явный флаг без изменения числового бюджета', async () => {
+    const data = changesFor(mkPromo(), { canConfigureBudget: true })
+    changesHooks.usePromoChanges.mockReturnValue({ data, isFetchedAfterMount: true, isFetching: false, isError: false })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    const user = userEvent.setup()
+    renderDetail()
+    const toggle = screen.getByRole('checkbox', { name: 'Без лимита бюджета' })
+    await user.click(toggle)
+    expect(toggle).not.toBeChecked()
+    await user.click(toggle)
+    expect(toggle).toBeChecked()
+    expect(screen.getByDisplayValue('1000000')).toBeDisabled()
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(changesHooks.useSavePromoChanges().mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ bundle: expect.objectContaining({ campaign: expect.objectContaining({ budget: 1_000_000, budgetUnlimited: true }) }) }),
+      expect.any(Object),
+    )
+    expect(confirm).toHaveBeenCalledTimes(2)
+    confirm.mockRestore()
+  })
+
+  it.each([undefined, false])('не предлагает переключатель без подтверждённого права (%s), но сохраняет текущий unlimited при редактировании текста', async (canConfigureBudget) => {
+    const promo = mkPromo({ budget: 0, budgetUnlimited: true })
+    setPromo(promo)
+    const data = changesFor(promo, { canConfigureBudget })
+    changesHooks.usePromoChanges.mockReturnValue({ data, isFetchedAfterMount: true, isFetching: false, isError: false })
+    const user = userEvent.setup()
+    renderDetail()
+    expect(screen.queryByRole('checkbox', { name: 'Без лимита бюджета' })).not.toBeInTheDocument()
+    await user.type(screen.getByDisplayValue('Майский марафон'), ' новая')
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(changesHooks.useSavePromoChanges().mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ bundle: expect.objectContaining({ campaign: expect.objectContaining({ budget: 0, budgetUnlimited: true }) }) }),
+      expect.any(Object),
+    )
+  })
+
+  it('не сохраняет локальное снятие лимита после отзыва финансового права', async () => {
+    const data = changesFor(mkPromo(), { canConfigureBudget: true })
+    changesHooks.usePromoChanges.mockReturnValue({ data, isFetchedAfterMount: true, isFetching: false, isError: false })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole('checkbox', { name: 'Без лимита бюджета' }))
+    data.canConfigureBudget = false
+    await user.type(screen.getByDisplayValue('Майский марафон'), ' новая')
+    expect(screen.queryByRole('checkbox', { name: 'Без лимита бюджета' })).not.toBeInTheDocument()
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(changesHooks.useSavePromoChanges().mutate).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('требует подтверждённого права')
+    confirm.mockRestore()
+  })
+
+  it('старое API без флага оставляет нулевой бюджет ограниченным', async () => {
+    setPromo(mkPromo({ budget: 0 }))
+    const user = userEvent.setup()
+    renderDetail()
+    expect(screen.getByTestId('campaign-budget-mode')).toHaveTextContent('0 ₸ — нулевой лимит')
+    expect(screen.getByTestId('promo-published-budget')).not.toHaveTextContent('Без лимита')
+    await user.type(screen.getByDisplayValue('Майский марафон'), ' новая')
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(changesHooks.useSavePromoChanges().mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ bundle: expect.objectContaining({ campaign: expect.objectContaining({ budgetUnlimited: false }) }) }),
+      expect.any(Object),
+    )
+  })
+
+  it('возвращает ограниченный режим явным false и сохраняет числовой лимит', async () => {
+    const promo = mkPromo({ budgetUnlimited: true })
+    setPromo(promo)
+    const data = changesFor(promo, { canConfigureBudget: true })
+    changesHooks.usePromoChanges.mockReturnValue({ data, isFetchedAfterMount: true, isFetching: false, isError: false })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.click(screen.getByRole('checkbox', { name: 'Без лимита бюджета' }))
+    expect(screen.getByDisplayValue('1000000')).toBeEnabled()
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(changesHooks.useSavePromoChanges().mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ bundle: expect.objectContaining({ campaign: expect.objectContaining({ budget: 1_000_000, budgetUnlimited: false }) }) }),
+      expect.any(Object),
+    )
+  })
+
+  it('безлимитный опубликованный бюджет показывает расходы без процентов', () => {
+    setPromo(mkPromo({ budget: 0, budgetUnlimited: true, spent: 3210 }))
+    renderDetail()
+    const budget = screen.getByTestId('promo-published-budget')
+    expect(budget).toHaveTextContent('3 210 ₸')
+    expect(budget).toHaveTextContent('Без лимита бюджета')
+    expect(budget).not.toHaveTextContent('%')
+    expect(budget.querySelector('[style*="width"]')).toBeNull()
+  })
+
   it.each(['promo-changes-save', 'promo-rules-save'])(
     '%s не округляет дробный бюджет и не сохраняет невалидные денежные поля',
     async (saveButton) => {
@@ -556,6 +649,35 @@ describe('D28 — подготовка и явное применение', () =
     })
     return { data, refetch }
   }
+
+  it('проверка публикации показывает подготовленный unlimited независимо от опубликованного лимита', async () => {
+    const { data } = prepared(mkPromo({ budget: 0 }))
+    data.bundle.campaign.budgetUnlimited = true
+    const user = userEvent.setup()
+    renderDetail()
+    expect(screen.getByTestId('promo-prepared-budget')).toHaveTextContent('Без лимита бюджета')
+    expect(screen.getByTestId('promo-published-budget')).toHaveTextContent('/ 0 ₸')
+    await user.click(screen.getByRole('button', { name: 'Проверить и применить' }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('Бюджет: Без лимита бюджета')
+    expect(dialog).toHaveTextContent('Остальные условия начисления сохраняются')
+    await user.click(within(dialog).getByRole('button', { name: 'Применить изменения' }))
+    expect(changesHooks.useApplyPromoChanges().mutate).toHaveBeenCalledWith({ id: 'pr_1', expectedRevision: 4 }, expect.any(Object))
+  })
+
+  it('повторная подготовка сохраняет режим сохранённого bundle, а не старой опубликованной версии', async () => {
+    const { data } = prepared(mkPromo({ budget: 0, budgetUnlimited: false }), { canConfigureBudget: true })
+    data.bundle.campaign.budgetUnlimited = true
+    const user = userEvent.setup()
+    renderDetail()
+    expect(screen.getByRole('checkbox', { name: 'Без лимита бюджета' })).toBeChecked()
+    await user.type(screen.getByDisplayValue('Майский марафон'), ' новая')
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(changesHooks.useSavePromoChanges().mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ bundle: expect.objectContaining({ campaign: expect.objectContaining({ budget: 0, budgetUnlimited: true }) }) }),
+      expect.any(Object),
+    )
+  })
 
   it('загрузка данных каталога не создаёт ложные правки и не блокирует применение бюджета', () => {
     const promo = mkPromo({ medusaProductId: 'prod_1' })

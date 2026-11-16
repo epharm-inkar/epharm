@@ -274,6 +274,26 @@ explicit rollback, even when money flags are off. Preserve its backup as evidenc
 capable exact-main forward recovery before switching. This strengthens the existing V102/V103
 contract without a new schema marker or migration.
 
+V106 adds a historical-source-proof recovery boundary: an older cleanup binary can
+discard expired grants before their proof is archived. The shared verifier probes
+`posm_staff_source_proofs` read-only and requires actual atomic archival cleanup plus
+the scoped, time-bound archive resolver, even with empty tables and money flags off.
+Packaged V106 activates this artifact check before migration; offline rehearsal may use
+`--source-proof-protected`. The previous v0.2.22 artifact remains valid before V106,
+but automatic/explicit rollback to it is denied afterward. Install the reviewed verifier
+before switching, coordinate all old scheduler replicas, and rehearse a pinned
+proof-retaining forward recovery image. Preserve grants/archive rows and existing
+eligibility dates; retention does not renew authentication or authorize backfill.
+
+V107 adds an independent funding-mode recovery boundary. The live verifier checks
+presence of `promos.budget_unlimited`, even when every value is false, and requires
+mode-aware locked reservation, atomic funding edits and publication handling.
+Packaged V107 enables the same check before migration; offline rehearsal may use
+`--unlimited-budget-protected`. A V106-capable image alone is insufficient after V107.
+Existing campaigns remain capped by default; releasing this schema does not enable
+unlimited funding, money flags or historical replay. Keep the original backup and
+use a reviewed exact-main image that understands both new boundaries for recovery.
+
 The actual v0.1.47 artifact is wallet-capable; its isolated forward-schema financial rehearsal is
 not an authorization recovery approval. Once the V066 managed-access schema exists, a recovery
 artifact must also contain the reviewed scope and fresh-revocation implementation.

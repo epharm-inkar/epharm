@@ -73,7 +73,10 @@ class PosmPharmacistIdentityService(
                 reportedId,reportedName)
         }
 
-        val internal = reportedId?.let { pharmacistRepository.findById(it).orElse(null) }
+        // A native account ID is not an ePharm account ID, even when their strings collide.
+        // Preserve source-less legacy clients, but never promote explicit native provenance.
+        val internal = reportedId?.takeIf { sourceNamespace == null }
+            ?.let { pharmacistRepository.findById(it).orElse(null) }
         if (internal != null && internal.status == PharmacistStatus.active && internal.pharmacyId == pharmacyId) {
             return PosmPharmacistIdentity(
                 pharmacistId = internal.id,

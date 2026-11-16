@@ -319,8 +319,12 @@ function RecommendationsSection() {
                       {fmtWhen(e.at)}
                     </td>
                     <td className="py-2.5 pr-3">
-                      <span className={`chip ${e.type === 'sale' ? 'chip-green' : 'chip-blue'}`}>
-                        {e.type === 'sale' ? t('recan.kindSale') : t('recan.kindShow')}
+                      <span className={`chip ${e.type === 'sale'
+                        ? e.receiptStatus === 'refund' ? 'chip-amber' : 'chip-green'
+                        : 'chip-blue'}`}>
+                        {e.type === 'sale'
+                          ? e.receiptStatus === 'refund' ? t('recan.kindRefund') : t('recan.kindSale')
+                          : t('recan.kindShow')}
                       </span>
                     </td>
                     <td className="py-2.5 pr-3">
@@ -333,7 +337,7 @@ function RecommendationsSection() {
                               : t('recan.kindSale')}
                           </span>
                         )}
-                        {e.type === 'sale' && e.secondsToSale != null && e.secondsToSale >= 0 && (
+                        {e.type === 'sale' && e.receiptStatus !== 'refund' && e.secondsToSale != null && e.secondsToSale >= 0 && (
                           <span className="chip chip-green ml-2 whitespace-nowrap font-normal">
                             {t('recan.soldAfter', { t: fmtSecs(e.secondsToSale) })}
                           </span>

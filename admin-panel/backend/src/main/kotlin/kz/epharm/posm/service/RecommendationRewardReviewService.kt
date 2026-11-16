@@ -80,6 +80,16 @@ class RecommendationRewardReviewService(
         session?.let { lock("recommendation:$it") }
         val recipient = request.pharmacistId ?: row["pharmacist_id"]?.toString()
         recipient?.let { lock("reward-pharmacist:$it") }
+        if (request.action == "approve" && !recipient.isNullOrBlank()) {
+            // The administrative gate serializes HQ mapping changes, but password logins
+            // can independently create a native-source conflict. Hold the same recipient
+            // -> native account locks as automatic rewards before financial row locks.
+            val sale = sales.findById(row["source_sale_id"].toString()).orElseThrow()
+            val nativeUser = sale.reportedPharmacistId?.trim()?.takeIf { it.isNotEmpty() }
+                ?: conflict("Сначала подтвердите пользователя Стандарт-Н")
+            jdbc.queryForList("SELECT id FROM pharmacists WHERE id=? FOR UPDATE", recipient)
+            kz.epharm.posm.staff.SourceStaffBindingService.lockAccount(jdbc, sale.pharmacyId, nativeUser)
+        }
         row["pending_bonus_id"]?.let { jdbc.queryForList("SELECT id FROM pending_bonuses WHERE id=? FOR UPDATE", it) }
         row["receipt_id"]?.let { jdbc.queryForList("SELECT id FROM receipts WHERE id=? FOR UPDATE", it) }
         jdbc.queryForList("SELECT id FROM recommendation_sale_rewards WHERE id=? FOR UPDATE", id)

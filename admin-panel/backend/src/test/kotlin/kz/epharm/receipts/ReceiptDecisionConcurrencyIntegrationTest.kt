@@ -17,6 +17,8 @@ import kz.epharm.shared.error.AppException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
@@ -29,7 +31,7 @@ import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 
-@SpringBootTest
+@SpringBootTest(properties = ["epharm.receipts.excel.pharmacy-codes.pilot-branch=test-pharmacy"])
 @ActiveProfiles("test")
 @Testcontainers
 class ReceiptDecisionConcurrencyIntegrationTest {
@@ -48,6 +50,18 @@ class ReceiptDecisionConcurrencyIntegrationTest {
     @Autowired lateinit var pending: PendingBonusRepository
     @Autowired lateinit var jdbc: JdbcTemplate
     @Autowired lateinit var transactions: PlatformTransactionManager
+
+    @ParameterizedTest
+    @ValueSource(strings = ["expired", "matched"])
+    fun `manual legacy decision cannot reopen a closed reservation without an existing credit`(status: String) {
+        val fixture = fixture()
+        jdbc.update("UPDATE pending_bonuses SET status=? WHERE id=(SELECT pending_bonus_id FROM receipts WHERE id=?)", status, fixture.receipt)
+        assertThatThrownBy { reconcile.approve(fixture.receipt, "HQ-test") }.isInstanceOf(AppException::class.java)
+        assertThat(receipts.findById(fixture.receipt).orElseThrow().status).isEqualTo(ReceiptStatus.moderation_required)
+        assertThat(balance(fixture)).isZero()
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM pharmacist_wallet_entries WHERE pharmacist_id=?", Long::class.java, fixture.person)).isZero()
+        assertThat(jdbc.queryForObject("SELECT status FROM pending_bonuses WHERE id=(SELECT pending_bonus_id FROM receipts WHERE id=?)", String::class.java, fixture.receipt)).isEqualTo(status)
+    }
 
     @Test fun `reject racing committed approval cannot overwrite receipt or hide credited bonus`() {
         val fixture=fixture()
@@ -93,7 +107,7 @@ class ReceiptDecisionConcurrencyIntegrationTest {
                     assertThat(stale.status).isEqualTo(ReceiptStatus.moderation_required)
                     loaded.countDown()
                     check(rejected.await(10,TimeUnit.SECONDS))
-                    reconcile.ingestExcelRow(ExcelRowInput(stale.fiscalId,null,null,"test-product","TEST",java.math.BigDecimal.ONE,1000,java.time.Instant.now()))
+                    reconcile.ingestExcelRow(ExcelRowInput(stale.fiscalId,"pilot-branch",null,"test-product","TEST",java.math.BigDecimal.ONE,1000,java.time.Instant.now()))
                 }
             })
             val reject=pool.submit(Callable {

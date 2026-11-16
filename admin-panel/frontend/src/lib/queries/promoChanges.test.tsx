@@ -26,7 +26,7 @@ const state: PromoChangesViewDto = {
   updatedAt: null,
   updatedBy: null,
   bundle: {
-    campaign: { title: 'Демо', pharmacistBonus: 0, barcodes: ['0012345678905', '4601164003157'] },
+    campaign: { title: 'Демо', pharmacistBonus: 0, budgetUnlimited: true, barcodes: ['0012345678905', '4601164003157'] },
     rules: {
       replacements: [],
       crossSells: [],

@@ -1,6 +1,57 @@
 # Admin Console
 
+## Explicit unlimited campaign budget — candidate 2026-11-16
+
+Campaign detail offers “Без лимита” only with fresh server-confirmed financial
+permission. Enabling requires confirmation, then the usual prepare/review/apply
+flow; checking the box alone does not change the published campaign. The selected
+mode is retained when other fields are edited, including an existing prepared draft.
+Creation remains capped by default. Unlimited cards and rows show actual spending
+and an explicit unlimited label, never a fictitious remaining amount or percentage.
+Mixed summaries total finite caps separately and count unlimited campaigns.
+Returning to a finite cap below already committed spending is rejected by the server.
+The mode is per campaign, not a global setting or automatic activation of zero caps.
+
+## Sales display correction — 2026-11-16
+
+The dashboard summary and paginated journal both refresh every 15 seconds while
+the screen is active. The conversion KPI explicitly counts recommendations with
+a sale, not all cash-register receipts. Refund rows use the explicit optional
+`receiptStatus=refund` field and a separate amber label; legacy responses remain
+compatible. The UI does not infer refunds from product names or change amount signs.
+
+The pharmacist registry and detail now read `receipts30d` from captured receipts,
+not the stale profile counter. One grouped query serves the visible list. Only the
+saved internal seller ID and current pharmacy match; refunds and future/out-of-window
+receipts are excluded. Existing financial masking still returns unavailable rather
+than a fabricated zero. Raw/unmapped cashiers remain visible in the dashboard
+journal but are not silently attached to a person or credited with a bonus.
+
+## Seller attribution repair candidate — 2026-11-16
+
+The Standard-N mappings action requires a freshly confirmed LEGACY access profile
+and HQ_HEAD/SYSTEM_ADMIN role. MANAGED, unknown and failed access profiles do not
+show or mount the mapping dialog; server NOT_READY restrictions remain unchanged.
+This is not a grant of mapping permissions to managed accounts.
+
+HQ → Pharmacists → Standard-N sellers now distinguishes missing native USER_ID,
+missing names/accounts, inactive recipients and source conflicts. Different observed
+names under one USER_ID warn about shared/reused accounts. The displayed name is the
+last observation, not an alphabetical maximum. A blank USER_ID is diagnostic-only.
+HQ must explicitly select and confirm an active same-pharmacy person; stale candidates
+cannot be submitted. No historical reassignment or payment occurs on confirmation.
+An empty queue does not claim complete fleet attribution. Connected registers show
+native context health separately from RPS login; `resolved` is not a financial identity
+proof. Old clients without the field show unknown, not successful source verification.
+
 ## Registration, analytics and pharmacy computers — candidate 2026-11-16
+
+Authenticated learner requests and mutations are bound to the originating page/session.
+Logout, account replacement or unmount prevents late responses from restoring another
+learner's assignment, overview, error or navigation, and stops refresh-driven retries
+and follow-up reads from that obsolete session. Current-session errors remain visible.
+This does not cancel a mutation already accepted by the server, alter saved progress,
+or change the SMS-free initial RPS registration and verified recovery flows.
 
 The separate `/learn` login cancels outstanding identity/authentication requests when
 the IIN, activation phone, step or component changes. A response from the previous

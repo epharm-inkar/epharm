@@ -2,6 +2,41 @@
 
 Path: `App/` and `Models/`.
 
+Ordinary receipt attribution candidate (2026-11-16): `sellerSource` travels with the
+queued sale independently of reward enrollment. Only a mutually consistent observed
+receipt group, native user/session/workstation and database namespace can produce it;
+current logged-in ePharm identity is never substituted. Missing legacy provenance
+leaves the field absent and the legacy receipt deliverable. Proven disagreement between
+the saved group, observed snapshot and actual completion database instead stops receipt
+finalization before enqueue, ACK, empty-document resolution or pending retirement.
+A fresh observation from a conflicting database cannot overwrite the original group;
+its unresolved observations remain available for diagnosis and an original-source retry.
+The durable group-key format is unchanged: a colliding group from another database is
+blocked rather than silently reassigned.
+Receipt probes isolate known database domains, retaining failed groups while allowing
+healthy current-source receipts to proceed. Successful partition reads still share one
+print-cue ambiguity check. An unreadable candidate cannot be discarded unless its known
+namespace provably differs from every successfully read completion for that cue.
+Missing provenance is not separation; an already anchored cue cannot be reassigned.
+The short-lived suppression of an already finalized receipt also checks its native
+group/session/workstation and known database namespace, not just DOCS.ID. A proven
+new source or native session may reuse a numeric document ID without disappearing
+from the display; a repeated observation of the original receipt stays suppressed.
+The legacy sale ID remains `pharmacyId + DOCS.ID`. If both saved and new native
+seller proofs are known but differ, completion fails closed: the new group stays
+visible/unresolved and the original pending payload, outbox and delivery ACK remain
+unchanged. Automatic delivery of two distinct receipts with that same legacy ID
+across databases or sessions is not supported by this fix; it needs a coordinated
+identity/replay migration. Missing legacy provenance is not proof of a collision
+or permission to invent a new identity. This guard does not migrate historical IDs.
+Name lookup is source/user/session-scoped
+and expires (30 seconds for missing names, five minutes for found names); action-log
+lookup requires both SESSION_ID and USER_ID and never falls back to another session.
+Missing exact action names may use the matching user-directory entry, not a historical
+action or another session's cached name. These labels remain non-financial evidence.
+Heartbeat additionally reports fixed-code `staffSourceStatus`, even when RPS login is
+successful, so absent/ambiguous/stale native context is visible without exporting PII.
+
 Current client is C#/WPF/.NET 10. Older Electron references are historical and no longer describe the
 implementation.
 

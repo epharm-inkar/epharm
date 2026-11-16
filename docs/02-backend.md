@@ -1,5 +1,54 @@
 # Backend
 
+## Explicit campaign funding mode — candidate 2026-11-16
+
+`PromoDto` and create accept `budgetUnlimited=false` by default; update accepts a
+nullable flag, where omission preserves the stored mode. Changes require
+`MotivationPermissions.configureBonus` through the existing permission policy. Prepared
+publication freezes the selected mode; old limited-draft fingerprints remain valid,
+but a published mode change invalidates a stale prepared draft. The changes response
+exposes `canConfigureBudget`; this UI hint does not replace server authorization.
+
+The evidence-bound recommendation reward writer reads budget, mode and spend under
+the existing campaign row lock. Only explicit true bypasses a finite cap; limited
+zero still refuses payment. Every new reservation increments `spent` exactly once,
+including unlimited campaigns. Overflow goes to HQ (`reward_budget_overflow`), not
+an overflowing SQL update. Existing identity, payment, return and retry guards stay
+in force. Atomic funding updates prevent a switch to a cap below committed spend;
+fresh scalar state under the lock prevents stale ORM data from resetting the mode.
+No legacy writer is silently converted, no financial flag is enabled, and no past
+receipt is replayed by this feature. See database rollout notes before enabling it.
+
+## Financial product identity — repeated audit candidate 2026-11-16
+
+Ordinary sale items and attribution retain general catalog resolution for diagnostics.
+Legacy financial reconciliation independently uses `resolveStrongProductIds`: only
+unambiguous exact EAN/local SKU mappings enter the monetary log. An unknown or
+conflicting supplied EAN cannot fall through to a name, and an unverified raw SKU
+cannot be treated as a canonical product ID. Mixed receipts retain all raw/analytics
+items but only strong lines confirm a pending bonus; a receipt without strong lines
+does not invoke legacy reconciliation. Replay, seller-source whitelist, feature flags,
+budgets and the separate evidence-bound reward protocol are unchanged.
+
+## Ordinary sale seller-source candidate — 2026-11-16
+
+`POST /api/posm/sales` accepts optional `sellerSource` with `sourceNamespace`,
+`rawUserId`, `nativeSessionId` and `workstationId`. It is frozen receipt provenance,
+not a substitute for an authenticated employee grant. Validate it before identity
+resolution; when reward completion is also present, all four fields must agree.
+Existing source-binding checks still require the matching individual device, pharmacy,
+native session/workstation and proof valid at receipt time. Legacy requests may omit it.
+V105 persists the source; retries cannot add/remove/change it or its device/time.
+New ordinary `standardn_rps_binding` attribution bypasses legacy reconciliation,
+so this repair cannot create a second money path with reward evidence disabled.
+
+Heartbeat `staffSourceStatus` is a fixed non-personal diagnostic independent of
+`staffAuthStatus`. Unknown strings are discarded; omitted diagnostics clear the
+previous heartbeat value even across instances. Database-only presence does not
+manufacture a login or source observation. HQ discovery includes missing USER_ID,
+inactive mapping recipients and unreviewed source conflicts; last observed names
+replace alphabetical maxima. Reads never create mappings or repair historical sales.
+
 ## Pharmacy inventory and analytics audit — candidate 2026-11-16
 
 Pharmacy DTOs expose nullable `inventoryDeviceCount`, `inventorySource` and
@@ -71,6 +120,53 @@ multi-sale replay locks its full sorted recipient/account set before receipt and
 locks. Existing valid payouts are not reversed, and real auto-credit gates remain off
 until a funded campaign and scoped pilot are approved.
 
+Legacy receipt reconciliation accepts financial confirmation only from the existing
+`posm_internal` and `standardn_explicit_mapping` sale identities. Name-only matches
+remain stored analytics, and ordinary RPS attribution still does not enter legacy
+payments. This does not change full reward-evidence authorization or enable money flags.
+Log/Excel amounts must be positive and agree within inclusive 2% of the log amount,
+regardless of arrival order; comparison is overflow-safe. Missing, invalid or conflicting
+amounts retain an exact matched receipt for HQ with `amount_missing`, `amount_invalid`
+or `amount_mismatch`, without granting financial confirmation to invalid evidence.
+Legacy log confirmation also requires finite positive quantity and positive unit price;
+invalid lines remain in the raw sale journal and the matched receipt stays for HQ review
+with `quantity_invalid` or `price_invalid`. Positive fractional quantities remain valid:
+this check does not infer full-package semantics or multiply a legacy reward by quantity.
+No nonblank existing review reason is cleared or bypassed by automatic retries;
+explicit HQ review retains its existing permissions and decision path.
+The common new-credit gate requires an `awaiting_receipt` reservation even without
+a v2 reward case: manual review cannot revive an expired or already matched legacy
+reservation. Retrying an already approved receipt remains idempotent and does not
+request a second credit.
+An Excel-first row lacking a positive amount
+cannot select a pending by amount and remains unmatched until sufficient evidence exists.
+No historical repair, reassignment or automatic backfill is performed.
+
+Legacy log matching also requires the pending reservation's exact pharmacy, seller and
+canonical SKU, rechecked under its row lock. Excel fiscal matching requires an exact
+canonical SKU and consistent receipt/pending pharmacy; a fiscal number is never proof
+of a different product or pharmacy. Conflicting known fiscal IDs from log and Excel cannot confirm
+each other in either arrival order and do not flag the unrelated receipt.
+Nonblank Excel pharmacy codes resolve only through
+the explicit Spring configuration map `epharm.receipts.excel.pharmacy-codes`, whose
+default is empty. Example operator-supplied configuration (synthetic identifiers):
+`epharm.receipts.excel.pharmacy-codes[pilot-export-code]=canonical-pharmacy-id`.
+Use bracketed map keys for opaque codes with punctuation/case; values are canonical
+pharmacy IDs. The parser trims Excel cell boundaries, but the crosswalk never applies
+fuzzy matching, case folding or implicit ID/name/CRM/storefront aliases. Every mapping
+must be verified against the actual export and the canonical pharmacy before rollout.
+Unknown or mismatching supplied codes remain persisted unmatched Excel rows (import
+continues); they neither confirm nor flag an unrelated receipt. Missing codes also
+remain unmatched: a currently unique fiscal number cannot prove the export's pharmacy.
+Both fiscal matching and Excel-first SKU/amount selection require an explicit resolved
+pharmacy mapping. **Rollout gate for legacy Excel confirmations:** validate and
+configure the export crosswalk before enabling or preserving automatic confirmations.
+An installation with no active legacy Excel imports may be deployed with the empty
+map: import still preserves rows for HQ review, and automatic confirmation stays
+paused until verified mappings are supplied. Do not replace an existing verified
+crosswalk with the empty default. Missing/unknown codes never auto-confirm or credit;
+the raw rows remain available for HQ review. Existing rows are not deleted or replayed.
+
 ## Local candidate: recommendation sale rewards
 
 Optional evidence protocol 1 extends the existing POSM recommend/shown/sales routes;
@@ -113,6 +209,11 @@ view permission. Review requires a reason, explicit payment/package confirmation
 same-pharmacy active beneficiary, verified source-user mapping and canonical receipt
 keys. Conflicting source evidence cannot be approved through a checkbox. XLSX respects
 the same scopes/filters and rejects more than 10,000 rows instead of truncating.
+Before an HQ approval reads seller authorization, it locks the recipient row and exact
+native account, then pending/receipt/reward rows. The existing administrative authority
+gate already serializes HQ mapping changes; the account lock additionally prevents a
+concurrent password-login observation from creating a source conflict between that
+authorization check and the wallet credit. No login permission or mapping is created.
 
 Recovery after V100 requires a reviewed reward-capable forward image; the release
 transition guard rejects an older generic wallet binary even on empty V100 tables.
@@ -811,6 +912,20 @@ rejects unknown barcodes and conflicting supplied exact identifiers. POSM keeps 
 scan code; `triggerBarcode` in the response stays that actual code, not the first catalogue alias.
 
 ## Dashboard Journal
+
+Each recommended product in one receipt retains its own nonnegative attribution
+interval. Multiple matching events cannot duplicate receipt rows or amounts;
+conflicting known sellers and foreign pharmacies cannot supply that interval.
+An explicit captured refund returns additive nullable `receiptStatus=refund` and
+no sale-attribution timing. Neither this projection nor the UI rewrites refunds,
+sale evidence or wallet entries. Unresolved sellers are not filtered from the journal.
+
+Administrative pharmacist `receipts30d` is now a read-only aggregate of `pos_sales`
+over the last 30 days through the request time, once per visible list (or detail).
+It matches the saved internal seller and current pharmacy exactly, excludes refunds,
+and applies existing financial field restrictions after projection. The stale
+`pharmacists.receipts_30d` column is not rewritten; separate legacy exports/mobile
+consumers of that column are unchanged by this display-only fix.
 
 `GET /api/admin/dashboard/recommendations?page=0&size=50` returns KPI values for the configured
 analytics window and a server-paginated combined journal of recommendation displays and POS sale

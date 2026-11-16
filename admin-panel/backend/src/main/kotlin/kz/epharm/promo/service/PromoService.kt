@@ -11,6 +11,7 @@ import kz.epharm.promo.entity.PromoEntity
 import kz.epharm.promo.entity.PromoStatus
 import kz.epharm.promo.entity.PromoTier
 import kz.epharm.promo.repository.PromoRepository
+import kz.epharm.promo.repository.refreshLockedFunding
 import kz.epharm.rules.entity.RuleStatus
 import kz.epharm.rules.entity.RuleType
 import kz.epharm.rules.repository.RuleRepository
@@ -61,7 +62,7 @@ class PromoService(
         if (req.status != null && req.status != PromoStatus.draft) {
             administrativeScope.requireAllPermission(MotivationPermissions.campaignPublish)
         }
-        if (req.pharmacistBonus != 0L || req.budget != 0L) {
+        if (req.pharmacistBonus != 0L || req.budget != 0L || req.budgetUnlimited) {
             administrativeScope.requireAllPermission(MotivationPermissions.configureBonus)
         }
         if (administrativeScope.hasManagedRequest() && req.status != null && req.status != PromoStatus.draft) {
@@ -92,6 +93,7 @@ class PromoService(
             brand = req.brand.trim(),
             period = req.period.trim(),
             budget = req.budget,
+            budgetUnlimited = req.budgetUnlimited,
             kpi = req.kpi.trim(),
             cover = req.cover.trim(),
             medusaProductId = medusaProductId,
@@ -156,7 +158,8 @@ class PromoService(
         val paidTiers = entity.tiers.filter { it.bonus != 0L }.map { it.minQty to it.bonus }
         val nextPaidTiers = if (nextBonus != 0L) listOf(1 to nextBonus) else emptyList()
         val hasPaidTerms = nextBonus != 0L || paidTiers.isNotEmpty() || (entity.goalBonus ?: 0) != 0
-        return req.budget != null && req.budget != entity.budget || paidTiers != nextPaidTiers ||
+        return req.budget != null && req.budget != entity.budget ||
+            req.budgetUnlimited != null && req.budgetUnlimited != entity.budgetUnlimited || paidTiers != nextPaidTiers ||
             hasPaidTerms && nextProduct != entity.medusaProductId
     }
 
@@ -204,11 +207,12 @@ class PromoService(
         req.title?.let { entity.title = it.trim() }
         req.brand?.let { entity.brand = it.trim() }
         req.period?.let { entity.period = it.trim() }
-        req.budget?.let {
-            if (promoRepository.updateBudgetIfCoversSpent(id, it) != 1) {
+        if (req.budget != null || req.budgetUnlimited != null) {
+            if (promoRepository.updateFundingIfCoversSpent(id, req.budget, req.budgetUnlimited) != 1) {
                 throw AppException(ErrorCode.CONFLICT, "Бюджет не может быть меньше уже начисленной суммы", HttpStatus.CONFLICT)
             }
-            entity.budget = it
+            req.budget?.let { entity.budget = it }
+            req.budgetUnlimited?.let { entity.budgetUnlimited = it }
         }
         req.kpi?.let { entity.kpi = it.trim() }
         req.cover?.let { entity.cover = it.trim() }
@@ -375,7 +379,7 @@ class PromoService(
     private fun loadOrThrow(id: String, forUpdate: Boolean = false): PromoEntity =
         (if (forUpdate) promoRepository.findForUpdate(id) else promoRepository.findById(id)).orElseThrow {
             AppException(ErrorCode.NOT_FOUND, "Promo $id not found", HttpStatus.NOT_FOUND)
-        }
+        }.let { if (forUpdate) promoRepository.refreshLockedFunding(it) else it }
 
     private fun generateId(): String = "pr_${UUID.randomUUID().toString().replace("-", "")}"
 
@@ -400,6 +404,9 @@ class PromoService(
      * один товар Medusa не может быть в двух живых (не-archived) кампаниях.
      */
     private fun validatePromo(e: PromoEntity) {
+        if (e.budget < 0) {
+            throw AppException(ErrorCode.VALIDATION_FAILED, "Бюджет не может быть отрицательным", HttpStatus.BAD_REQUEST)
+        }
         val start = e.dateStart
         val end = e.dateEnd
         if (start != null && end != null && end.isBefore(start)) {

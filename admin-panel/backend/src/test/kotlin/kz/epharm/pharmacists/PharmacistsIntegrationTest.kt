@@ -16,12 +16,17 @@ import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.entity.PharmacistTier
 import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.posm.entity.PosSaleEntity
+import kz.epharm.posm.entity.PosSaleItem
+import kz.epharm.posm.repository.PosSaleRepository
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -37,6 +42,8 @@ import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDate
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,11 +77,14 @@ class PharmacistsIntegrationTest {
     @Autowired private lateinit var chainRepository: ChainRepository
     @Autowired private lateinit var adminUserRepository: AdminUserRepository
     @Autowired private lateinit var passwordEncoder: PasswordEncoder
+    @Autowired private lateinit var sales: PosSaleRepository
+    @Autowired private lateinit var jdbc: JdbcTemplate
 
     private lateinit var bearer: String
 
     @BeforeEach
     fun seed() {
+        sales.deleteAll()
         pharmacistRepository.deleteAll()
         pharmacyRepository.deleteAll()
         chainRepository.deleteAll()
@@ -116,6 +126,44 @@ class PharmacistsIntegrationTest {
             ).also { it.role = AdminRole.BRAND_MANAGER; it.status = AdminUserStatus.ACTIVE },
         )
         bearer = "Bearer " + login().tokens.accessToken
+    }
+
+    @Test
+    fun `receipt counts use real receipts exact current pharmacy rolling dates and no raw seller fallback`() {
+        val observed = Instant.now().truncatedTo(ChronoUnit.SECONDS)
+        val since = observed.minus(30, ChronoUnit.DAYS)
+        fun sale(id: String, person: String = "u_active", pharmacy: String = "europharma_0", at: Instant = observed.minusSeconds(60)) =
+            PosSaleEntity(
+                id = id, pharmacistId = person, pharmacyId = pharmacy, printedAt = at,
+                reportedPharmacistId = "u_active", pharmacistName = "Айгерим Касенова",
+                reportedPharmacistName = "Айгерим Касенова",
+                // Receipt count, not item count: one sale can contain several positions.
+                items = listOf(PosSaleItem(name = "one"), PosSaleItem(name = "two")),
+            )
+        sales.saveAllAndFlush(listOf(
+            sale("recent"), sale("at_boundary", at = since), sale("expired", at = since.minusSeconds(1)),
+            sale("future", at = observed.plusSeconds(3600)), sale("foreign_pharmacy", pharmacy = "other"),
+            sale("raw_only", person = ""), sale("other_person", person = "other"),
+            sale("refund"), sale("unassigned", person = "u_pending"),
+        ))
+        jdbc.update("UPDATE pos_sales SET reward_evidence = CAST(? AS jsonb) WHERE id = 'refund'",
+            """{"completion":{"status":"refund"}}""")
+        jdbc.update("UPDATE pharmacists SET receipts_30d = 999 WHERE id IN ('u_active', 'u_pending')")
+
+        val counts = pharmacistRepository.receiptCounts(setOf("u_active", "u_pending"), since, observed)
+        assertEquals(1, counts.size)
+        assertEquals("u_active", counts.single().pharmacistId)
+        assertEquals("europharma_0", counts.single().pharmacyId)
+        assertEquals(2L, counts.single().count)
+
+        // Real-time API's boundary is a little later than the fixed repository test: only recent remains.
+        mockMvc.perform(get("/api/admin/pharmacists?status=active").header("Authorization", bearer))
+            .andExpect(status().isOk).andExpect(jsonPath("$[0].receipts30d").value(1))
+        mockMvc.perform(get("/api/admin/pharmacists/u_active").header("Authorization", bearer))
+            .andExpect(status().isOk).andExpect(jsonPath("$.receipts30d").value(1))
+        mockMvc.perform(get("/api/admin/pharmacists/u_pending").header("Authorization", bearer))
+            .andExpect(status().isOk).andExpect(jsonPath("$.receipts30d").value(0))
+        assertEquals(999, jdbc.queryForObject("SELECT receipts_30d FROM pharmacists WHERE id = 'u_active'", Int::class.java))
     }
 
     @Test

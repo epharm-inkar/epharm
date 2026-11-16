@@ -3,6 +3,8 @@
 This does not claim a real main-image rollout or a Windows acceptance result.
 """
 import hashlib
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -11,6 +13,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SOURCE = Path(__file__).resolve().parents[3]
@@ -71,6 +74,7 @@ elif args and args[0]=='exec':
             # PostgreSQL's native oid has JSON string representation. The
             # production fingerprint must request bigint for numeric parsing.
             oid=16384 if 'oid::bigint' in args[-1] else '16384'
+            if os.environ.get('TEST_PARENT_IDENTITY_DRIFT')=='true': root.chmod(0o750)
             print(json.dumps({'system_identifier':'731234567890','database_oid':oid,'history':state['history']}))
         else: raise SystemExit(2)
 elif args and args[0]=='compose':
@@ -102,6 +106,77 @@ elif args[:2]==['image','load']:
     sys.stdin.buffer.read(); state['images']['epharm/backend:v0.1.47']['id']='sha256:'+f'{6:064x}'; save()
 else: raise SystemExit('Unexpected inert Docker call: '+repr(args[:3]))
 '''
+
+
+class BackupParentOwnershipTest(unittest.TestCase):
+    """Execute the real preflight with synthetic stat/ACL/sudo facts, without chown/sudo."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='epharm-recovery-parent-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.parent = self.root / 'admin'; self.parent.mkdir(mode=0o750)
+        self.backup = self.parent / 'epharm-backend-only-backups'; self.backup.mkdir(mode=0o700)
+        source = (SOURCE / 'tools/release/recover-archive-two-image.sh').read_text()
+        self.code = compile(source.split('backup_parent_identity() {', 1)[1].split("<<'PY'\n", 1)[1].split('\nPY\n}', 1)[0], 'actual-recovery-parent-preflight', 'exec')
+
+    def preflight(self, owner=1000, mode=0o750, sudo='1000', acl=(), child_owner=0,
+                  child_mode=0o700, path=None, resolve_drift=False, unknown_sudo=False,
+                  child_acl=(), caller=0):
+        original_lstat, original_resolve = Path.lstat, Path.resolve
+        resolves = 0
+        def lstat(entry, *args, **kwargs):
+            info = original_lstat(entry, *args, **kwargs); values = list(info)
+            if entry == self.parent:
+                values[4] = owner; values[0] = stat.S_IFMT(info.st_mode) | mode
+            elif entry == self.backup:
+                values[4] = child_owner; values[0] = stat.S_IFMT(info.st_mode) | child_mode
+            return os.stat_result(values)
+        def resolve(entry, *args, **kwargs):
+            nonlocal resolves
+            if entry == self.parent:
+                resolves += 1
+                if resolve_drift and resolves > 1: return self.root / 'changed-parent'
+            return original_resolve(entry, *args, **kwargs)
+        def user(uid):
+            if unknown_sudo: raise KeyError(uid)
+            return object()
+        env = {} if sudo is None else {'SUDO_UID': sudo}
+        output = io.StringIO()
+        with patch.dict(os.environ, env, clear=True), patch('os.getuid', return_value=caller), patch('os.geteuid', return_value=caller), patch('pwd.getpwuid', create=True, side_effect=user), patch.object(Path, 'lstat', lstat), patch.object(Path, 'resolve', resolve), patch('os.listxattr', create=True, side_effect=lambda p: list(acl if p == self.parent else child_acl if p == self.backup else ())), patch('sys.argv', ['preflight', str(path or self.backup)]), contextlib.redirect_stdout(output):
+            exec(self.code, {})
+        return output.getvalue()
+
+    def test_root_and_actual_sudo_admin_nonwritable_parent_are_allowed(self):
+        self.assertTrue(self.preflight(owner=0, sudo=None).strip())
+        self.assertTrue(self.preflight(owner=1000, mode=0o750).strip())
+
+    def test_no_sudo_unknown_owner_or_unknown_invoker_are_refused(self):
+        for kwargs in ({'sudo': None}, {'owner': 1001}, {'unknown_sudo': True}, {'caller': 501}):
+            with self.subTest(kwargs=kwargs), self.assertRaises((AssertionError, KeyError)):
+                self.preflight(**kwargs)
+
+    def test_invalid_or_spoof_like_sudo_uid_is_refused_even_for_root_parent(self):
+        for sudo in ('', '0', '-1', '+1000', '01000', '1000.0', ' 1000', '1000\n', 'not-a-uid', '4294967295', '99999999999'):
+            with self.subTest(sudo=sudo), self.assertRaises(AssertionError):
+                self.preflight(owner=0, sudo=sudo)
+
+    def test_parent_group_world_write_and_both_acl_types_are_refused(self):
+        for mode in (0o770, 0o752, 0o777):
+            with self.subTest(mode=mode), self.assertRaises(AssertionError): self.preflight(mode=mode)
+        for acl in ('system.posix_acl_access', 'system.posix_acl_default'):
+            with self.subTest(acl=acl), self.assertRaises(AssertionError): self.preflight(acl=(acl,))
+
+    def test_symlinked_parent_or_backup_and_canonical_drift_are_refused(self):
+        alias = self.root / 'alias'; alias.symlink_to(self.parent, target_is_directory=True)
+        with self.assertRaises(AssertionError): self.preflight(path=alias / self.backup.name)
+        with self.assertRaises(AssertionError): self.preflight(resolve_drift=True)
+        self.backup.rmdir(); actual = self.parent / 'actual'; actual.mkdir(mode=0o700)
+        self.backup.symlink_to(actual, target_is_directory=True)
+        with self.assertRaises(AssertionError): self.preflight()
+
+    def test_backup_root_does_not_inherit_sudo_owner_or_permission_exception(self):
+        for kwargs in ({'child_owner': 1000}, {'child_mode': 0o750}, {'child_acl': ('system.posix_acl_default',)}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(AssertionError): self.preflight(**kwargs)
 
 
 class ArchiveForwardRecoveryTest(unittest.TestCase):
@@ -149,6 +224,7 @@ fi
         self.env = dict(os.environ, TEST_ROOT=str(self.root), PATH=str(self.root / "bin") + ":" + os.environ["PATH"])
         for key in tuple(self.env):
             if key.startswith("TEST_") and key != "TEST_ROOT": self.env.pop(key)
+        self.env.pop('SUDO_UID', None)  # Host sudo context is not this synthetic caller's context.
         self.backup_root = self.root / "epharm-backend-only-backups"
         self.compose_sha = self.sha(self.root / "docker-compose.prod.yml")
         self.original_hashes = {name: self.sha(self.root / name) for name in ("original-sales", ".env.prod", "Caddyfile", "docker-compose.prod.yml")}
@@ -310,6 +386,13 @@ fi
         with (self.root/'releases/backend-only/.deploy.lock').open('r') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.recovery(success=False, dry=True)
+        self.assert_preserved()
+
+    def test_backup_parent_identity_drift_refuses_before_fresh_backup_or_switch(self):
+        self.create_failure()
+        before = (self.root / 'events').read_text()
+        self.recovery(success=False, TEST_PARENT_IDENTITY_DRIFT='true')
+        self.assertEqual((self.root / 'events').read_text(), before)
         self.assert_preserved()
 
     def test_reviewed_flyway_suffix_can_complete_a_partially_migrated_failure(self):

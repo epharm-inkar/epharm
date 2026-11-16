@@ -254,6 +254,27 @@ class RecommendationRewardFlowIntegrationTest {
         assertThat(mapper.readTree(body).path("balanceKzt").asLong()).isEqualTo(400)
     }
 
+    @Test fun `ordinary receipt source resolves a proven RPS seller without reward evidence or credit and survives retry`() {
+        val login = sourceLogin()
+        val native = login.context.standardNContext!!
+        val source = SaleSellerSource(native.sourceNamespace!!, native.standardNUserId,
+            native.standardNSessionId.toLong(), native.workstationId)
+        val request = PosSaleRequest(saleId = "ordinary_${token()}", pharmacyId = login.employee.pharmacy,
+            pharmacistId = login.employee.rawUser, printedAt = Instant.now(), sellerSource = source)
+        val response = postDevice("/api/posm/sales", login.employee, request)
+        assertThat(response.path("accepted").asBoolean()).isTrue()
+        val stored = sales.findById(request.saleId).orElseThrow()
+        assertThat(stored.pharmacistId).isEqualTo(login.employee.person)
+        assertThat(stored.pharmacistSource).isEqualTo("standardn_rps_binding")
+        assertThat(stored.sellerSource).isEqualTo(source)
+        assertThat(stored.rewardEvidence).isNull()
+        assertThat(stored.reportedPharmacistId).isEqualTo(login.employee.rawUser)
+        assertThat(postDevice("/api/posm/sales", login.employee, request).path("accepted").asBoolean()).isFalse()
+        assertThat(balance(login.employee)).isZero()
+        assertThat(number("SELECT count(*) FROM pending_bonuses WHERE pharmacist_id=?", login.employee.person)).isZero()
+        assertThat(number("SELECT count(*) FROM recommendation_sale_rewards WHERE source_sale_id=?", request.saleId)).isZero()
+    }
+
     @Test fun `two full normalized name words bind only when IIN is absent and unique in that pharmacy`() {
         for (status in listOf("missing","unavailable")) {
             val login=sourceLogin(status=status,name="  САБИРОВ   АМИР ")
@@ -697,6 +718,60 @@ class RecommendationRewardFlowIntegrationTest {
         assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", first.employee.pharmacy)).isEqualTo(2)
     }
 
+    @Test fun `zero budget only credits with explicit unlimited mode and replay or refund never changes spent twice`() {
+        for (unlimited in listOf(false, true)) {
+            val world = world(budget = 0, budgetUnlimited = unlimited)
+            val f = flow(world = world)
+            acknowledge(f)
+            val paid = payment(f)
+            deliver(f, paid)
+            deliver(f, paid)
+            val expected = if (unlimited) 400L else 0L
+            assertCredit(f, expected)
+            assertThat(balance(f.employee)).isEqualTo(expected)
+            assertThat(spent(world.offers.single())).isEqualTo(expected)
+            assertThat(number("SELECT budget FROM promos WHERE id=?", world.offers.single().promo)).isZero()
+            if (unlimited) {
+                deliver(f, refund(f, f.employee))
+                assertThat(balance(f.employee)).isEqualTo(400)
+                assertThat(spent(world.offers.single())).isEqualTo(400)
+                assertThat(cases(f).single()["state"]).isEqualTo("refund_review")
+            } else {
+                assertThat(cases(f).single()["reason_code"]).isEqualTo("reward_budget_invalid")
+            }
+        }
+    }
+
+    @Test fun `parallel unlimited employee sales retain every debit once without a synthetic numeric cap`() {
+        val world = world(budget = 0, budgetUnlimited = true)
+        val first = flow(world = world)
+        val second = flow(world = world, employee = employee(base = first.employee))
+        acknowledge(first); acknowledge(second)
+        val firstPaid = payment(first); val secondPaid = payment(second)
+        parallel(listOf(
+            { deliver(first, firstPaid) }, { deliver(second, secondPaid) },
+            { deliver(first, firstPaid) }, { deliver(second, secondPaid) },
+        ))
+        assertCredit(first, 400); assertCredit(second, 400)
+        assertThat(balance(first.employee) + balance(second.employee)).isEqualTo(800)
+        assertThat(spent(world.offers.single())).isEqualTo(800)
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", first.employee.pharmacy)).isEqualTo(2)
+        assertThat(number("SELECT budget FROM promos WHERE id=?", world.offers.single().promo)).isZero()
+    }
+
+    @Test fun `unlimited spending overflow retains the raw sale for review without wallet credit or lost accounting`() {
+        val world = world(budget = 0, budgetUnlimited = true)
+        val f = flow(world = world)
+        acknowledge(f)
+        jdbc.update("UPDATE promos SET spent=? WHERE id=?", Long.MAX_VALUE - 399, world.offers.single().promo)
+        deliver(f, payment(f))
+        assertCredit(f, 0)
+        assertThat(balance(f.employee)).isZero()
+        assertThat(spent(world.offers.single())).isEqualTo(Long.MAX_VALUE - 399)
+        assertThat(cases(f).single()["reason_code"]).isEqualTo("reward_budget_overflow")
+        assertThat(number("SELECT count(*) FROM pos_sales WHERE id=?", f.sale)).isEqualTo(1)
+    }
+
     @Test fun `opposite multi campaign orders for the same and different employees cannot deadlock or duplicate funds`() {
         for (sameEmployee in listOf(true, false)) {
             val world = world(offerCount = 2)
@@ -735,6 +810,68 @@ class RecommendationRewardFlowIntegrationTest {
         assertThat(number("SELECT count(*) FROM pos_sales WHERE pharmacy_id=?", first.pharmacy)).isEqualTo(16)
         assertThat(number("""SELECT count(*) FROM pharmacist_wallet_entries e JOIN pharmacists p ON p.id=e.pharmacist_id
             WHERE p.pharmacy_id=? AND e.source='receipt_bonus'""", first.pharmacy)).isEqualTo(16)
+    }
+
+    @Test fun `a conflicting source login cannot commit between HQ identity verification and wallet credit`() {
+        val f = flow()
+        acknowledge(f)
+        val paid = payment(f)
+        deliver(f, paid.copy(rewardEvidence=paid.rewardEvidence!!.let { evidence ->
+            evidence.copy(completion=evidence.completion.copy(lines=evidence.completion.lines.map { it.copy(unitSemantics="unknown") }))
+        }))
+        val reward = cases(f).single()
+        val reviewer = reviewer(setOf(f.employee.pharmacy), approve=true)
+        val claimant = employee(f.employee, mapped=false).copy(rawUser=f.employee.rawUser)
+        val workers = Executors.newFixedThreadPool(3)
+        val budgetHeld = CountDownLatch(1)
+        val releaseBudget = CountDownLatch(1)
+        val budgetPid = java.util.concurrent.atomic.AtomicInteger()
+        try {
+            val holder = workers.submit {
+                org.springframework.transaction.support.TransactionTemplate(transactions).execute {
+                    budgetPid.set(jdbc.queryForObject("SELECT pg_backend_pid()", Int::class.java)!!)
+                    jdbc.queryForList("SELECT id FROM promos WHERE id=? FOR NO KEY UPDATE", f.world.offers.single().promo)
+                    budgetHeld.countDown()
+                    check(releaseBudget.await(30, TimeUnit.SECONDS))
+                }
+            }
+            assertThat(budgetHeld.await(10, TimeUnit.SECONDS)).isTrue()
+            val approval = workers.submit {
+                decide(reward["id"].toString(), reviewer, RewardReviewDecision("approve", "Verified original paid packages",
+                    f.employee.person, 2, confirmedPayment=true, confirmedPackages=true))
+            }
+            // Waiting on funding means the real review already passed identity.resolve().
+            val reviewPid = waitForBlockedBackend(budgetPid.get(), approval)
+            assertThat(reviewPid).describedAs("review must reach the held funding row").isNotNull()
+            val login = workers.submit<SourceLogin> { sourceLogin(claimant) }
+            assertThat(waitForBlockedBackend(reviewPid!!, login))
+                .describedAs("conflicting password login must wait for the review's source account lock").isNotNull()
+            releaseBudget.countDown()
+            holder.get(10, TimeUnit.SECONDS)
+            approval.get(10, TimeUnit.SECONDS)
+            login.get(10, TimeUnit.SECONDS)
+            assertThat(balance(f.employee)).isEqualTo(400)
+            assertThat(balance(claimant)).isZero()
+            assertThat(rows("SELECT state FROM posm_source_staff_bindings WHERE pharmacy_id=? AND native_user_id=?",
+                f.employee.pharmacy, f.employee.rawUser).single()["state"]).isEqualTo("conflict")
+            assertThat(number("SELECT count(*) FROM pharmacist_wallet_entries WHERE pharmacist_id=?", f.employee.person)).isEqualTo(1)
+        } finally {
+            releaseBudget.countDown()
+            workers.shutdown()
+            if (!workers.awaitTermination(15, TimeUnit.SECONDS)) workers.shutdownNow()
+        }
+    }
+
+    private fun waitForBlockedBackend(blocker: Int, request: java.util.concurrent.Future<*>): Int? {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            val waiting = jdbc.query("SELECT pid FROM pg_stat_activity WHERE ?=ANY(pg_blocking_pids(pid))",
+                { rs, _ -> rs.getInt(1) }, blocker).firstOrNull()
+            if (waiting != null) return waiting
+            if (request.isDone) return null
+            Thread.sleep(25)
+        }
+        return null
     }
 
     @Test fun `HQ scope restricts list detail export and decisions while verified unknown units can be approved once`() {
@@ -1147,7 +1284,7 @@ class RecommendationRewardFlowIntegrationTest {
         return Employee(pharmacy, person, raw, device, key)
     }
 
-    private fun world(offerCount: Int = 1, budget: Long = 10_000): World {
+    private fun world(offerCount: Int = 1, budget: Long = 10_000, budgetUnlimited: Boolean = false): World {
         val id = token()
         val trigger = "trigger_$id"
         val barcode = barcode()
@@ -1157,7 +1294,7 @@ class RecommendationRewardFlowIntegrationTest {
             val offerCode = barcode()
             products.saveAndFlush(ProductEntity(id = product, name = "Synthetic offer $product", barcode = offerCode, price = 1000))
             val promo = "promo_${index}_$id"
-            promos.saveAndFlush(PromoEntity(id = promo, title = "Synthetic funded offer", brand = "TEST", budget = budget,
+            promos.saveAndFlush(PromoEntity(id = promo, title = "Synthetic funded offer", brand = "TEST", budget = budget, budgetUnlimited = budgetUnlimited,
                 medusaProductId = product, productName = "Synthetic offer", tiers = listOf(PromoTier(1, 1000, 200))).also { it.status = PromoStatus.active })
             rules.saveAndFlush(RuleEntity(id = "rule_${index}_$id", trigger = RuleTrigger("product", trigger), recommend = product,
                 bonus = 200, promoId = promo).also { it.status = RuleStatus.active })

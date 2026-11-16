@@ -49,12 +49,14 @@ import {
   validatePromoRulesConfig,
 } from './promoRulesValidation'
 import { promoTriggerKind } from './promoTrigger'
+import { CampaignBudgetMode } from './CampaignBudgetMode'
 
 interface FormState {
   title: string
   brand: string
   period: string
   budget: string
+  budgetUnlimited: boolean
   kpi: string
   cover: string
   // Товарная акция:
@@ -74,6 +76,7 @@ const EMPTY_FORM: FormState = {
   brand: '',
   period: '',
   budget: '',
+  budgetUnlimited: false,
   kpi: '',
   cover: '',
   product: null,
@@ -107,6 +110,7 @@ function campaignForm(promo: PromoDto, campaign: UpdatePromoRequest = {}): FormS
     brand: editable.brand ?? '',
     period: editable.period ?? '',
     budget: String(editable.budget ?? 0),
+    budgetUnlimited: editable.budgetUnlimited === true,
     kpi: editable.kpi ?? '',
     cover: editable.cover ?? '',
     product: promo.medusaProductId
@@ -260,6 +264,7 @@ export default function PromoDetailPage() {
     !pending &&
     !isArchived
   const editingDisabled = !canEdit
+  const canConfigureBudget = freshChanges && changes.canConfigureBudget === true
   const editable = { ...promo, ...changes?.bundle.campaign }
   const cover = form.cover || promo.cover || '#6F665B'
   const progressMax = Math.max(promo.budget, 1)
@@ -271,6 +276,7 @@ export default function PromoDetailPage() {
     form.brand !== editable.brand ||
     form.period !== editable.period ||
     form.budget !== String(editable.budget) ||
+    form.budgetUnlimited !== (editable.budgetUnlimited === true) ||
     form.kpi !== editable.kpi ||
     form.cover !== editable.cover ||
     form.dateStart !== (editable.dateStart ?? '') ||
@@ -306,6 +312,10 @@ export default function PromoDetailPage() {
     callbacks?: { onSuccess: () => void; onError: (error: unknown) => void },
   ) => {
     if (!canEdit || !changes) return
+    if (form.budgetUnlimited !== (editable.budgetUnlimited === true) && !canConfigureBudget) {
+      setSaveErr(t('budget.permissionRequired'))
+      return
+    }
     if (!form.title.trim()) {
       setSaveErr(t('pd.errTitleReq'))
       return
@@ -373,6 +383,7 @@ export default function PromoDetailPage() {
       brand: form.brand.trim(),
       period: form.period.trim(),
       budget,
+      budgetUnlimited: form.budgetUnlimited,
       kpi: form.kpi.trim(),
       cover: form.cover.trim(),
       pharmacistBonus,
@@ -873,7 +884,14 @@ export default function PromoDetailPage() {
                   disabled={editingDisabled}
                 />
               </Field>
-              <Field label={t('pd.fldBudget')} error={moneyErrors.budget}>
+              <div className="space-y-2">
+                <CampaignBudgetMode
+                  unlimited={form.budgetUnlimited}
+                  canConfigure={canConfigureBudget}
+                  disabled={editingDisabled}
+                  onChange={(budgetUnlimited) => setForm((current) => ({ ...current, budgetUnlimited }))}
+                />
+                <Field label={t('pd.fldBudget')} error={moneyErrors.budget}>
                 <Input
                   type="number"
                   min={0}
@@ -882,9 +900,10 @@ export default function PromoDetailPage() {
                   value={form.budget}
                   aria-invalid={moneyErrors.budget ? true : undefined}
                   onChange={set('budget')}
-                  disabled={editingDisabled}
+                  disabled={editingDisabled || form.budgetUnlimited}
                 />
-              </Field>
+                </Field>
+              </div>
               <Field label={t('pd.fldKpi')} optional>
                 <Input
                   value={form.kpi}
@@ -957,20 +976,20 @@ export default function PromoDetailPage() {
             </div>
           </div>
 
-          <div className="card-soft p-4">
+          <div className="card-soft p-4" data-testid="promo-published-budget">
             <p className="mb-2 text-[12px] font-semibold text-ink-500">Опубликованный бюджет</p>
             <div className="mb-2 flex items-center justify-between text-[12px] font-bold uppercase tracking-[0.06em] text-ink-500">
               <span>{t('pd.budgetSpent')}</span>
-              <span className="num text-ink-900">{progressPct}%</span>
+              {promo.budgetUnlimited !== true && promo.budget > 0 && <span className="num text-ink-900">{progressPct}%</span>}
             </div>
             <div className="mb-2 flex items-center justify-between text-[13px]">
               <span className="num font-extrabold text-ink-900">{formatKzt(promo.spent)}</span>
-              <span className="num font-semibold text-ink-500">/ {formatKzt(promo.budget)}</span>
+              <span className="num font-semibold text-ink-500">/ {promo.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(promo.budget)}</span>
             </div>
-            <ProgressBar value={promo.spent} max={progressMax} />
-            {changes?.hasPendingChanges && changes.bundle.campaign.budget !== promo.budget && (
+            {promo.budgetUnlimited !== true && promo.budget > 0 && <ProgressBar value={promo.spent} max={progressMax} />}
+            {changes?.hasPendingChanges && (editable.budget !== promo.budget || (editable.budgetUnlimited === true) !== (promo.budgetUnlimited === true)) && (
               <p className="mt-3 text-[12px] font-semibold" data-testid="promo-prepared-budget">
-                Подготовленный бюджет: {formatKzt(changes.bundle.campaign.budget ?? 0)}. Вступит в
+                Подготовленный бюджет: {editable.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(editable.budget ?? 0)}. Вступит в
                 силу после «Проверить и применить».
               </p>
             )}
@@ -1025,7 +1044,8 @@ export default function PromoDetailPage() {
                 Сроки: {changes.bundle.campaign.dateStart || 'Без начала'} —{' '}
                 {changes.bundle.campaign.dateEnd || 'Без окончания'}
               </p>
-              <p>Бюджет: {formatKzt(changes.bundle.campaign.budget ?? promo.budget)}</p>
+              <p>Бюджет: {editable.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(editable.budget ?? 0)}</p>
+              {editable.budgetUnlimited === true && <p>{t('budget.unlimitedHint')}</p>}
               <p>
                 Бонус основного товара:{' '}
                 {formatKzt(changes.bundle.campaign.pharmacistBonus ?? promo.pharmacistBonus)}

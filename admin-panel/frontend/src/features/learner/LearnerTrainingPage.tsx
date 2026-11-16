@@ -64,6 +64,7 @@ type Tokens = {
 }
 
 type TokenLifecycle = {
+  isCurrent: () => boolean
   onRefreshed: (tokens: Tokens) => void
   onExpired: () => void
 }
@@ -446,6 +447,21 @@ class LearnerApiError extends Error {
 
 const refreshInFlight = new Map<string, Promise<Tokens>>()
 
+function requireCurrentSession(lifecycle?: TokenLifecycle) {
+  if (lifecycle && !lifecycle.isCurrent())
+    throw new DOMException('Learner session changed', 'AbortError')
+}
+
+async function decodeSessionResponse<T>(
+  response: Response,
+  lifecycle?: TokenLifecycle,
+): Promise<T> {
+  requireCurrentSession(lifecycle)
+  const result = await decodeResponse<T>(response)
+  requireCurrentSession(lifecycle)
+  return result
+}
+
 async function fetchResponse(path: string, init: RequestInit, tokens?: Tokens | null) {
   return fetch(path, {
     ...init,
@@ -498,10 +514,13 @@ async function request<T>(
   tokens?: Tokens | null,
   lifecycle?: TokenLifecycle,
 ): Promise<T> {
+  requireCurrentSession(lifecycle)
   let response = await fetchResponse(path, init, tokens)
+  requireCurrentSession(lifecycle)
   if (response.status === 401 && tokens?.refreshToken && lifecycle) {
     try {
       const refreshed = await refreshTokens(tokens.refreshToken)
+      requireCurrentSession(lifecycle)
       lifecycle.onRefreshed(refreshed)
       response = await fetchResponse(path, init, refreshed)
     } catch (error) {
@@ -510,7 +529,7 @@ async function request<T>(
     }
   }
   if (response.status === 401 && lifecycle) lifecycle.onExpired()
-  return decodeResponse<T>(response)
+  return decodeSessionResponse<T>(response, lifecycle)
 }
 
 async function requestPersonalData<T>(
@@ -518,14 +537,17 @@ async function requestPersonalData<T>(
   tokens: Tokens,
   lifecycle: TokenLifecycle,
 ): Promise<T> {
+  requireCurrentSession(lifecycle)
   const init: RequestInit = {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
   }
   let response = await fetchResponse(path, init, tokens)
+  requireCurrentSession(lifecycle)
   if (response.status === 401 && tokens.refreshToken) {
     try {
       const refreshed = await refreshTokens(tokens.refreshToken)
+      requireCurrentSession(lifecycle)
       lifecycle.onRefreshed(refreshed)
       response = await fetchResponse(path, init, refreshed)
     } catch (error) {
@@ -534,7 +556,7 @@ async function requestPersonalData<T>(
     }
   }
   // Surface a personal-data authorization failure without substituting profile data.
-  return decodeResponse<T>(response)
+  return decodeSessionResponse<T>(response, lifecycle)
 }
 
 function personalDataError(error: unknown, subject: 'balance' | 'recommendations') {
@@ -564,6 +586,7 @@ async function requestForm<T>(
   tokens: Tokens,
   lifecycle: TokenLifecycle,
 ): Promise<T> {
+  requireCurrentSession(lifecycle)
   const send = (activeTokens: Tokens) =>
     fetch(path, {
       method: 'POST',
@@ -571,9 +594,11 @@ async function requestForm<T>(
       body,
     })
   let response = await send(tokens)
+  requireCurrentSession(lifecycle)
   if (response.status === 401 && tokens.refreshToken) {
     try {
       const refreshed = await refreshTokens(tokens.refreshToken)
+      requireCurrentSession(lifecycle)
       lifecycle.onRefreshed(refreshed)
       response = await send(refreshed)
     } catch (error) {
@@ -582,7 +607,7 @@ async function requestForm<T>(
     }
   }
   if (response.status === 401) lifecycle.onExpired()
-  return decodeResponse<T>(response)
+  return decodeSessionResponse<T>(response, lifecycle)
 }
 
 async function requestTaskPhoto(
@@ -591,6 +616,7 @@ async function requestTaskPhoto(
   lifecycle: TokenLifecycle,
   signal: AbortSignal,
 ): Promise<Blob> {
+  requireCurrentSession(lifecycle)
   const init: RequestInit = {
     signal,
     cache: 'no-store',
@@ -598,9 +624,11 @@ async function requestTaskPhoto(
     headers: { Accept: 'image/jpeg,image/png' },
   }
   let response = await fetchResponse(path, init, tokens)
+  requireCurrentSession(lifecycle)
   if (response.status === 401 && tokens.refreshToken) {
     try {
       const refreshed = await refreshTokens(tokens.refreshToken)
+      requireCurrentSession(lifecycle)
       lifecycle.onRefreshed(refreshed)
       response = await fetchResponse(path, init, refreshed)
     } catch (failure) {
@@ -609,8 +637,10 @@ async function requestTaskPhoto(
     }
   }
   if (response.status === 401) lifecycle.onExpired()
-  if (!response.ok) return decodeResponse<never>(response)
+  requireCurrentSession(lifecycle)
+  if (!response.ok) return decodeSessionResponse<never>(response, lifecycle)
   const blob = await response.blob()
+  requireCurrentSession(lifecycle)
   if (!['image/jpeg', 'image/png'].includes(blob.type))
     throw new Error('Предпросмотр этого формата недоступен.')
   return blob
@@ -759,6 +789,7 @@ export default function LearnerTrainingPage() {
   const monthlyVisit = location.pathname === '/learn/merch/visits'
   const [sessionEpoch, setSessionEpoch] = useState(0)
   const sessionVersion = useRef(0)
+  const mounted = useRef(true)
   const portalRequest = useRef(0)
   const [pharmacist, setPharmacist] = useState<Pharmacist | null>(null)
   const [overview, setOverview] = useState<Overview | null>(null)
@@ -802,15 +833,16 @@ export default function LearnerTrainingPage() {
     setPasswordConfirmation('')
     setBusy(false)
   }, [])
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
       recoveryVersion.current += 1
       recoveryRequest.current?.abort()
       resetChallenge.current = null
       resetGrant.current = null
-    },
-    [],
-  )
+    }
+  }, [])
 
   const clearSession = useCallback(() => {
     clearRecovery()
@@ -842,13 +874,14 @@ export default function LearnerTrainingPage() {
 
   const tokenLifecycle = useMemo<TokenLifecycle>(
     () => ({
+      isCurrent: () => mounted.current && sessionVersion.current === sessionEpoch,
       onRefreshed: (nextTokens) => {
-        if (sessionVersion.current !== sessionEpoch) return
+        if (!mounted.current || sessionVersion.current !== sessionEpoch) return
         storeTokens(nextTokens)
         setTokens(nextTokens)
       },
       onExpired: () => {
-        if (sessionVersion.current === sessionEpoch) clearSession()
+        if (mounted.current && sessionVersion.current === sessionEpoch) clearSession()
       },
     }),
     [clearSession, sessionEpoch],
@@ -889,7 +922,7 @@ export default function LearnerTrainingPage() {
       const epoch = sessionVersion.current
       const requestId = ++portalRequest.current
       const isCurrent = () =>
-        sessionVersion.current === epoch && portalRequest.current === requestId
+        mounted.current && sessionVersion.current === epoch && portalRequest.current === requestId
       setPersonalDataLoading(true)
       setPersonalBalance(null)
       setPersonalRecommendations(null)
@@ -1092,7 +1125,9 @@ export default function LearnerTrainingPage() {
         phoneMasked: string
         registrationRequired?: boolean
       }>('/api/mobile/auth/activation/status', {
-        method: 'POST', body: JSON.stringify({ iin }), signal: attempt.signal,
+        method: 'POST',
+        body: JSON.stringify({ iin }),
+        signal: attempt.signal,
       })
       if (!attempt.isCurrent()) return
       setPhoneMasked(status.phoneMasked)
@@ -1391,13 +1426,15 @@ export default function LearnerTrainingPage() {
         tokens,
         tokenLifecycle,
       )
+      if (!tokenLifecycle.isCurrent()) return
       setSelected(updated)
       const refreshed = await request<Overview>('/api/mobile/training', {}, tokens, tokenLifecycle)
+      if (!tokenLifecycle.isCurrent()) return
       setOverview(refreshed)
     } catch (startError) {
-      setError(messageFrom(startError))
+      if (tokenLifecycle.isCurrent()) setError(messageFrom(startError))
     } finally {
-      setBusy(false)
+      if (tokenLifecycle.isCurrent()) setBusy(false)
     }
   }
 
@@ -1412,14 +1449,16 @@ export default function LearnerTrainingPage() {
         tokens,
         tokenLifecycle,
       )
+      if (!tokenLifecycle.isCurrent()) return
       setSelected(updated)
       setAvailableEvents([])
       const refreshed = await request<Overview>('/api/mobile/training', {}, tokens, tokenLifecycle)
+      if (!tokenLifecycle.isCurrent()) return
       setOverview(refreshed)
     } catch (selectError) {
-      setError(messageFrom(selectError))
+      if (tokenLifecycle.isCurrent()) setError(messageFrom(selectError))
     } finally {
-      setBusy(false)
+      if (tokenLifecycle.isCurrent()) setBusy(false)
     }
   }
 
@@ -1442,17 +1481,19 @@ export default function LearnerTrainingPage() {
         tokens,
         tokenLifecycle,
       )
+      if (!tokenLifecycle.isCurrent()) return false
       setSelected(updated)
       const refreshed = await request<Overview>('/api/mobile/training', {}, tokens, tokenLifecycle)
+      if (!tokenLifecycle.isCurrent()) return false
       setOverview(refreshed)
       setAttendanceOpen(false)
       navigate(`/learn/course/${updated.id}`)
       return true
     } catch (checkInError) {
-      setError(messageFrom(checkInError))
+      if (tokenLifecycle.isCurrent()) setError(messageFrom(checkInError))
       return false
     } finally {
-      setBusy(false)
+      if (tokenLifecycle.isCurrent()) setBusy(false)
     }
   }
 
@@ -1467,13 +1508,15 @@ export default function LearnerTrainingPage() {
         tokens,
         tokenLifecycle,
       )
+      if (!tokenLifecycle.isCurrent()) return
       setSelected(updated)
       const refreshed = await request<Overview>('/api/mobile/training', {}, tokens, tokenLifecycle)
+      if (!tokenLifecycle.isCurrent()) return
       setOverview(refreshed)
     } catch (completeError) {
-      setError(messageFrom(completeError))
+      if (tokenLifecycle.isCurrent()) setError(messageFrom(completeError))
     } finally {
-      setBusy(false)
+      if (tokenLifecycle.isCurrent()) setBusy(false)
     }
   }
 
@@ -1498,6 +1541,7 @@ export default function LearnerTrainingPage() {
         tokens,
         tokenLifecycle,
       )
+      if (!tokenLifecycle.isCurrent()) return null
       setSelected(updated)
       if (refreshOverview) {
         const refreshed = await request<Overview>(
@@ -1506,11 +1550,12 @@ export default function LearnerTrainingPage() {
           tokens,
           tokenLifecycle,
         )
+        if (!tokenLifecycle.isCurrent()) return null
         setOverview(refreshed)
       }
       return updated
     } catch (progressError) {
-      setError(messageFrom(progressError))
+      if (tokenLifecycle.isCurrent()) setError(messageFrom(progressError))
       return null
     }
   }
@@ -1524,12 +1569,14 @@ export default function LearnerTrainingPage() {
         tokens,
         tokenLifecycle,
       )
+      if (!tokenLifecycle.isCurrent()) return null
       setSelected(result.assignment)
       const refreshed = await request<Overview>('/api/mobile/training', {}, tokens, tokenLifecycle)
+      if (!tokenLifecycle.isCurrent()) return null
       setOverview(refreshed)
       return result
     } catch (quizError) {
-      setError(messageFrom(quizError))
+      if (tokenLifecycle.isCurrent()) setError(messageFrom(quizError))
       return null
     }
   }

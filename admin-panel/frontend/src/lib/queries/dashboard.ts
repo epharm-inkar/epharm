@@ -15,6 +15,8 @@ export function useDashboardSummary() {
   return useQuery<DashboardSummaryDto>({
     queryKey: dashboardKeys.summary(),
     queryFn: () => api.get<DashboardSummaryDto>('/api/admin/dashboard/summary').then((r) => r.data),
+    // Keep summary counters current alongside the live sales journal.
+    refetchInterval: 15_000,
   })
 }
 

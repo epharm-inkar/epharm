@@ -113,10 +113,28 @@ public partial class MainWindow
         var frozen = fingerprints.Values.Select(json => JsonSerializer.Deserialize<StandardNObservedReceiptGroup>(json, EpharmJson.Options)!).ToArray();
         _physicalReceiptProbeTask = Task.Run(() =>
         {
-            IReadOnlyList<StandardNReceiptSnapshot> states = Array.Empty<StandardNReceiptSnapshot>();
-            var available = false;
-            try { available = _standardNDb?.TryGetPhysicalReceiptStates(frozen, out states) == true; }
-            catch { /* A failed local read is UNKNOWN, never an empty or paid receipt. */ }
+            var available = new List<StandardNObservedReceiptGroup>();
+            var states = new List<StandardNReceiptSnapshot>();
+            // An old, unresolved database must not poison every probe of the current one.
+            // Keep failures pending; aggregate successful reads before the one cue-ambiguity decision.
+            foreach (var partition in frozen.GroupBy(ObservedSourceNamespace, StringComparer.Ordinal))
+            {
+                var batch = partition.ToArray();
+                try
+                {
+                    IReadOnlyList<StandardNReceiptSnapshot> read = Array.Empty<StandardNReceiptSnapshot>();
+                    if (_standardNDb?.TryGetPhysicalReceiptStates(batch, out read) != true) continue;
+                    if (read.Count != batch.Length || read.Select(ObservedGroupKey).Distinct(StringComparer.Ordinal).Count() != batch.Length)
+                        continue;
+                    var byKey = read.ToDictionary(ObservedGroupKey, StringComparer.Ordinal);
+                    if (batch.Any(group => !byKey.TryGetValue(ObservedGroupKey(group.Snapshot), out var state) ||
+                            StandardNSellerSource.HasConflictingNamespaces(group.SourceNamespace,
+                                group.Snapshot.ObservedSourceNamespace, state.ObservedSourceNamespace))) continue;
+                    available.AddRange(batch);
+                    states.AddRange(read);
+                }
+                catch { /* A failed partition is UNKNOWN, never an empty or paid receipt. */ }
+            }
             try
             {
                 Dispatcher.Invoke(() =>
@@ -128,8 +146,29 @@ public partial class MainWindow
                         stale = generation != Volatile.Read(ref _physicalReceiptProbeGeneration) ||
                             fingerprints.Any(entry => !_observedReceiptGroups.TryGetValue(entry.Key, out var current) ||
                                 JsonSerializer.Serialize(current, EpharmJson.Options) != entry.Value);
-                        if (stale || !available) return;
-                        CommitPhysicalReceiptPrints(frozen, states);
+                        if (stale || available.Count == 0) return;
+                        var availableKeys = available.Select(group => ObservedGroupKey(group.Snapshot)).ToHashSet(StringComparer.Ordinal);
+                        var completedByKey = states.ToDictionary(ObservedGroupKey, StringComparer.Ordinal);
+                        var blockedCues = new HashSet<string>(StringComparer.Ordinal);
+                        foreach (var unknown in frozen.Where(group => !availableKeys.Contains(ObservedGroupKey(group.Snapshot))))
+                        {
+                            // A previously anchored cue cannot be reassigned after a failed read.
+                            blockedCues.UnionWith(unknown.AnchoredPrintCueIds);
+                            if (unknown.PendingPrint is { } cue)
+                            {
+                                // Failure alone never proves a different database. This is symmetric:
+                                // an unreadable known group can also compete with a readable legacy one.
+                                var completedSources = available.Where(group => group.PendingPrint?.CueId == cue.CueId)
+                                    .Select(group => completedByKey[ObservedGroupKey(group.Snapshot)].ObservedSourceNamespace).ToArray();
+                                var knownSource = ObservedSourceNamespace(unknown);
+                                var separated = !string.IsNullOrWhiteSpace(knownSource) &&
+                                    !StandardNSellerSource.HasConflictingNamespaces(unknown.SourceNamespace, unknown.Snapshot.ObservedSourceNamespace) &&
+                                    completedSources.Length > 0 && completedSources.All(source =>
+                                        !string.IsNullOrWhiteSpace(source) && source != knownSource);
+                                if (!separated) blockedCues.Add(cue.CueId);
+                            }
+                        }
+                        CommitPhysicalReceiptPrints(available, states, blockedCues);
                     }
                     catch (Exception error)
                     {
@@ -152,7 +191,7 @@ public partial class MainWindow
     }
 
     private void CommitPhysicalReceiptPrints(IReadOnlyList<StandardNObservedReceiptGroup> candidates,
-        IReadOnlyList<StandardNReceiptSnapshot> states)
+        IReadOnlyList<StandardNReceiptSnapshot> states, IReadOnlySet<string>? blockedCues = null)
     {
         var now = _receiptProofClock(); // A delayed first probe cannot anchor after the retry window.
         bool PendingLive(StandardNObservedReceiptGroup group) => group.PendingPrint is { } cue &&
@@ -160,9 +199,16 @@ public partial class MainWindow
         var fresh = states.ToDictionary(ObservedGroupKey, StringComparer.Ordinal);
         if (fresh.Count != candidates.Count || candidates.Any(group => !fresh.ContainsKey(ObservedGroupKey(group.Snapshot))))
             return;
+        if (candidates.Any(group => StandardNSellerSource.HasConflictingNamespaces(group.SourceNamespace,
+                group.Snapshot.ObservedSourceNamespace, fresh[ObservedGroupKey(group.Snapshot)].ObservedSourceNamespace)))
+        {
+            Log("Источник базы проведённого чека изменился: исходная группа сохранена без продажи, ACK и завершения.");
+            return;
+        }
         var changes = candidates.ToDictionary(group => ObservedGroupKey(group.Snapshot), StringComparer.Ordinal);
         foreach (var cueId in candidates.Where(PendingLive).Select(group => group.PendingPrint!.CueId).Distinct())
         {
+            if (blockedCues?.Contains(cueId) == true) continue;
             var batch = candidates.Where(group => group.PendingPrint?.CueId == cueId).ToArray();
             var marker = batch[0].PendingPrint!.ObservedAt;
             var alreadyAnchored = candidates.Where(group => group.AnchoredPrintCueIds.Contains(cueId)).ToArray();
@@ -212,7 +258,7 @@ public partial class MainWindow
                 }
                 else if (StandardNReceiptProjection.IsPostedPhysicalSale(document))
                 {
-                    if (!OnReceiptFinalized("standardn-print-log", document, session, printedAt, state))
+                    if (!OnReceiptFinalized("standardn-print-log", document, session, printedAt, state, group))
                     {
                         _physicalReceiptRetryAfter[key] = now.AddSeconds(30);
                         continue;
@@ -236,6 +282,7 @@ public partial class MainWindow
             _physicalReceiptRetryAfter.Remove(key);
             _receiptObservations.LogChanged();
             _lastFinalizedStandardNDocumentId = state.DocumentId;
+            _lastFinalizedStandardNReceipt = state;
             if (_standardNCurrentReceipt == null || ObservedGroupKey(_standardNCurrentReceipt) != key) continue;
             _activeReceiptDraftId = null;
             _standardNDocumentId = null;
@@ -250,6 +297,19 @@ public partial class MainWindow
     private static string ObservedGroupKey(StandardNReceiptSnapshot snapshot) =>
         snapshot.SessionId + ":" + snapshot.DocumentId + ":" + snapshot.LinkId + ":" +
         StaffSessionResolver.CanonicalComputer(snapshot.WorkstationName);
+
+    private static string? ObservedSourceNamespace(StandardNObservedReceiptGroup group) =>
+        group.SourceNamespace ?? group.Snapshot.ObservedSourceNamespace;
+
+    private bool IsLastFinalizedReceipt(StandardNReceiptSnapshot? receipt) =>
+        receipt != null && _lastFinalizedStandardNDocumentId == receipt.DocumentId && _lastFinalizedStandardNReceipt is { } finalized &&
+        ObservedGroupKey(receipt) == ObservedGroupKey(finalized) &&
+        !StandardNSellerSource.HasConflictingNamespaces(receipt.ObservedSourceNamespace, finalized.ObservedSourceNamespace);
+
+    private bool ReceiptConflictsWithObservedSource(StandardNReceiptSnapshot receipt) =>
+        LoadObservedReceiptGroups() && _observedReceiptGroups.TryGetValue(ObservedGroupKey(receipt), out var previous) &&
+        StandardNSellerSource.HasConflictingNamespaces(previous.SourceNamespace,
+            previous.Snapshot.ObservedSourceNamespace, receipt.ObservedSourceNamespace);
 
     private bool CanMutateLogReceiptItem(ReceiptItem item)
     {
@@ -303,6 +363,7 @@ public partial class MainWindow
 
     private StandardNReceiptSnapshot RememberObservedReceipt(StandardNReceiptSnapshot receipt)
     {
+        if (ReceiptConflictsWithObservedSource(receipt)) return _observedReceiptGroups[ObservedGroupKey(receipt)].Snapshot;
         _standardNCurrentReceipt = receipt;
         if (receipt.Documents == null || !LoadObservedReceiptGroups()) return receipt;
         var key = ObservedGroupKey(receipt);
@@ -330,7 +391,7 @@ public partial class MainWindow
         var group = previous == null
             ? new StandardNObservedReceiptGroup(1, _posmConfig?.PharmacyId ?? "", effective, _session.SessionId,
                 receipt.Pharmacist.Id, receipt.Pharmacist.Name, false, Array.Empty<long>())
-                { SourceNamespace = _standardNDb?.RewardSourceNamespace,
+                { SourceNamespace = effective.ObservedSourceNamespace ?? _standardNDb?.RewardSourceNamespace,
                     ObservedActiveDocumentIds = documents.Where(document => document.Status == 0).Select(document => document.DocumentId).ToArray(),
                     InitiallyPostedDocumentIds = documents.Where(StandardNReceiptProjection.HasPostedFiscalHeader).Select(document => document.DocumentId).ToArray() }
             : previous with { Snapshot = effective, ObservedActiveDocumentIds = previous.ObservedActiveDocumentIds.Concat(

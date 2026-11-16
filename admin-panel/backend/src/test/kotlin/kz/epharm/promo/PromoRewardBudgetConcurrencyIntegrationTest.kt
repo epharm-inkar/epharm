@@ -154,12 +154,100 @@ class PromoRewardBudgetConcurrencyIntegrationTest {
         assertThat(number("SELECT count(*) FROM pharmacist_wallet_entries WHERE source_id=?", f.pending)).isEqualTo(1)
     }
 
+    @Test fun `explicit unlimited mode permits concurrent credits past zero while preserving replay and spending totals`() {
+        val first = fixture()
+        val second = fixture(first.promo)
+        promos.update(first.promo, UpdatePromoRequest(budget = 0, budgetUnlimited = true))
+        val gate = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val futures = listOf(first, second).map { f -> pool.submit(Callable {
+                check(gate.await(10, TimeUnit.SECONDS))
+                reconcile.ingestVerifiedRecommendationReward(f.pending, f.sale, 1200, true)
+            }) }
+            gate.countDown()
+            futures.forEach { it.get(20, TimeUnit.SECONDS) }
+        } finally { pool.shutdownNow() }
+        assertThat(spent(first)).isEqualTo(1200)
+        assertThat(budget(first)).isZero()
+        assertThat(balance(first)).isEqualTo(600)
+        assertThat(balance(second)).isEqualTo(600)
+        listOf(first, second).forEach { f ->
+            reconcile.ingestVerifiedRecommendationReward(f.pending, f.sale, 1200, true)
+            assertThat(number("SELECT count(*) FROM pharmacist_wallet_entries WHERE source_id=?", f.pending)).isEqualTo(1)
+        }
+        assertThat(spent(first)).isEqualTo(1200)
+    }
+
+    @Test fun `unlimited to limited transition checks new committed spend despite stale preloaded campaign`() {
+        val f = fixture()
+        promos.update(f.promo, UpdatePromoRequest(budget = 0, budgetUnlimited = true))
+        val loaded = CountDownLatch(1)
+        val credited = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val change = pool.submit(Callable {
+                runCatching {
+                    TransactionTemplate(transactions).executeWithoutResult {
+                        val stale = promoRepository.findById(f.promo).orElseThrow()
+                        assertThat(stale.spent).isZero()
+                        assertThat(stale.budgetUnlimited).isTrue()
+                        loaded.countDown()
+                        check(credited.await(10, TimeUnit.SECONDS))
+                        promos.update(f.promo, UpdatePromoRequest(budget = 500, budgetUnlimited = false))
+                    }
+                }
+            })
+            val credit = pool.submit(Callable {
+                check(loaded.await(10, TimeUnit.SECONDS))
+                try { reconcile.ingestVerifiedRecommendationReward(f.pending, f.sale, 1200, true) }
+                finally { credited.countDown() }
+            })
+            credit.get(20, TimeUnit.SECONDS)
+            assertThat(change.get(20, TimeUnit.SECONDS).exceptionOrNull()).isInstanceOf(AppException::class.java)
+        } finally { pool.shutdownNow() }
+        assertThat(spent(f)).isEqualTo(600)
+        assertThat(promoRepository.findById(f.promo).orElseThrow().budgetUnlimited).isTrue()
+        promos.update(f.promo, UpdatePromoRequest(budget = 600, budgetUnlimited = false))
+        assertThat(promoRepository.findById(f.promo).orElseThrow().budgetUnlimited).isFalse()
+        assertThat(spent(f)).isEqualTo(600)
+        assertThat(balance(f)).isEqualTo(600)
+    }
+
+    @Test fun `older editor budget-only patch preserves concurrent unlimited enablement`() {
+        val f = fixture()
+        val loaded = CountDownLatch(1)
+        val enabled = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val oldEditor = pool.submit(Callable {
+                TransactionTemplate(transactions).executeWithoutResult {
+                    assertThat(promoRepository.findById(f.promo).orElseThrow().budgetUnlimited).isFalse()
+                    loaded.countDown()
+                    check(enabled.await(10, TimeUnit.SECONDS))
+                    promos.update(f.promo, UpdatePromoRequest(title = "Old editor", budget = 0))
+                }
+            })
+            val enable = pool.submit(Callable {
+                check(loaded.await(10, TimeUnit.SECONDS))
+                try { promos.update(f.promo, UpdatePromoRequest(budget = 0, budgetUnlimited = true)) }
+                finally { enabled.countDown() }
+            })
+            enable.get(20, TimeUnit.SECONDS)
+            oldEditor.get(20, TimeUnit.SECONDS)
+        } finally { pool.shutdownNow() }
+        assertThat(promoRepository.findById(f.promo).orElseThrow().budgetUnlimited).isTrue()
+        reconcile.ingestVerifiedRecommendationReward(f.pending, f.sale, 1200, true)
+        assertThat(spent(f)).isEqualTo(600)
+        assertThat(budget(f)).isZero()
+    }
+
     private data class Fixture(val promo: String, val person: String, val pending: String, val sale: String)
-    private fun fixture(): Fixture {
+    private fun fixture(sharedPromo: String? = null): Fixture {
         val id = UUID.randomUUID().toString().replace("-", "")
         val pharmacy = "rx_$id"
         val person = "person_$id"
-        val promo = "promo_$id"
+        val promo = sharedPromo ?: "promo_$id"
         val sale = "sale_$id"
         val bonus = "bonus_$id"
         val canonical = "canon_$id"
@@ -168,7 +256,7 @@ class PromoRewardBudgetConcurrencyIntegrationTest {
         jdbc.update("INSERT INTO pharmacies(id,name,chain_id,chain_name,city,\"group\") VALUES (?,'TEST',?,'TEST','TEST','pilot')", pharmacy, pharmacy)
         jdbc.update("INSERT INTO pharmacists(id,name,iin,phone,pharmacy_id,pharmacy_name,tier,status) VALUES (?,'TEST',?,?,?,'TEST','Silver','active')",
             person, number, "+7${number.takeLast(10)}", pharmacy)
-        promoRepository.saveAndFlush(PromoEntity(id = promo, title = "TEST", brand = "TEST", budget = 1000))
+        if (sharedPromo == null) promoRepository.saveAndFlush(PromoEntity(id = promo, title = "TEST", brand = "TEST", budget = 1000))
         sales.saveAndFlush(PosSaleEntity(id = sale, pharmacistId = person, pharmacyId = pharmacy, totalAmount = 1200,
             printedAt = Instant.parse("2026-11-09T10:00:00Z"), fiscalId = "F-$id",
             items = listOf(PosSaleItem(productId = "product", qty = 3.0, price = 400, total = 1200))))

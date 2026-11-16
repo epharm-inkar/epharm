@@ -218,6 +218,18 @@ function renderPage() {
 }
 
 describe('PharmacistsPage — рендер', () => {
+  it('hides Standard-N mapping actions when server access is unavailable', () => {
+    accessHooks.useAdministrativeCapabilities.mockReturnValue({ canManageStandardNMappings: false })
+    renderPage()
+    expect(screen.queryByRole('button', { name: 'Продавцы Standard-N' })).not.toBeInTheDocument()
+  })
+
+  it('shows Standard-N mapping actions for authorized legacy HQ', () => {
+    accessHooks.useAdministrativeCapabilities.mockReturnValue({ canManageStandardNMappings: true })
+    renderPage()
+    expect(screen.getByRole('button', { name: 'Продавцы Standard-N' })).toBeInTheDocument()
+  })
+
   it('H1 + 4 metrics', () => {
     renderPage()
     expect(screen.getByRole('heading', { level: 1, name: /Фармацевты/i })).toBeInTheDocument()

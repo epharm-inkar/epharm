@@ -69,6 +69,7 @@ interface RecommendationLogRow {
     val secondsToSale: Int?
     val units: Double?
     val saleId: String?
+    val receiptStatus: String?
 }
 
 @Repository
@@ -125,8 +126,9 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
 
     /**
      * Единый журнал: показы + каждая позиция завершённого чека. Атрибуцию рекомендации
-     * повторяем по тому же контракту, что использовался в сервисе: штрихкод → точное имя →
-     * первая позиция чека. Каждый чек даёт хотя бы одну строку, поэтому для страницы нужны
+     * сопоставляем отдельно с каждой рекомендованной позицией: productId → штрихкод →
+     * точное legacy-имя без других идентификаторов. Не угадываем первую позицию чека.
+     * Каждый чек даёт хотя бы одну строку, поэтому для страницы нужны
      * не более offset + size последних чеков. Сохраняем все чеки на граничном timestamp:
      * порядок их развёрнутых id может отличаться от порядка исходных id (например, префиксы).
      * Итоговые LIMIT/OFFSET применяются уже после UNION и сортировки.
@@ -148,8 +150,8 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
                 ORDER BY COALESCE(displayed_at, shown_at) DESC, id DESC
                 LIMIT (:rowOffset + :pageSize)
             ),
-            fastest_attribution AS (
-                SELECT DISTINCT ON (re.sale_id)
+            attribution_candidates AS (
+                SELECT
                        re.sale_id,
                        re.seconds_to_sale,
                        re.recommend_sku AS recommend_product_id,
@@ -157,22 +159,23 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
                        p.barcode AS recommend_barcode,
                        COALESCE(p.barcodes, '[]'::jsonb) AS recommend_barcodes
                 FROM recommendation_events re
+                JOIN receipt_candidates receipt ON receipt.id = re.sale_id
+                    AND receipt.pharmacy_id = re.pharmacy_id
+                    AND (receipt.pharmacist_id = '' OR re.pharmacist_id = ''
+                         OR receipt.pharmacist_id = re.pharmacist_id)
                 LEFT JOIN products p ON p.id = re.recommend_sku
                 WHERE re.sale_id IS NOT NULL
-                  AND re.sale_id IN (SELECT id FROM receipt_candidates)
-                  AND re.seconds_to_sale IS NOT NULL
+                  AND re.seconds_to_sale >= 0
                   AND re.sold_at >= :since
-                ORDER BY re.sale_id, re.seconds_to_sale ASC, re.id ASC
+                  AND (receipt.reward_evidence #>> '{completion,status}') IS DISTINCT FROM 'refund'
             ),
-            sale_rows AS (
-                SELECT s.*,
-                       item.value AS item,
-                       item.ordinality AS item_ordinality,
-                       jsonb_array_length(s.items) AS item_count,
-                       attr.seconds_to_sale AS attributed_seconds,
-                       matched.item_ordinality AS matched_ordinality
+            matched_attributions AS (
+                SELECT s.id AS sale_id,
+                       CASE WHEN jsonb_array_length(s.items) = 0 THEN 1
+                            ELSE matched.item_ordinality END AS item_ordinality,
+                       MIN(attr.seconds_to_sale) AS seconds_to_sale
                 FROM receipt_candidates s
-                LEFT JOIN fastest_attribution attr ON attr.sale_id = s.id
+                JOIN attribution_candidates attr ON attr.sale_id = s.id
                 LEFT JOIN LATERAL (
                     SELECT COALESCE(
                         MIN(candidate.ordinality) FILTER (
@@ -195,13 +198,25 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
                         )
                     ) AS item_ordinality
                     FROM jsonb_array_elements(s.items) WITH ORDINALITY candidate(value, ordinality)
-                ) matched ON attr.sale_id IS NOT NULL
+                ) matched ON true
+                GROUP BY s.id, CASE WHEN jsonb_array_length(s.items) = 0 THEN 1
+                                   ELSE matched.item_ordinality END
+            ),
+            sale_rows AS (
+                SELECT s.*,
+                       item.value AS item,
+                       item.ordinality AS item_ordinality,
+                       jsonb_array_length(s.items) AS item_count,
+                       attr.seconds_to_sale AS attributed_seconds
+                FROM receipt_candidates s
                 CROSS JOIN LATERAL jsonb_array_elements(
                     CASE
                         WHEN jsonb_array_length(s.items) = 0 THEN '[{}]'::jsonb
                         ELSE s.items
                     END
                 ) WITH ORDINALITY item(value, ordinality)
+                LEFT JOIN matched_attributions attr
+                    ON attr.sale_id = s.id AND attr.item_ordinality = item.ordinality
             )
             SELECT e.id AS "id",
                    'show' AS "eventType",
@@ -219,7 +234,8 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
                    (e.sold_at IS NOT NULL) AS "converted",
                    e.seconds_to_sale AS "secondsToSale",
                    CAST(NULL AS DOUBLE PRECISION) AS "units",
-                   CAST(NULL AS VARCHAR) AS "saleId"
+                   CAST(NULL AS VARCHAR) AS "saleId",
+                   CAST(NULL AS VARCHAR) AS "receiptStatus"
             FROM show_candidates e
 
             UNION ALL
@@ -248,19 +264,16 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
                        ELSE CAST(COALESCE(NULLIF(s.item ->> 'total', ''), '0') AS BIGINT)
                    END AS "amount",
                    false AS "converted",
-                   CASE
-                       WHEN s.attributed_seconds IS NOT NULL
-                        AND (s.item_count = 0 OR s.item_ordinality = s.matched_ordinality)
-                       THEN s.attributed_seconds
-                       ELSE NULL
-                   END AS "secondsToSale",
+                   s.attributed_seconds AS "secondsToSale",
                    CASE
                        WHEN s.item_count > 0
                         AND CAST(COALESCE(NULLIF(s.item ->> 'qty', ''), '0') AS DOUBLE PRECISION) > 0
                        THEN CAST(s.item ->> 'qty' AS DOUBLE PRECISION)
                        ELSE NULL
                    END AS "units",
-                   s.id AS "saleId"
+                   s.id AS "saleId",
+                   CASE WHEN s.reward_evidence #>> '{completion,status}' = 'refund'
+                        THEN 'refund' ELSE NULL END AS "receiptStatus"
             FROM sale_rows s
 
             ORDER BY "eventAt" DESC, "id" DESC

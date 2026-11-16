@@ -25,6 +25,9 @@ class RecommendationRewardCreditPolicy(private val jdbc: JdbcTemplate, private v
     }
 
     fun beforeCredit(pending: PendingBonusEntity, receipt: ReceiptEntity): RecommendationRewardCreditDecision {
+        // The absence of a v2 case is not permission to revive a closed legacy reservation.
+        // Already-approved receipt retries return before this new-credit decision.
+        if (pending.status != PendingBonusStatus.awaiting_receipt) conflict("reward_not_ready")
         val reward = reward(pending.id, receipt.id)
             ?: return RecommendationRewardCreditDecision(true, pending.bonus) // Preserve legacy receipt decisions.
         validateBinding(reward, pending, receipt)
@@ -50,14 +53,18 @@ class RecommendationRewardCreditPolicy(private val jdbc: JdbcTemplate, private v
             receipt.parsedAt != sale.printedAt) conflict("reward_sale_quantity_conflict")
         val promo = reward.promo ?: return budgetReview(reward, "reward_budget_missing")
         // Funding changes no key: allow concurrent FK references without lock-upgrade deadlocks.
-        val budget = jdbc.queryForList("SELECT budget,spent FROM promos WHERE id=? FOR NO KEY UPDATE", promo).singleOrNull()
+        val budget = jdbc.queryForList("SELECT budget,spent,budget_unlimited FROM promos WHERE id=? FOR NO KEY UPDATE", promo).singleOrNull()
             ?: return budgetReview(reward, "reward_budget_missing")
         val limit = number(budget, "budget"); val spent = number(budget, "spent")
-        if (limit <= 0 || spent < 0 || spent > limit) return budgetReview(reward, "reward_budget_invalid")
+        val unlimited = budget["budget_unlimited"] == true
+        if (limit < 0 || spent < 0 || (!unlimited && (limit == 0L || spent > limit))) {
+            return budgetReview(reward, "reward_budget_invalid")
+        }
         if (reward.reserved) {
             if (spent < total) conflict("reward_budget_reservation_conflict")
         } else {
-            if (total > limit - spent) return budgetReview(reward, "reward_budget_exhausted")
+            if (!unlimited && total > limit - spent) return budgetReview(reward, "reward_budget_exhausted")
+            if (total > Long.MAX_VALUE - spent) return budgetReview(reward, "reward_budget_overflow")
             if (jdbc.update("UPDATE promos SET spent=spent+? WHERE id=? AND spent=?", total, promo, spent) != 1) {
                 conflict("reward_budget_changed")
             }

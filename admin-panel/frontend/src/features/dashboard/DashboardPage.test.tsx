@@ -145,15 +145,16 @@ beforeEach(() => {
 afterEach(() => useUiStore.setState({ language: 'ru' }))
 
 it.each([
-  ['ru', 'Последние 30 дней', 'Сумма цен проданных рекомендаций', 'Одобрено к выплате', 'не фактическая выручка'],
-  ['kk', 'Соңғы 30 күн', 'Сатылған ұсыныстар бағасының сомасы', 'Төлеуге мақұлданды', 'нақты түсім де'],
-] as const)('explains amount sources and rolling period in %s', (language, period, metric, payout, note) => {
+  ['ru', 'Последние 30 дней', 'Сумма цен проданных рекомендаций', 'Одобрено к выплате', 'не фактическая выручка', 'Рекомендации с продажей'],
+  ['kk', 'Соңғы 30 күн', 'Сатылған ұсыныстар бағасының сомасы', 'Төлеуге мақұлданды', 'нақты түсім де', 'Сатумен аяқталған ұсыныстар'],
+] as const)('explains amount sources and rolling period in %s', (language, period, metric, payout, note, converted) => {
   useUiStore.setState({ language })
   setAnalytics(mkAnalytics({ windowDays: 30 }))
   renderPage()
 
   expect(screen.getByTestId('recan-period')).toHaveTextContent(period)
   expect(screen.getByText(metric)).toBeInTheDocument()
+  expect(within(screen.getByTestId('recan-kpis')).getByText(converted)).toBeInTheDocument()
   expect(screen.getByTestId('recan-amount-note')).toHaveTextContent(note)
   expect(screen.getByText(payout)).toBeInTheDocument()
   expect(screen.getByTestId('dash-payout-note')).not.toBeEmptyDOMElement()
@@ -231,6 +232,40 @@ describe('DashboardPage — пустые топ-списки', () => {
 })
 
 describe('DashboardPage — Журнал показов и продаж (V032)', () => {
+  it.each([
+    ['ru', 'Возврат', 'Продажа'],
+    ['kk', 'Қайтару', 'Сату'],
+  ] as const)('отличает возврат от продажи по статусу API в %s', (language, refund, sale) => {
+    useUiStore.setState({ language })
+    const analytics = mkAnalytics()
+    // Status is authoritative, not a Russian prefix in the product title.
+    analytics.log[1].receiptStatus = 'refund'
+    setAnalytics(analytics)
+    renderPage()
+
+    const row = screen.getByTestId('recan-row-sale_1#0')
+    const badge = within(row).getByText(refund)
+    expect(badge).toHaveClass('chip-amber')
+    expect(badge).not.toHaveClass('chip-green')
+    expect(within(row).queryByText(sale)).not.toBeInTheDocument()
+    expect(row).toHaveTextContent(formatKzt(2100).replace(/\s/g, ' '))
+    expect(row).not.toHaveTextContent('-2')
+    expect(row).not.toHaveTextContent('после показа')
+    expect(row).not.toHaveTextContent('кейін')
+  })
+
+  it.each([undefined, null])('сохраняет продажу для старого API со статусом %s и не угадывает статус по названию', (receiptStatus) => {
+    const analytics = mkAnalytics()
+    analytics.log[1].receiptStatus = receiptStatus
+    analytics.log[1].title = 'Возврат: название из старого источника'
+    setAnalytics(analytics)
+    renderPage()
+
+    const row = screen.getByTestId('recan-row-sale_1#0')
+    expect(within(row).getByText('Продажа')).toHaveClass('chip-green')
+    expect(within(row).queryByText('Возврат')).not.toBeInTheDocument()
+  })
+
   it('первая загрузка журнала не подменяет данные нулевыми KPI или пустым периодом', () => {
     setAnalytics(undefined, { isLoading: true, isFetching: true })
     renderPage()
