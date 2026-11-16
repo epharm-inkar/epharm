@@ -924,8 +924,12 @@ Administrative pharmacist `receipts30d` is now a read-only aggregate of `pos_sal
 over the last 30 days through the request time, once per visible list (or detail).
 It matches the saved internal seller and current pharmacy exactly, excludes refunds,
 and applies existing financial field restrictions after projection. The stale
-`pharmacists.receipts_30d` column is not rewritten; separate legacy exports/mobile
-consumers of that column are unchanged by this display-only fix.
+`pharmacists.receipts_30d` column is not rewritten; legacy mobile
+consumers of that column retain their existing contract. The current registry XLSX
+and newly generated payout-item receipt snapshots use the same read-only aggregate
+as the registry. Previously generated payout items keep their captured values;
+wallet amounts, eligibility and reservations are unchanged. No counter backfill or
+migration rewrites the legacy profile column.
 
 `GET /api/admin/dashboard/recommendations?page=0&size=50` returns KPI values for the configured
 analytics window and a server-paginated combined journal of recommendation displays and POS sale

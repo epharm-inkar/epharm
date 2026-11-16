@@ -9,6 +9,7 @@ import kz.epharm.finance.entity.PayoutItemEntity
 import kz.epharm.finance.repository.PayoutBatchRepository
 import kz.epharm.finance.repository.PayoutItemRepository
 import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.pharmacists.service.currentReceiptCounts
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
 import org.springframework.http.HttpStatus
@@ -38,12 +39,14 @@ class PayoutService(
         wallet.lockPayoutGeneration()
         val batchId = "pob_${UUID.randomUUID().toString().substring(0, 8)}"
         // Lock in a stable order and reserve the current balance, never an earlier JPA snapshot.
-        val owed = pharmacistRepository.findAll().filter { it.balance > 0 }.sortedBy { it.id }.mapNotNull { ph ->
+        val candidates = pharmacistRepository.findAll().filter { it.balance > 0 }.sortedBy { it.id }
+        val receipts = pharmacistRepository.currentReceiptCounts(candidates.associate { it.id to it.pharmacyId })
+        val owed = candidates.mapNotNull { ph ->
             val itemId = "poi_${UUID.randomUUID().toString().substring(0, 8)}"
             val reservation = wallet.reserveForPayout(ph.id, itemId)
             if (reservation.amountKzt == 0L) null else PayoutItemEntity(
                 id = itemId, batchId = batchId, pharmacistId = ph.id, pharmacistName = ph.name,
-                pharmacy = ph.pharmacyName ?: "", city = ph.city, receipts = ph.receipts30d,
+                pharmacy = ph.pharmacyName ?: "", city = ph.city, receipts = receipts[ph.id] ?: 0,
                 rules = ph.rulesAccepted30d, amount = -reservation.amountKzt,
             )
         }

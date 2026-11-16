@@ -12,7 +12,18 @@ All notable production changes to Epharm are recorded here. The format follows
   form through technical context changes, and refresh context only on explicit
   submit. Expired or revoked grants remain invalid; cashier operation stays available.
 
+## [0.2.24] - 2026-11-16
+
+### Fixed
+
+- Use the same captured-sale receipt count in the pharmacist registry, its XLSX
+  export and future payout snapshots. Preserve historical payout snapshots,
+  stored legacy counters, wallet amounts and the mobile response contract.
+- Include the reviewed v0.2.23 changes below in the combined production rollout.
+
 ## [0.2.23] - 2026-11-16
+
+This candidate was superseded by v0.2.24 before production deployment.
 
 ### Fixed
 

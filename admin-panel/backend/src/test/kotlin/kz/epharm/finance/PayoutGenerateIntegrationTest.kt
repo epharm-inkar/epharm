@@ -2,6 +2,8 @@ package kz.epharm.finance
 
 import kz.epharm.finance.repository.PayoutBatchRepository
 import kz.epharm.finance.repository.PayoutItemRepository
+import kz.epharm.finance.entity.PayoutBatchEntity
+import kz.epharm.finance.entity.PayoutItemEntity
 import kz.epharm.finance.service.PayoutService
 import kz.epharm.pharmacies.entity.ChainEntity
 import kz.epharm.pharmacies.entity.PharmacyEntity
@@ -10,6 +12,8 @@ import kz.epharm.pharmacies.repository.ChainRepository
 import kz.epharm.pharmacies.repository.PharmacyRepository
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.posm.entity.PosSaleEntity
+import kz.epharm.posm.repository.PosSaleRepository
 import kz.epharm.receipts.entity.PendingBonusEntity
 import kz.epharm.receipts.entity.PendingBonusStatus
 import kz.epharm.receipts.repository.PendingBonusRepository
@@ -21,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -61,6 +66,8 @@ class PayoutGenerateIntegrationTest {
     @Autowired private lateinit var batchRepository: PayoutBatchRepository
     @Autowired private lateinit var itemRepository: PayoutItemRepository
     @Autowired private lateinit var pendingBonusRepository: PendingBonusRepository
+    @Autowired private lateinit var sales: PosSaleRepository
+    @Autowired private lateinit var jdbc: JdbcTemplate
 
     @BeforeEach
     fun seed() {
@@ -109,6 +116,31 @@ class PayoutGenerateIntegrationTest {
     fun `generateBatch без начисленных бонусов → ошибка`() {
         pharmacistRepository.save(pharmacist("u_zero", 0))
         assertThrows(AppException::class.java) { payoutService.generateBatch("Тест 2026") }
+    }
+
+    @Test
+    fun `new payouts capture current receipts without changing money or historical snapshots`() {
+        pharmacistRepository.saveAndFlush(pharmacist("u_receipts", 300).also { it.receipts30d = 999 })
+        sales.saveAndFlush(PosSaleEntity(id = "payout-recent", pharmacistId = "u_receipts", pharmacyId = "ph_t",
+            printedAt = Instant.now().minusSeconds(60)))
+        batchRepository.saveAndFlush(PayoutBatchEntity(id = "payout-history", period = "Historical", pharmacists = 1, amount = 100, items = 1))
+        itemRepository.saveAndFlush(PayoutItemEntity(id = "payout-history-item", batchId = "payout-history",
+            pharmacistId = "u_receipts", receipts = 8, amount = 100))
+        val ledgerBefore = jdbc.queryForObject("select count(*) from pharmacist_wallet_entries", Int::class.java)!!
+
+        val batch = payoutService.generateBatch("Current")
+        val item = payoutService.listItems(batch.id).single()
+
+        assertEquals(1, item.receipts)
+        assertEquals(300L, item.amount)
+        assertEquals(300L, batch.amount)
+        assertEquals(0L, pharmacistRepository.findById("u_receipts").get().balance)
+        assertEquals(300L, pharmacistRepository.findById("u_receipts").get().earned30d)
+        assertEquals(ledgerBefore + 1, jdbc.queryForObject("select count(*) from pharmacist_wallet_entries", Int::class.java))
+        assertEquals(-300L, jdbc.queryForObject("select amount_kzt from pharmacist_wallet_entries where source='payout_reservation' and source_id=?", Long::class.java, item.id))
+        assertEquals(0L, jdbc.queryForObject("select earned_delta_kzt from pharmacist_wallet_entries where source='payout_reservation' and source_id=?", Long::class.java, item.id))
+        assertEquals(999, jdbc.queryForObject("select receipts_30d from pharmacists where id='u_receipts'", Int::class.java))
+        assertEquals(8, payoutService.listItems("payout-history").single().receipts)
     }
 
     @Test
