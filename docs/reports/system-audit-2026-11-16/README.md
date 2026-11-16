@@ -81,3 +81,20 @@ Final full frontend, browser artifact and PostgreSQL CI results remain release g
 - Counter identities are not proof of a physical PC count; reinstalls/offline PCs need
   reconciliation rather than automatic deletion.
 - Existing Sentry configuration remains outside this patch; no checks are disabled.
+
+## Independent release review
+
+The exact original PR head `fe42905eb229d3f28872eed46c7ac87b792603f8` passed CI
+`43841182297`: 1784 backend, 1197 frontend, 121 backend browser and 73 image browser
+checks, 976 Windows core tests and the native WPF suite. Independent backend and
+frontend source reviews found no blocking defect. A focused regression for an active
+learner with no phone/pharmacy passes with all 10 authentication-lifecycle tests.
+The final head must pass CI again. Mobile application builds remain paused.
+
+Production was independently rechecked at `v0.2.20` / `c3937f5`; preserve PR #174
+training enrollment, the already-published 35 total campaigns, 981 active rules and
+the current signed POSM release. The 320-row inventory approval payload is not
+available in this checkout. Older extraction/reconciliation files have different
+row partitions and are not a substitute. This release deploys the API and nullable
+schema; inventory import remains separate. V104 compatibility must be exercised
+with the actual preceding backend before production migration.

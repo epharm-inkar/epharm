@@ -12,6 +12,23 @@ All notable production changes to Epharm are recorded here. The format follows
   form through technical context changes, and refresh context only on explicit
   submit. Expired or revoked grants remain invalid; cashier operation stays available.
 
+## [0.2.21] - 2026-11-16
+
+### Added
+
+- Separate pharmacy inventory, registered POSM identity and recent activity counts,
+  with scoped access, observation timestamps and unknown inventory preserved.
+  The additive V104 schema performs no inventory import or backfill.
+
+### Fixed
+
+- Reject stale learner authentication responses after identity, step or page changes.
+- Correct even-sized recommendation timing medians and distinguish unavailable,
+  failed, loading and stale analytics from real zero values.
+- Release cancelled Excel export state when filters or permissions change.
+- Preserve pharmacy passport and inventory edits during background metrics refresh
+  through column-specific updates and locked administrative writes.
+
 ## [0.2.20] - 2026-11-16
 
 ### Added
