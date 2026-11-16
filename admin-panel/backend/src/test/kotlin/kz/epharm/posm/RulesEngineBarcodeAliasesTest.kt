@@ -35,9 +35,15 @@ class RulesEngineBarcodeAliasesTest {
 
     @BeforeEach
     fun setUp() {
-        every { repository.findAllByStatusRawOrderByUpdatedAtDesc("active") } answers { active }
-        every { products.findAllById(any<Iterable<String>>()) } answers {
-            val ids = firstArg<Iterable<String>>().toSet()
+        every { repository.findActiveMatchReferences() } answers {
+            active.filter { it.status == RuleStatus.active }.map { it.matchReference() }
+        }
+        every { repository.findMatchCandidatesByIds(any()) } answers {
+            val ids = firstArg<Collection<String>>().toSet()
+            active.filter { it.id in ids && it.status == RuleStatus.active }
+        }
+        every { products.findMatchProductsByIds(any()) } answers {
+            val ids = firstArg<Collection<String>>().toSet()
             catalog.filter { it.id in ids }
         }
         every { products.findAllByBarcodeIn(any()) } answers {

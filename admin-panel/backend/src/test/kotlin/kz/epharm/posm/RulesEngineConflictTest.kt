@@ -68,7 +68,11 @@ class RulesEngineConflictTest {
         recommends: List<ProductEntity>,
         promos: List<PromoEntity> = emptyList(),
     ) {
-        every { ruleRepo.findAllByStatusRawOrderByUpdatedAtDesc("active") } returns rules
+        every { ruleRepo.findActiveMatchReferences() } returns rules.map { it.matchReference() }
+        every { ruleRepo.findMatchCandidatesByIds(any()) } answers {
+            val ids = firstArg<Collection<String>>().toSet()
+            rules.filter { it.id in ids && it.status == RuleStatus.active }
+        }
         if (rules.any { it.promoId != null }) {
             every { promoRepo.findAllById(any<Iterable<String>>()) } returns promos
         }
@@ -77,8 +81,8 @@ class RulesEngineConflictTest {
             val wanted = firstArg<Collection<String>>().toSet()
             (cartProducts + recommends).filter { product -> product.scanBarcodes().any { it in wanted } }
         }
-        every { productRepo.findAllById(any<Iterable<String>>()) } answers {
-            val ids = firstArg<Iterable<String>>().toSet()
+        every { productRepo.findMatchProductsByIds(any()) } answers {
+            val ids = firstArg<Collection<String>>().toSet()
             (cartProducts + recommends).filter { it.id in ids }
         }
     }

@@ -24,6 +24,18 @@ Recommendation duration analytics excludes unknown/negative durations from timin
 statistics without dropping converted events. The even-sized median averages the two
 middle values with overflow-safe arithmetic; actual zero durations remain valid.
 
+## Scan-time matching reads
+
+Each request reads fresh scalar active-rule references before loading rich JSON cards.
+Global barcode ownership remains authoritative, including owners outside active rules.
+Only potential matches load full rules through engine-specific read-only queries;
+the existing final matcher still checks all conditions, exclusions, conflicts and ranking.
+An unknown barcode with a local SKU/name keeps the complete original relevant-product
+pool and conservative dosage/name safeguards. Strong barcode resolution needs only
+the matched offers. No cross-request cache delays publication, pause or price changes.
+Generic administrative repositories remain writable. This optimization adds no schema
+migration and does not change POSM request/response contracts.
+
 ## Current training auto-assignment
 
 An opt-in reconciler assigns one explicitly selected published online training
