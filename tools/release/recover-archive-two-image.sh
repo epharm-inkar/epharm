@@ -23,20 +23,37 @@ done
   echo 'ERROR: a dedicated absolute epharm-backend-only-backups root is required' >&2; exit 2;
 }
 for command in docker python3 flock gzip; do require_command "$command"; done
-python3 - "$backup_root" <<'PY'
-import os, pathlib, stat, sys
+# sudo may enter a root0700 backup root through its invoker's home (no group/world write).
+# Admit only that actual SUDO_UID; keep every protected child caller-owned/0700/0600.
+backup_parent_identity() {
+  python3 - "$backup_root" <<'PY'
+import os, pathlib, pwd, re, stat, sys
 path=pathlib.Path(sys.argv[1]); parent=path.parent
-assert path.is_absolute() and parent.resolve(strict=True)==parent and '\n' not in str(path)
-info=parent.stat()
-assert info.st_uid==os.geteuid() and not stat.S_IMODE(info.st_mode)&0o022
+assert path.is_absolute() and parent.resolve(strict=True)==parent and not parent.is_symlink() and '\n' not in str(path)
+owners={os.geteuid()}
+sudo=os.environ.get('SUDO_UID')
+if sudo is not None:
+    assert os.getuid()==os.geteuid()==0 and re.fullmatch(r'[1-9][0-9]{0,9}',sudo)
+    sudo_uid=int(sudo); assert sudo_uid < 2**32-1
+    pwd.getpwuid(sudo_uid)  # An unknown/deleted principal is not an authorized invoker.
+    owners.add(sudo_uid)
+def identity(info): return (info.st_dev,info.st_ino,info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))
+def no_acl(entry): return not (set(os.listxattr(entry)) & {'system.posix_acl_access','system.posix_acl_default'})
+info=parent.lstat()
+assert stat.S_ISDIR(info.st_mode) and info.st_uid in owners and not stat.S_IMODE(info.st_mode)&0o022 and no_acl(parent)
 if path.exists() or path.is_symlink():
-    info=path.lstat()
-    assert not path.is_symlink() and stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid() and stat.S_IMODE(info.st_mode)==0o700
+    child=path.lstat()
+    assert not path.is_symlink() and stat.S_ISDIR(child.st_mode) and child.st_uid==os.geteuid() and stat.S_IMODE(child.st_mode)==0o700 and no_acl(path)
+assert parent.resolve(strict=True)==parent and identity(parent.lstat())==identity(info)
+print(':'.join(map(str,identity(info))))
 PY
+}
+backup_parent="$(backup_parent_identity)"
 
 # The marker is data, not shell. Missing containers, unknown/mixed images,
 # changed pins, symlinked paths and resolved/replaced containers all fail closed.
 inspect_failure() {
+  [[ "$(backup_parent_identity)" == "$backup_parent" ]] || { echo 'ERROR: backup parent identity changed' >&2; return 1; }
   python3 - "$RELEASE_ROOT" "$failure" "$expected_failure_sha" "$compose_sha" <<'PY'
 import hashlib, json, os, pathlib, re, stat, subprocess, sys
 root, path = map(pathlib.Path, sys.argv[1:3]); expected, compose_sha = sys.argv[3:]
@@ -248,6 +265,7 @@ fi
 # The preparer takes the same flock, so it must finish before we acquire it.
 # This bundle preserves CURRENT sales, configs and observed images; an unhealthy
 # observed pair is not described as a healthy rollback baseline.
+[[ "$(backup_parent_identity)" == "$backup_parent" ]] || { echo 'ERROR: backup parent identity changed before backup' >&2; exit 1; }
 fresh_output="$("$SCRIPT_DIR/prepare-backend-only-backup.sh" "$observed_backend_tag" "$observed_frontend_tag" "$backup_root")"
 fresh_backup="${fresh_output#Verified backend-only backup: }"
 exec 9<"$lock"; flock -n 9 || { echo 'ERROR: another application backup/deployment is active' >&2; exit 1; }

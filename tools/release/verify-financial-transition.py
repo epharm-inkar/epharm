@@ -103,6 +103,18 @@ SOURCE_BINDING_CLASSES = {
     'kz/epharm/posm/service/RecommendationRewardReviewService.class':
         ('getSourceNamespace', 'getNativeSessionId', 'getWorkstationId', 'getCompletedAt'),
 }
+SOURCE_PROOF_CLASSES = {
+    'kz/epharm/posm/staff/StaffAuthCleanup.class':
+        ('cleanExpired', 'WITH expired AS',
+         "DELETE FROM posm_device_staff_sessions WHERE expires_at<now()-interval '24 hours' RETURNING *",
+         'INSERT INTO posm_staff_source_proofs', 'source_verified_at<expires_at',
+         'expires_at+(? * interval', 'retained_until<=now()'),
+    'kz/epharm/posm/staff/SourceStaffBindingService.class':
+        ('posm_staff_source_proofs WHERE retained_until>now()', 'UNION ALL',
+         'pharmacist_id=? AND pharmacy_id=? AND device_id=? AND source_namespace=? AND standard_n_user_id=?',
+         'created_at<=? AND source_verified_at<=? AND expires_at>? AND (revoked_at IS NULL OR revoked_at>?)',
+         'password_fingerprint=?', 'standard_n_session_id=?', 'workstation_id=?'),
+}
 SCHEMA_PROBE = """SELECT CASE WHEN
   to_regclass('public.pharmacist_wallet_entries') IS NOT NULL OR
   to_regclass('public.pharmacist_wallet_checkpoints') IS NOT NULL OR
@@ -144,16 +156,32 @@ SOURCE_BINDING_SCHEMA_PROBE = """SELECT CASE WHEN
   EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public'
          AND table_name='posm_device_staff_sessions' AND column_name IN ('source_namespace','source_verified_at'))
 THEN 'protected' ELSE 'legacy' END;\n"""
+SOURCE_PROOF_SCHEMA_PROBE = """SELECT CASE WHEN
+  to_regclass('public.posm_staff_source_proofs') IS NOT NULL
+THEN 'protected' ELSE 'legacy' END;\n"""
 
 
 def verify(jar_path: Path, schema_protected: bool, access_protected: bool = False,
            session_protected: bool = False, compound_protected: bool = False,
-           reward_protected: bool = False, source_binding_protected: bool = False) -> bool:
+           reward_protected: bool = False, source_binding_protected: bool = False,
+           source_proof_protected: bool = False) -> bool:
     with zipfile.ZipFile(jar_path) as jar:
         entries = jar.namelist()
         names = set(entries)
         if len(entries) != len(names):
             raise ValueError('Ambiguous duplicate artifact entries')
+        source_proof_code = any(re.fullmatch(r'BOOT-INF/classes/db/migration/V0*106__[^/]+\.sql', name)
+                                for name in names)
+        # V106 protects even an empty archive: old cleanup can delete the next expired grant.
+        if source_proof_protected or source_proof_code:
+            for name, markers in SOURCE_PROOF_CLASSES.items():
+                path = 'BOOT-INF/classes/' + name
+                if path not in names or jar.getinfo(path).file_size > 2 * 1024 * 1024:
+                    raise ValueError('Target lacks the reviewed historical source-proof implementation')
+                body = jar.read(path)
+                if any(marker.encode('ascii') not in body for marker in markers):
+                    raise ValueError('Target contains obsolete historical source-proof cleanup or resolution')
+            source_binding_protected = True
         source_binding_code = 'BOOT-INF/classes/kz/epharm/posm/staff/SourceStaffBindingService.class' in names or any(
             re.fullmatch(r'BOOT-INF/classes/db/migration/V0*(102|103)__[^/]+\.sql', name) for name in names)
         # V102 conflicts and proof lifetimes remain authoritative even before the first binding exists.
@@ -269,6 +297,10 @@ def source_binding_schema_is_protected() -> bool:
     return _schema_is_protected(SOURCE_BINDING_SCHEMA_PROBE, 'source-binding')
 
 
+def source_proof_schema_is_protected() -> bool:
+    return _schema_is_protected(SOURCE_PROOF_SCHEMA_PROBE, 'historical source-proof')
+
+
 def verify_image(image: str) -> bool:
     protected = schema_is_protected()
     access_protected = access_schema_is_protected()
@@ -276,6 +308,7 @@ def verify_image(image: str) -> bool:
     compound_protected = compound_schema_is_protected()
     reward_protected = reward_schema_is_protected()
     source_binding_protected = source_binding_schema_is_protected()
+    source_proof_protected = source_proof_schema_is_protected()
     container = subprocess.check_output(['docker', 'create', '--network', 'none', image],
         text=True, stderr=subprocess.DEVNULL, timeout=15).strip()
     if not re.fullmatch(r'[a-f0-9]{64}', container):
@@ -285,7 +318,7 @@ def verify_image(image: str) -> bool:
             jar = Path(directory) / 'app.jar'
             subprocess.run(['docker', 'cp', f'{container}:/app/app.jar', str(jar)],
                 check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-            return verify(jar, protected, access_protected, session_protected, compound_protected, reward_protected, source_binding_protected)
+            return verify(jar, protected, access_protected, session_protected, compound_protected, reward_protected, source_binding_protected, source_proof_protected)
     finally:
         subprocess.run(['docker', 'rm', container], check=True, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=15)
@@ -302,16 +335,17 @@ def main() -> None:
     parser.add_argument('--compound-protected', action='store_true', help='Offline --jar fixture represents the V094 compound-trigger schema')
     parser.add_argument('--reward-protected', action='store_true', help='Offline --jar fixture represents the V100 recommendation-reward schema')
     parser.add_argument('--source-binding-protected', action='store_true', help='Offline --jar fixture represents the V102 native source-binding schema')
+    parser.add_argument('--source-proof-protected', action='store_true', help='Offline --jar fixture represents the V106 historical source-proof schema')
     args = parser.parse_args()
-    if args.image and (args.schema_protected or args.access_protected or args.session_protected or args.compound_protected or args.reward_protected or args.source_binding_protected or
+    if args.image and (args.schema_protected or args.access_protected or args.session_protected or args.compound_protected or args.reward_protected or args.source_binding_protected or args.source_proof_protected or
                        not re.fullmatch(r'sha256:[a-f0-9]{64}', args.image)):
         parser.error('Production checks require an exact image ID and live read-only DB probe')
     try:
         capable = verify_image(args.image) if args.image else verify(
-            args.jar, args.schema_protected, args.access_protected, args.session_protected, args.compound_protected, args.reward_protected, args.source_binding_protected)
+            args.jar, args.schema_protected, args.access_protected, args.session_protected, args.compound_protected, args.reward_protected, args.source_binding_protected, args.source_proof_protected)
     except (OSError, ValueError, KeyError, UnicodeError, RuntimeError, zipfile.BadZipFile, subprocess.SubprocessError):
-        raise SystemExit('ERROR: financial/access/session/compound-trigger/reward/source-binding transition denied or state unknown; keep current pins and use a reviewed wallet/RBAC/session/compound/reward/source-binding-capable forward image') from None
-    print('Financial transition contract OK: ' + ('wallet-capable artifact' if capable else 'legacy schema/artifact') + '; managed-access, admin-session, compound-trigger, recommendation-reward and source-binding guards checked')
+        raise SystemExit('ERROR: financial/access/session/compound-trigger/reward/source-binding/historical-source-proof transition denied or state unknown; keep current pins and use a reviewed wallet/RBAC/session/compound/reward/source-binding/source-proof-capable forward image') from None
+    print('Financial transition contract OK: ' + ('wallet-capable artifact' if capable else 'legacy schema/artifact') + '; managed-access, admin-session, compound-trigger, recommendation-reward and source-binding guards checked; historical-source-proof guard checked')
 
 
 if __name__ == '__main__':

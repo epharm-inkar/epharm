@@ -13,7 +13,7 @@ class StaffAuthCleanup(
 ) {
     init { require(sourceProofRetentionDays in 1..365) { "Source proof retention must be between 1 and 365 days" } }
     /** Expired login credentials are deleted; only bounded minimal receipt-time proof survives. */
-    @Scheduled(cron="0 17 * * * *")
+    @Scheduled(cron="\${app.posm.staff.cleanup-cron:0 17 * * * *}")
     @Transactional
     fun cleanExpired() {
         jdbc.update("DELETE FROM posm_staff_challenges WHERE expires_at<now()-interval '24 hours'")

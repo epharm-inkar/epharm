@@ -79,6 +79,23 @@ class FinancialTransitionTests(unittest.TestCase):
                     jar.writestr('BOOT-INF/classes/'+name,body)
         return self.jar
 
+    def source_proof_artifact(self,missing=None,obsolete=None):
+        self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        with zipfile.ZipFile(self.jar) as jar:
+            entries={name:jar.read(name) for name in jar.namelist()}
+        entries['BOOT-INF/classes/db/migration/V106__historical_staff_source_proofs.sql']=b'proof archive schema'
+        for name,markers in guard.SOURCE_PROOF_CLASSES.items():
+            path='BOOT-INF/classes/'+name
+            if name==missing:
+                entries.pop(path,None)
+                continue
+            body=entries.get(path,b'')+b' '+' '.join(markers).encode('ascii')
+            if obsolete and obsolete[0]==name: body=body.replace(obsolete[1].encode('ascii'),b'')
+            entries[path]=body
+        with zipfile.ZipFile(self.jar,'w') as jar:
+            for name,body in entries.items(): jar.writestr(name,body)
+        return self.jar
+
     def test_legacy_artifact_only_allowed_before_protected_schema(self):
         self.artifact(resource=False)
         self.assertFalse(guard.verify(self.jar,False))
@@ -382,6 +399,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'compound_schema_is_protected',return_value=False), \
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
+             patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value=container) as create, \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaises(ValueError): guard.verify_image(image)
@@ -402,6 +420,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'compound_schema_is_protected',return_value=False), \
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
+             patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'managed-access'):
@@ -422,6 +441,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'compound_schema_is_protected',return_value=False), \
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
+             patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'session-version'):
@@ -461,6 +481,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'compound_schema_is_protected',return_value=True) as compound, \
              patch.object(guard,'reward_schema_is_protected',return_value=False), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
+             patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'compound-trigger'):
@@ -492,6 +513,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'compound_schema_is_protected',return_value=True), \
              patch.object(guard,'reward_schema_is_protected',return_value=True) as reward, \
              patch.object(guard,'source_binding_schema_is_protected',return_value=False), \
+             patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'recommendation-reward'):
@@ -599,6 +621,7 @@ class FinancialTransitionTests(unittest.TestCase):
              patch.object(guard,'compound_schema_is_protected',return_value=True), \
              patch.object(guard,'reward_schema_is_protected',return_value=True), \
              patch.object(guard,'source_binding_schema_is_protected',return_value=True) as binding, \
+             patch.object(guard,'source_proof_schema_is_protected',return_value=False), \
              patch.object(guard.subprocess,'check_output',return_value='b'*64), \
              patch.object(guard.subprocess,'run',side_effect=run):
             with self.assertRaisesRegex(ValueError,'source-binding'): guard.verify_image('sha256:'+'a'*64)
@@ -623,6 +646,99 @@ class FinancialTransitionTests(unittest.TestCase):
         self.artifact(access=True,session=True,compound=True,reward=True)
         self.assertNotEqual(0,subprocess.run(command,capture_output=True).returncode)
         self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        self.assertEqual(0,subprocess.run(command,capture_output=True).returncode)
+
+    def test_live_empty_v106_schema_denies_predecessor_with_all_prior_capabilities(self):
+        # v0.2.22 passes the previous six fences but its cleanup discards source proof.
+        source=self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        calls=[]
+        def run(command,**kwargs):
+            calls.append(command)
+            if command[1]=='cp': shutil.copyfile(source,command[-1])
+            return subprocess.CompletedProcess(command,0,'','')
+        def schema(probe,kind):
+            return "to_regclass('public.posm_staff_source_proofs')" in probe
+        with patch.object(guard,'_schema_is_protected',side_effect=schema), \
+             patch.object(guard.subprocess,'check_output',return_value='b'*64), \
+             patch.object(guard.subprocess,'run',side_effect=run):
+            with self.assertRaisesRegex(ValueError,'historical source-proof'):
+                guard.verify_image('sha256:'+'a'*64)
+        self.assertEqual(calls[-1],['docker','rm','b'*64])
+
+    def test_v022_capabilities_remain_valid_before_v106_but_not_after_even_empty(self):
+        self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        self.assertTrue(guard.verify(self.jar,True,True,True,True,True,True))
+        with self.assertRaisesRegex(ValueError,'historical source-proof'):
+            guard.verify(self.jar,True,True,True,True,True,True,True)
+        self.source_proof_artifact()
+        self.assertTrue(guard.verify(self.jar,True,True,True,True,True,True,True))
+
+    def test_packaged_v106_requires_actual_cleanup_and_resolver_before_migration(self):
+        self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        with zipfile.ZipFile(self.jar,'a') as jar:
+            jar.writestr('BOOT-INF/classes/db/migration/V106__historical_staff_source_proofs.sql','schema only')
+        with self.assertRaisesRegex(ValueError,'historical source-proof'):
+            guard.verify(self.jar,False)
+        self.source_proof_artifact()
+        self.assertTrue(guard.verify(self.jar,False))
+
+    def test_each_historical_proof_component_and_enforcement_marker_is_required(self):
+        for name,markers in guard.SOURCE_PROOF_CLASSES.items():
+            self.source_proof_artifact(missing=name)
+            with self.subTest(component=name),self.assertRaisesRegex(ValueError,'historical source-proof'):
+                guard.verify(self.jar,True,source_proof_protected=True)
+            for marker in markers:
+                self.source_proof_artifact(obsolete=(name,marker))
+                with self.subTest(component=name,marker=marker),self.assertRaisesRegex(ValueError,'historical source-proof'):
+                    guard.verify(self.jar,True,source_proof_protected=True)
+
+    def test_historical_proof_capability_cannot_replace_prior_guards(self):
+        self.source_proof_artifact()
+        with zipfile.ZipFile(self.jar) as jar:
+            entries={name:jar.read(name) for name in jar.namelist()}
+        for missing,reason in ((next(iter(guard.WRITERS)),'financial writer'),
+                               (next(iter(guard.REWARD_CLASSES)),'recommendation-reward'),
+                               ('kz/epharm/posm/staff/StaffAuthService.class','source-binding'),
+                               (next(iter(guard.ACCESS_CLASSES)),'managed-access'),
+                               (next(iter(guard.SESSION_CLASSES)),'session-version'),
+                               (next(iter(guard.COMPOUND_CLASSES)),'compound-trigger')):
+            with zipfile.ZipFile(self.jar,'w') as jar:
+                for name,body in entries.items():
+                    if name!='BOOT-INF/classes/'+missing: jar.writestr(name,body)
+            with self.subTest(component=missing),self.assertRaisesRegex(ValueError,reason):
+                guard.verify(self.jar,True,True,True,True,True,True,True)
+
+    def test_source_proof_schema_probe_is_read_only_and_independent_of_archive_rows(self):
+        with patch.object(guard.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'protected\n','')) as run:
+            self.assertTrue(guard.source_proof_schema_is_protected())
+        self.assertEqual(run.call_args.kwargs['input'],guard.SOURCE_PROOF_SCHEMA_PROBE)
+        sql=guard.SOURCE_PROOF_SCHEMA_PROBE.lower()
+        self.assertIn("to_regclass('public.posm_staff_source_proofs')",sql)
+        for forbidden in ('count(', 'from posm_', 'insert ', 'update ', 'delete ', 'drop ', 'alter '):
+            self.assertNotIn(forbidden,sql)
+        with patch.object(guard.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'legacy\n','')):
+            self.assertFalse(guard.source_proof_schema_is_protected())
+        for output in ('','0','protected\nlegacy','private-unexpected-value'):
+            with patch.object(guard.subprocess,'run',return_value=subprocess.CompletedProcess([],0,output,'')):
+                with self.assertRaises(ValueError): guard.source_proof_schema_is_protected()
+
+    def test_failed_source_proof_probe_stops_before_image_inspection_without_private_errors(self):
+        with patch.object(guard,'_schema_is_protected',side_effect=lambda probe,kind:
+                 (_ for _ in ()).throw(ValueError('private-password')) if kind=='historical source-proof' else False), \
+             patch.object(guard.subprocess,'check_output') as create, \
+             patch('sys.argv',['guard','--image','sha256:'+'a'*64]):
+            with self.assertRaises(SystemExit) as error: guard.main()
+        self.assertNotIn('private-password',str(error.exception)); create.assert_not_called()
+
+    def test_real_cli_source_proof_flag_rejects_old_cleanup_and_accepts_reviewed_chain(self):
+        command=['python3',str(Path(SPEC.origin)),'--jar',str(self.jar),'--schema-protected',
+                 '--access-protected','--session-protected','--compound-protected','--reward-protected',
+                 '--source-binding-protected','--source-proof-protected']
+        self.artifact(access=True,session=True,compound=True,reward=True,source_binding=True)
+        denied=subprocess.run(command,capture_output=True,text=True)
+        self.assertNotEqual(0,denied.returncode)
+        self.assertIn('historical-source-proof',denied.stderr)
+        self.source_proof_artifact()
         self.assertEqual(0,subprocess.run(command,capture_output=True).returncode)
 
     def test_real_cli_access_flag_rejects_wallet_only_and_accepts_typed_scope_fixture(self):
@@ -665,7 +781,8 @@ class FinancialTransitionTests(unittest.TestCase):
                      ['--image','sha256:'+'a'*64,'--session-protected'],
                      ['--image','sha256:'+'a'*64,'--compound-protected'],
                      ['--image','sha256:'+'a'*64,'--reward-protected'],
-                     ['--image','sha256:'+'a'*64,'--source-binding-protected']):
+                     ['--image','sha256:'+'a'*64,'--source-binding-protected'],
+                     ['--image','sha256:'+'a'*64,'--source-proof-protected']):
             with patch('sys.argv',['guard']+args),patch.object(guard,'verify_image') as inspect:
                 with self.assertRaises(SystemExit): guard.main()
                 inspect.assert_not_called()

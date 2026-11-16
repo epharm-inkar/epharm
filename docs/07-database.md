@@ -10,6 +10,10 @@ rows contain scoped internal/native IDs, proof/password digests and the original
 creation, verification, expiration and revocation times, but no token hash, process ID,
 raw IIN, name, phone or password. Authentication never queries this table.
 
+The isolated rehearsal sets `app.posm.staff.cleanup-cron=-` to disable the timer
+while comparing restored rows; direct PostgreSQL archival/concurrency tests remain
+required. Production keeps the default `0 17 * * * *` schedule.
+
 `app.posm.staff.source-proof-retention-days` defaults to 90, accepts 1–365, and counts
 from the original grant expiration. This is technical evidence retention, not a new
 eligibility/backfill window: exact device/database/USER/SESSION/workstation, proof
@@ -26,6 +30,10 @@ preserve this table and use a reviewed forward recovery image, not delete eviden
 This also applies during rollout: do not leave an old scheduler replica running
 alongside the new one. Its hourly cleanup at minute 17 can delete grants before
 the new archival cleanup sees them. Coordinate all scheduler replicas before rollout.
+The shared release verifier checks V106 table presence even when the archive is empty,
+and requires both archival cleanup and historical resolution in the target artifact.
+Packaged V106 activates the same artifact check before its first migration. v0.2.22
+remains eligible before V106, but cannot be an automatic or explicit rollback after it.
 
 Candidate V105 (`sale_seller_source`) adds nullable JSONB `pos_sales.seller_source`
 for the immutable namespace/native USER/SESSION/workstation of ordinary receipts.

@@ -140,9 +140,12 @@ Unknown or mismatching supplied codes remain persisted unmatched Excel rows (imp
 continues); they neither confirm nor flag an unrelated receipt. Missing codes also
 remain unmatched: a currently unique fiscal number cannot prove the export's pharmacy.
 Both fiscal matching and Excel-first SKU/amount selection require an explicit resolved
-pharmacy mapping. **Rollout gate:** validate and configure the export crosswalk before
-deployment; the empty default deliberately pauses all legacy Excel confirmations until
-verified mappings are supplied. Missing/unknown codes never auto-confirm or credit;
+pharmacy mapping. **Rollout gate for legacy Excel confirmations:** validate and
+configure the export crosswalk before enabling or preserving automatic confirmations.
+An installation with no active legacy Excel imports may be deployed with the empty
+map: import still preserves rows for HQ review, and automatic confirmation stays
+paused until verified mappings are supplied. Do not replace an existing verified
+crosswalk with the empty default. Missing/unknown codes never auto-confirm or credit;
 the raw rows remain available for HQ review. Existing rows are not deleted or replayed.
 
 ## Local candidate: recommendation sale rewards
