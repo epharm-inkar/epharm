@@ -73,6 +73,14 @@ springdoc:
     path: /swagger-ui.html
 
 app:
+  training:
+    auto-assignment:
+      # Explicit current program only; never infer the newest course or enroll directory-only staff.
+      enabled: ${TRAINING_AUTO_ASSIGNMENT_ENABLED:false}
+      program-id: ${TRAINING_AUTO_ASSIGNMENT_PROGRAM_ID:}
+      actor-id: ${TRAINING_AUTO_ASSIGNMENT_ACTOR_ID:}
+      delay-ms: ${TRAINING_AUTO_ASSIGNMENT_DELAY_MS:60000}
+      initial-delay-ms: ${TRAINING_AUTO_ASSIGNMENT_INITIAL_DELAY_MS:5000}
   standardn-directory:
     # Read-only mirror of Standard-N USERS. Enable only on the internal production network.
     enabled: ${STANDARDN_DIRECTORY_ENABLED:false}

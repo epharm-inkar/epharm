@@ -56,6 +56,27 @@ interface OfflineEventRepository : JpaRepository<OfflineEventEntity, UUID> {
 
 @Repository
 interface TrainingAssignmentRepository : JpaRepository<TrainingAssignmentEntity, UUID> {
+    @Query(value = """
+        SELECT EXISTS(
+            SELECT 1 FROM training_assignments a
+            JOIN training_program_versions v ON v.id=a.program_version_id
+            WHERE v.program_id=:programId AND a.pharmacist_id=:pharmacistId
+        )
+    """, nativeQuery = true)
+    fun existsForProgramAndPharmacist(programId: UUID, pharmacistId: String): Boolean
+
+    @Query(value = """
+        SELECT p.id FROM pharmacists p
+        WHERE p.status IN ('active','pending') AND p.id>:afterId
+          AND NOT EXISTS(
+              SELECT 1 FROM training_assignments a
+              JOIN training_program_versions v ON v.id=a.program_version_id
+              WHERE v.program_id=:programId AND a.pharmacist_id=p.id
+          )
+        ORDER BY p.id LIMIT :limit
+    """, nativeQuery = true)
+    fun findAutomaticAssignmentCandidates(programId: UUID, afterId: String, limit: Int): List<String>
+
     fun findAllByOrderByCreatedAtDesc(): List<TrainingAssignmentEntity>
     fun findAllByPharmacistIdOrderByCreatedAtDesc(pharmacistId: String): List<TrainingAssignmentEntity>
     fun findAllByPharmacistIdInOrderByCreatedAtDesc(pharmacistIds: Collection<String>): List<TrainingAssignmentEntity>

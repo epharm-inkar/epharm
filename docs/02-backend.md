@@ -1,5 +1,29 @@
 # Backend
 
+## Current training auto-assignment
+
+An opt-in reconciler assigns one explicitly selected published online training
+program to registered pharmacist profiles with status `active` or `pending`.
+It scans `pharmacists`, including OTP accounts without a password or pharmacy;
+the separate Standard-N directory is not an enrollment audience. This covers
+website, POSM and administrative registration without making registration depend
+on LMS availability. The default interval is 60 seconds; bounded per-person
+transactions let later cycles recover transient failures.
+
+Enable only with all three settings: `TRAINING_AUTO_ASSIGNMENT_ENABLED=true`,
+`TRAINING_AUTO_ASSIGNMENT_PROGRAM_ID`, and `TRAINING_AUTO_ASSIGNMENT_ACTOR_ID`.
+The selected accountable administrator must remain active and retain the role
+and explicit all-pharmacy permission to assign training. An absent, invalid,
+unpublished, paused, archived or expired target does not select another course.
+Changing the current program is an explicit configuration decision, never a
+side effect of publishing unrelated training.
+
+Any existing assignment for that program, across its versions and statuses,
+prevents automatic re-enrollment. Completed, cancelled and overdue history,
+progress and deadlines stay intact. New assignments use normal stages,
+notifications, counters and audit; assigning alone does not credit a wallet.
+The manual assignment endpoint keeps its existing active-only eligibility.
+
 ## Delayed reward authority candidate — 2026-11-15
 
 A stored `standardn_explicit_mapping` identity is historical attribution, not permission

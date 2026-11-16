@@ -12,6 +12,23 @@ All notable production changes to Epharm are recorded here. The format follows
   form through technical context changes, and refresh context only on explicit
   submit. Expired or revoked grants remain invalid; cashier operation stays available.
 
+## [0.2.20] - 2026-11-16
+
+### Added
+
+- Opt-in automatic enrollment in an explicitly selected current online program
+  for existing and newly registered active or pending pharmacists, including
+  accounts created on a POSM cash register or without an initial password.
+- A bounded reconciliation worker validates the accountable administrator's
+  current authority and the published program/course before enrollment. It
+  preserves assignment history across versions, progress, deadlines and money;
+  retries do not create duplicate assignments or notifications.
+
+### Fixed
+
+- Serialize manual and automatic training assignment creation through the same
+  database authority gate while retaining manual active-only eligibility.
+
 ## [0.2.19] - 2026-11-16
 
 ### Fixed

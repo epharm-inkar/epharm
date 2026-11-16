@@ -1,7 +1,11 @@
 package kz.epharm.training.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kz.epharm.auth.access.UnifiedAccessStore
+import kz.epharm.auth.access.UnifiedAdminCatalog
+import kz.epharm.auth.access.UnifiedAuthorityLock
 import kz.epharm.auth.domain.AdminRole
+import kz.epharm.auth.policy.AccessRequest
 import kz.epharm.auth.repository.AdminUserRepository
 import kz.epharm.auth.security.AdminPrincipal
 import kz.epharm.finance.service.PharmacistWalletService
@@ -12,6 +16,7 @@ import kz.epharm.lms.repository.CourseLessonAttachmentRepository
 import kz.epharm.lms.dto.CourseContentDto
 import kz.epharm.lms.entity.CourseLessonKind
 import kz.epharm.lms.entity.CourseLiveStatus
+import kz.epharm.lms.entity.CourseStatus
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
@@ -108,6 +113,8 @@ import kotlin.math.roundToInt
 @Service
 class TrainingService(
     private val administrativeAccess: kz.epharm.training.access.TrainingAdministrativeAccess,
+    private val unifiedAccessStore: UnifiedAccessStore,
+    private val unifiedAdminCatalog: UnifiedAdminCatalog,
     private val programRepository: TrainingProgramRepository,
     private val versionRepository: TrainingProgramVersionRepository,
     private val programStageRepository: TrainingProgramStageRepository,
@@ -751,6 +758,8 @@ class TrainingService(
         principal: AdminPrincipal,
     ): MassAssignmentResultDto {
         administrativeAccess.lockWriter()
+        // Legacy/manual and background enrollment must serialize the same duplicate check and counters.
+        UnifiedAuthorityLock.acquire(jdbcTemplate)
         val program = loadProgram(req.programId)
         if (program.status !in setOf(TrainingProgramStatus.published, TrainingProgramStatus.scheduled, TrainingProgramStatus.paused)) {
             badRequest("Назначать можно только опубликованную или запланированную программу")
@@ -809,50 +818,8 @@ class TrainingService(
                 return@forEach
             }
 
-            val repeatNo = assignmentRepository
-                .findAllByProgramVersionIdAndPharmacistIdOrderByRepeatNoDesc(version.id, pharmacistId)
-                .firstOrNull()?.repeatNo?.plus(1) ?: 1
-            val assignment = TrainingAssignmentEntity(
-                programVersionId = version.id,
-                pharmacistId = pharmacistId,
-                required = req.required,
-                assignedBy = principal.userId,
-                responsibleId = req.responsibleId,
-                eventId = event?.id,
-                startsAt = req.startsAt,
-                dueAt = req.dueAt ?: Instant.now().plusSeconds(program.normativeDays * 86_400L),
-                repeatNo = repeatNo,
-            ).also {
-                it.format = req.format
-                it.priority = req.priority
-                it.status = initialAssignmentStatus(req.startsAt, req.format, event)
-            }
-            val saved = try {
-                assignmentRepository.saveAndFlush(assignment)
-            } catch (_: DataIntegrityViolationException) {
-                conflict("Активное назначение этой программы уже существует")
-            }
-            createAssignmentStages(saved, version)
-            if (event != null) attachEvent(saved, event, pharmacistId)
-            createNotification(
-                pharmacistId = pharmacistId,
-                assignmentId = saved.id,
-                eventId = event?.id,
-                eventType = "training_assigned",
-                payload = mapOf("program" to program.name, "format" to req.format.name),
-            )
-            scheduleDeadlineNotifications(saved, program.name)
-            val pharmacist = pharmacists.getValue(pharmacistId)
-            pharmacist.coursesTotal += 1
-            pharmacistRepository.save(pharmacist)
-            version.onlineCourseId?.let { courseId ->
-                courseRepository.findById(courseId).ifPresent { course ->
-                    course.enrolled += 1
-                    courseRepository.save(course)
-                }
-            }
             created++
-            result += saved
+            result += createNewAssignment(req, program, version, pharmacists.getValue(pharmacistId), principal.userId, event)
         }
         audit(
             principal.userId.toString(),
@@ -863,6 +830,121 @@ class TrainingService(
             mapOf("created" to created, "updated" to updated, "skipped" to skipped),
         )
         return MassAssignmentResultDto(created, updated, skipped, mapAssignments(result))
+    }
+
+    @Transactional
+    fun validateAutomaticAssignmentTarget(programId: UUID, actorId: UUID) {
+        UnifiedAuthorityLock.acquire(jdbcTemplate)
+        automaticAssignmentTarget(programId, actorId)
+    }
+
+    @Transactional
+    fun ensureAutomaticAssignment(programId: UUID, actorId: UUID, pharmacistId: String): Boolean {
+        UnifiedAuthorityLock.acquire(jdbcTemplate)
+        val (program, version) = automaticAssignmentTarget(programId, actorId)
+        val pharmacist = pharmacistRepository.findByIdForUpdate(pharmacistId) ?: return false
+        if (pharmacist.status !in setOf(PharmacistStatus.active, PharmacistStatus.pending)) return false
+        // Completion, cancellation and old versions are history, never a request to start again.
+        if (assignmentRepository.existsForProgramAndPharmacist(programId, pharmacistId)) return false
+        val now = Instant.now()
+        val startsAt = program.startsAt?.takeIf { it.isAfter(now) } ?: now
+        val normativeDeadline = startsAt.plusSeconds(program.normativeDays * 86_400L)
+        val dueAt = program.endsAt?.takeIf { it.isBefore(normativeDeadline) } ?: normativeDeadline
+        if (!dueAt.isAfter(startsAt)) badRequest("Срок текущей программы обучения завершён")
+        val req = CreateTrainingAssignmentsRequest(
+            programId = programId,
+            pharmacistIds = setOf(pharmacistId),
+            format = TrainingFormat.online,
+            startsAt = startsAt,
+            dueAt = dueAt,
+        )
+        val assignment = createNewAssignment(req, program, version, pharmacist, actorId, null)
+        audit(actorId.toString(), "system", "automatic_assignment_created", "training_program", programId.toString(),
+            mapOf("assignmentId" to assignment.id.toString(), "pharmacistId" to pharmacistId))
+        return true
+    }
+
+    private fun automaticAssignmentTarget(programId: UUID, actorId: UUID): Pair<TrainingProgramEntity, TrainingProgramVersionEntity> {
+        val access = unifiedAccessStore.loadAccount(actorId)
+            ?: forbidden("Аккаунт ответственного за автоматическое обучение недоступен")
+        val permission = UnifiedAdminCatalog.key("training", "assignments", "assign")
+        val scope = unifiedAdminCatalog.allScope(permission)
+        if (access.role !in setOf(AdminRole.SYSTEM_ADMIN, AdminRole.TRAINING_MANAGER) ||
+            access.actor.grants.none { it.permission == permission && it.scope.covers(scope) } ||
+            !unifiedAdminCatalog.policy.authorizeScope(access.actor, AccessRequest(permission, scope), Instant.now()).allowed) {
+            forbidden("Для автоматического обучения требуется явное право назначения на все аптеки")
+        }
+        val program = loadProgram(programId)
+        val now = Instant.now()
+        if (program.status != TrainingProgramStatus.published || program.normativeDays <= 0 ||
+            program.endsAt?.isAfter(now) == false) {
+            badRequest("Текущая программа обучения должна быть опубликована и действовать")
+        }
+        val version = loadCurrentVersion(program)
+        if (TrainingFormat.online !in version.allowedFormats) badRequest("Текущая программа не поддерживает онлайн-обучение")
+        val course = version.onlineCourseId?.let { courseRepository.findById(it).orElse(null) }
+        if (course == null || course.status != CourseStatus.published ||
+            courseLessonRepository.findAllByCourseIdOrderByOrderAscCreatedAtAsc(course.id).isEmpty()) {
+            badRequest("Для автоматического обучения нужен опубликованный онлайн-курс с уроками")
+        }
+        if (programStageRepository.findAllByVersionIdOrderByOrderNoAsc(version.id).none {
+                it.type == TrainingStageType.online_course && TrainingFormat.online in it.applicableFormats
+            }) {
+            badRequest("Маршрут текущей программы должен содержать этап онлайн-курса")
+        }
+        return program to version
+    }
+
+    private fun createNewAssignment(
+        req: CreateTrainingAssignmentsRequest,
+        program: TrainingProgramEntity,
+        version: TrainingProgramVersionEntity,
+        pharmacist: PharmacistEntity,
+        assignedBy: UUID,
+        event: OfflineEventEntity?,
+    ): TrainingAssignmentEntity {
+        val repeatNo = assignmentRepository
+            .findAllByProgramVersionIdAndPharmacistIdOrderByRepeatNoDesc(version.id, pharmacist.id)
+            .firstOrNull()?.repeatNo?.plus(1) ?: 1
+        val assignment = TrainingAssignmentEntity(
+            programVersionId = version.id,
+            pharmacistId = pharmacist.id,
+            required = req.required,
+            assignedBy = assignedBy,
+            responsibleId = req.responsibleId,
+            eventId = event?.id,
+            startsAt = req.startsAt,
+            dueAt = req.dueAt ?: Instant.now().plusSeconds(program.normativeDays * 86_400L),
+            repeatNo = repeatNo,
+        ).also {
+            it.format = req.format
+            it.priority = req.priority
+            it.status = initialAssignmentStatus(req.startsAt, req.format, event)
+        }
+        val saved = try {
+            assignmentRepository.saveAndFlush(assignment)
+        } catch (_: DataIntegrityViolationException) {
+            conflict("Активное назначение этой программы уже существует")
+        }
+        createAssignmentStages(saved, version)
+        if (event != null) attachEvent(saved, event, pharmacist.id)
+        createNotification(
+            pharmacistId = pharmacist.id,
+            assignmentId = saved.id,
+            eventId = event?.id,
+            eventType = "training_assigned",
+            payload = mapOf("program" to program.name, "format" to req.format.name),
+        )
+        scheduleDeadlineNotifications(saved, program.name)
+        pharmacist.coursesTotal += 1
+        pharmacistRepository.save(pharmacist)
+        version.onlineCourseId?.let { courseId ->
+            courseRepository.findById(courseId).ifPresent { course ->
+                course.enrolled += 1
+                courseRepository.save(course)
+            }
+        }
+        return saved
     }
 
     @Transactional
