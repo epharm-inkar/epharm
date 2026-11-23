@@ -174,7 +174,7 @@ Git tag, registry publication, production connection or deployment.
 ```bash
 gh workflow run release-images.yml --ref main \
   -f exact_commit=EXACT_MAIN_40_HEX -f release_id=v0.2.0
-gh run download RUN_ID -R sabirovv17/epharm \
+gh run download RUN_ID -R epharm-inkar/epharm \
   -n epharm-images-v0.2.0-EXACT_MAIN_40_HEX --dir NEW_PRIVATE_DIRECTORY
 ```
 
@@ -413,19 +413,32 @@ endpoint whose only purpose is generating errors.
 
 ## Immutable application releases and rollback
 
-`main` is the release source of truth. The **Main promotion owner** GitHub ruleset restricts main
-updates to `sabirovv17` on PRs only (policy snapshot: `.github/rulesets/main-release-owner.json`).
-Other collaborators can still push task branches and open PRs. The owner exemption is limited to
-that update-ownership rule: the separate PR/CodeQL rules and strict GitHub-Actions-pinned P0 check
-still apply. Do not add CI or review bypasses to solve a deployment failure. There is currently one
-code owner, so mandatory self-approval is not used as a substitute for owner-controlled promotion.
+`main` is the release source of truth. The **Main promotion owner** GitHub ruleset permits
+`sabirovv17` and delegated repository administrator `beamingdeamon` to update main on PRs only
+(policy snapshot: `.github/rulesets/main-release-owner.json`). Other collaborators can still push
+task branches and open PRs. These exemptions are limited to that update-ownership rule: the
+separate PR/CodeQL rules and strict GitHub-Actions-pinned P0 check still apply. Do not add CI or
+review bypasses to solve a deployment failure. Mandatory self-approval is not used as a substitute
+for controlled promotion.
 
 For a new promotion, `verify-release-source.py <full-commit>` requires the exact current remote
 `main`, its newest successful push-run of `ci.yml`, and the successful P0 gate from the GitHub
 Actions app in that run. It rechecks main before succeeding and fails closed on missing/stale CI
 or unavailable evidence. It uses standard HTTPS; a public repository needs no credential, while
 `GH_TOKEN`/`GITHUB_TOKEN` can be supplied from secret storage for private access or API limits.
+The gate pins the permanent GitHub repository ID `1251358775` and resolves its current canonical
+name through the GitHub API. A transfer from `sabirovv17/epharm` to `epharm-inkar/epharm` must not
+require trusting a new repository or following an authenticated redirect. Forks and a recreated
+repository at a historical name do not inherit that trust. Existing CI may still carry the old
+owner name, so its repository IDs, exact commit and check-suite identity remain authoritative.
 The gate is called by prepare and new deployment transactions, never by explicit rollback.
+
+For the organization handover, `sabirovv17` retains the organization Owner role and
+`beamingdeamon` receives Admin only on the two project repositories. Organization member deletion
+and transfer privileges stay disabled so only organization owners can delete or move them.
+Preserve the POSM release repository ID `1349541668`, release assets, tags and existing signed
+download URLs. Verify old URLs redirect to the same bytes before considering the handover done;
+do not rotate the offline POSM signing key or change `epharm.inkar.kz` as part of a GitHub transfer.
 
 The `container / admin production build` CI job runs isolated browser scenarios against the
 actual nginx image. All API requests are mocked/deny-by-default; production reset, login and draft

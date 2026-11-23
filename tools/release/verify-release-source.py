@@ -8,7 +8,7 @@ import re
 import sys
 import urllib.request
 
-REPOSITORY = 'sabirovv17/epharm'
+REPOSITORY_ID = 1251358775
 WORKFLOW_PATH = '.github/workflows/ci.yml'
 GATE_NAME = 'P0 / merge gate'
 ACTIONS_APP_ID = 15368
@@ -24,6 +24,16 @@ def require_commit(commit: str) -> str:
     if not re.fullmatch(r'[a-f0-9]{40}', commit):
         raise ValueError('An exact lowercase 40-hex Git commit is required')
     return commit
+
+
+def repository_name(repository: dict) -> str:
+    name = repository.get('full_name')
+    if (type(repository.get('id')) is not int or repository['id'] != REPOSITORY_ID
+            or repository.get('fork') is not False
+            or not isinstance(name, str)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9][A-Za-z0-9._-]*', name)):
+        raise ValueError('Trusted repository identity is invalid')
+    return name
 
 
 def validate_main(commit: str, main: dict) -> None:
@@ -50,8 +60,8 @@ def select_ci_run(commit: str, main: dict, workflow: dict, runs: dict) -> dict:
                for key in ('id', 'run_number', 'run_attempt', 'check_suite_id')):
             raise ValueError('Invalid CI run identity')
     run = max(candidates, key=lambda item: (item['run_number'], item['run_attempt']))
-    if (run.get('repository', {}).get('full_name') != REPOSITORY
-            or run.get('head_repository', {}).get('full_name') != REPOSITORY
+    if (any(type(run.get(field, {}).get('id')) is not int
+            or run[field]['id'] != REPOSITORY_ID for field in ('repository', 'head_repository'))
             or run.get('path') != WORKFLOW_PATH):
         raise ValueError('CI run does not belong to the trusted repository/workflow')
     if run.get('status') != 'completed' or run.get('conclusion') != 'success':
@@ -86,7 +96,7 @@ def github_api(path: str) -> dict:
         if token:
             headers['Authorization'] = f'Bearer {token}'
         request = urllib.request.Request(
-            f'https://api.github.com/repos/{REPOSITORY}/{path}', headers=headers, method='GET')
+            f'https://api.github.com/{path}', headers=headers, method='GET')
         # Never forward an optional bearer token to a redirected origin.
         opener = urllib.request.build_opener(NoRedirect())
         with opener.open(request, timeout=30) as response:
@@ -105,19 +115,25 @@ def github_api(path: str) -> dict:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('commit', help='Exact current main commit; rollback is a separate operation')
+    parser.add_argument('--print-repository', action='store_true',
+                        help='Print only the verified canonical repository name after all checks pass')
     args = parser.parse_args(argv)
     try:
         commit = require_commit(args.commit)
-        head = github_api('commits/main')
+        repository = repository_name(github_api(f'repositories/{REPOSITORY_ID}'))
+        api_root = f'repos/{repository}'
+        head = github_api(f'{api_root}/commits/main')
         validate_main(commit, head)
-        workflow = github_api('actions/workflows/ci.yml')
+        workflow = github_api(f'{api_root}/actions/workflows/ci.yml')
         runs = github_api(
-            f'actions/workflows/ci.yml/runs?branch=main&event=push&head_sha={commit}&per_page=100')
+            f'{api_root}/actions/workflows/ci.yml/runs?branch=main&event=push&head_sha={commit}&per_page=100')
         run = select_ci_run(commit, head, workflow, runs)
         checks = github_api(
-            f'check-suites/{run["check_suite_id"]}/check-runs?filter=latest&per_page=100')
+            f'{api_root}/check-suites/{run["check_suite_id"]}/check-runs?filter=latest&per_page=100')
         validate_gate(commit, run, checks)
-        validate_main(commit, github_api('commits/main'))
+        validate_main(commit, github_api(f'{api_root}/commits/main'))
+        if repository_name(github_api(f'repositories/{REPOSITORY_ID}')) != repository:
+            raise ValueError('Trusted repository moved during verification; retry')
     except (ValueError, AttributeError, KeyError, TypeError) as error:
         if isinstance(error, ValueError):
             message = str(error)
@@ -125,7 +141,8 @@ def main(argv=None) -> int:
             message = 'Invalid GitHub evidence; promotion denied'
         print(f'ERROR: {message}', file=sys.stderr)
         return 1
-    print(f'Release source verified: {REPOSITORY} main {commit}; CI run {run["id"]}; {GATE_NAME} success')
+    print(repository if args.print_repository else
+          f'Release source verified: {repository} main {commit}; CI run {run["id"]}; {GATE_NAME} success')
     return 0
 
 

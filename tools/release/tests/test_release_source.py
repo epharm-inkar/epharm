@@ -16,10 +16,12 @@ spec.loader.exec_module(source)
 
 COMMIT = 'a' * 40
 OTHER_COMMIT = 'b' * 40
+REPOSITORY = 'epharm-inkar/epharm'
 
 
 class ReleaseSourceTests(unittest.TestCase):
     def setUp(self):
+        self.repository = {'id': source.REPOSITORY_ID, 'full_name': REPOSITORY, 'fork': False}
         self.head = {'sha': COMMIT}
         self.workflow = {'id': 42, 'path': source.WORKFLOW_PATH, 'state': 'active'}
         self.run = {
@@ -27,8 +29,8 @@ class ReleaseSourceTests(unittest.TestCase):
             'check_suite_id': 200, 'path': source.WORKFLOW_PATH,
             'head_sha': COMMIT, 'head_branch': 'main', 'event': 'push',
             'status': 'completed', 'conclusion': 'success',
-            'repository': {'full_name': source.REPOSITORY},
-            'head_repository': {'full_name': source.REPOSITORY},
+            'repository': {'id': source.REPOSITORY_ID, 'full_name': 'sabirovv17/epharm'},
+            'head_repository': {'id': source.REPOSITORY_ID, 'full_name': 'sabirovv17/epharm'},
         }
         self.runs = {'workflow_runs': [self.run]}
         self.gate = {
@@ -74,8 +76,10 @@ class ReleaseSourceTests(unittest.TestCase):
                     source.select_ci_run(COMMIT, self.head, self.workflow, runs)
 
     def test_foreign_repository_or_workflow_run_rejected(self):
-        for key, value in (('repository', {'full_name': 'other/epharm'}),
-                           ('head_repository', {'full_name': 'other/epharm'}),
+        for key, value in (('repository', {'id': 999, 'full_name': REPOSITORY}),
+                           ('head_repository', {'id': 999, 'full_name': REPOSITORY}),
+                           ('repository', {'id': str(source.REPOSITORY_ID), 'full_name': REPOSITORY}),
+                           ('head_repository', {'full_name': REPOSITORY}),
                            ('path', '.github/workflows/fake.yml')):
             with self.subTest(key=key):
                 runs = {'workflow_runs': [dict(self.run, **{key: value})]}
@@ -142,27 +146,65 @@ class ReleaseSourceTests(unittest.TestCase):
                 source.select_ci_run(COMMIT, self.head, self.workflow, runs)
 
     def evidence(self):
-        return copy.deepcopy([self.head, self.workflow, self.runs, self.checks, self.head])
+        return copy.deepcopy([self.repository, self.head, self.workflow, self.runs, self.checks,
+                              self.head, self.repository])
 
-    def test_cli_reads_only_fixed_github_repo_and_verifies_twice(self):
+    def test_cli_resolves_fixed_repository_id_and_verifies_main_twice(self):
         opener = Mock()
         opener.open.side_effect = [io.BytesIO(json.dumps(payload).encode()) for payload in self.evidence()]
         with patch.object(source.urllib.request, 'build_opener', return_value=opener) as builder:
             with contextlib.redirect_stdout(io.StringIO()) as output:
-                with patch.dict(source.os.environ, {}, clear=True):
+                with patch.dict(source.os.environ, {'GITHUB_REPOSITORY': 'attacker/fork'}, clear=True):
                     self.assertEqual(source.main([COMMIT]), 0)
         self.assertIn(COMMIT, output.getvalue())
         paths = [call.args[0].full_url for call in opener.open.call_args_list]
-        self.assertEqual(paths[0], f'https://api.github.com/repos/{source.REPOSITORY}/commits/main')
+        self.assertEqual(paths[0], f'https://api.github.com/repositories/{source.REPOSITORY_ID}')
+        self.assertEqual(paths[1], f'https://api.github.com/repos/{REPOSITORY}/commits/main')
+        self.assertEqual(paths[-2], paths[1])
         self.assertEqual(paths[-1], paths[0])
-        self.assertIn('head_sha=' + COMMIT, paths[2])
-        self.assertIn('check-suites/200/check-runs', paths[3])
+        self.assertIn('head_sha=' + COMMIT, paths[3])
+        self.assertIn('check-suites/200/check-runs', paths[4])
+        self.assertTrue(all(path.startswith(f'https://api.github.com/repos/{REPOSITORY}/') for path in paths[1:-1]))
         for call in opener.open.call_args_list:
             self.assertEqual(call.args[0].get_method(), 'GET')
             self.assertIsNone(call.args[0].get_header('Authorization'))
             self.assertEqual(call.kwargs['timeout'], 30)
         for call in builder.call_args_list:
             self.assertIsInstance(call.args[0], source.NoRedirect)
+
+    def test_original_and_transferred_repository_names_are_resolved_by_id(self):
+        for name in ('sabirovv17/epharm', REPOSITORY):
+            with self.subTest(name=name):
+                responses = self.evidence()
+                responses[0]['full_name'] = name
+                responses[-1]['full_name'] = name
+                with patch.object(source, 'github_api', side_effect=responses) as api:
+                    with contextlib.redirect_stdout(io.StringIO()) as output:
+                        self.assertEqual(source.main([COMMIT, '--print-repository']), 0)
+                self.assertEqual(output.getvalue(), name + '\n')
+                self.assertEqual(api.call_args_list[1].args[0], f'repos/{name}/commits/main')
+
+    def test_missing_foreign_forked_or_unsafe_repository_metadata_is_rejected(self):
+        for change in ({'id': 999}, {'id': str(source.REPOSITORY_ID)}, {'id': True},
+                       {'fork': True}, {'fork': None}, {'full_name': 'other/repo/extra'},
+                       {'full_name': '../epharm'}, {'full_name': 'owner/..'},
+                       {'full_name': 'owner/repo?token=secret'}, {'full_name': None}):
+            with self.subTest(change=change):
+                with patch.object(source, 'github_api', return_value=dict(self.repository, **change)) as api:
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        with contextlib.redirect_stdout(io.StringIO()) as output:
+                            self.assertEqual(source.main([COMMIT, '--print-repository']), 1)
+                self.assertEqual(output.getvalue(), '')
+                self.assertEqual(api.call_count, 1)
+
+    def test_print_repository_does_not_bypass_ci_or_gate(self):
+        responses = self.evidence()
+        responses[4]['check_runs'][0]['conclusion'] = 'failure'
+        with patch.object(source, 'github_api', side_effect=responses):
+            with contextlib.redirect_stderr(io.StringIO()):
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(source.main([COMMIT, '--print-repository']), 1)
+        self.assertEqual(output.getvalue(), '')
 
     def test_optional_environment_token_only_in_request_header(self):
         for environment, expected in (({'GH_TOKEN': 'gh-secret'}, 'gh-secret'),
@@ -173,7 +215,7 @@ class ReleaseSourceTests(unittest.TestCase):
                 opener.open.return_value = io.BytesIO(b'{}')
                 with patch.object(source.urllib.request, 'build_opener', return_value=opener):
                     with patch.dict(source.os.environ, environment, clear=True):
-                        self.assertEqual(source.github_api('commits/main'), {})
+                        self.assertEqual(source.github_api(f'repos/{REPOSITORY}/commits/main'), {})
                 request = opener.open.call_args.args[0]
                 self.assertEqual(request.get_header('Authorization'), 'Bearer ' + expected)
                 self.assertNotIn(expected, request.full_url)
@@ -195,16 +237,26 @@ class ReleaseSourceTests(unittest.TestCase):
         opener.open.return_value = response
         with patch.object(source.urllib.request, 'build_opener', return_value=opener):
             with self.assertRaisesRegex(ValueError, 'promotion denied'):
-                source.github_api('commits/main')
+                source.github_api(f'repos/{REPOSITORY}/commits/main')
         response.read.assert_called_once_with(source.MAX_API_BYTES + 1)
 
     def test_main_moving_during_verification_rejected(self):
         responses = self.evidence()
-        responses[-1] = {'sha': OTHER_COMMIT}
+        responses[-2] = {'sha': OTHER_COMMIT}
         with patch.object(source, 'github_api', side_effect=responses):
             with contextlib.redirect_stderr(io.StringIO()) as error:
                 self.assertEqual(source.main([COMMIT]), 1)
         self.assertIn('current trusted main', error.getvalue())
+
+    def test_repository_moving_during_verification_rejected(self):
+        responses = self.evidence()
+        responses[-1] = dict(responses[-1], full_name='new-owner/epharm')
+        with patch.object(source, 'github_api', side_effect=responses):
+            with contextlib.redirect_stderr(io.StringIO()) as error:
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(source.main([COMMIT, '--print-repository']), 1)
+        self.assertIn('moved during verification', error.getvalue())
+        self.assertEqual(output.getvalue(), '')
 
     def test_network_http_json_and_shape_errors_fail_without_secret_output(self):
         secret = 'SECRET_TOKEN_MUST_NOT_APPEAR'
@@ -230,7 +282,7 @@ class ReleaseSourceTests(unittest.TestCase):
 
     def test_malformed_nested_evidence_reports_safe_error(self):
         responses = self.evidence()
-        responses[2]['workflow_runs'][0]['repository'] = None
+        responses[3]['workflow_runs'][0]['repository'] = None
         with patch.object(source, 'github_api', side_effect=responses):
             with contextlib.redirect_stderr(io.StringIO()) as error:
                 self.assertEqual(source.main([COMMIT]), 1)
