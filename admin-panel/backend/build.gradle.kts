@@ -9,6 +9,9 @@ plugins {
     alias(libs.plugins.spring.dep.mgmt)
 }
 
+// Align BOM-managed core with the test modules that support current Docker APIs.
+extra["testcontainers.version"] = libs.versions.testcontainers.get()
+
 group = "kz.epharm"
 version = "0.1.0-SNAPSHOT"
 
