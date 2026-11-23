@@ -5,6 +5,9 @@
   "conditions": {
     "ref_name": { "include": ["refs/heads/main"], "exclude": [] }
   },
-  "bypass_actors": [{ "actor_id": 149251627, "actor_type": "User", "bypass_mode": "pull_request" }],
+  "bypass_actors": [
+    { "actor_id": 149251627, "actor_type": "User", "bypass_mode": "pull_request" },
+    { "actor_id": 51133964, "actor_type": "User", "bypass_mode": "pull_request" }
+  ],
   "rules": [{ "type": "update" }]
 }

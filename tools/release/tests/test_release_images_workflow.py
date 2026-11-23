@@ -36,7 +36,8 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         self.runner.mkdir()
         self.env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
                         RUNNER_TEMP=str(self.runner), COMMIT=COMMIT, RELEASE_ID='v0.2.0',
-                        GITHUB_REPOSITORY='sabirovv17/epharm', GITHUB_REF='refs/heads/main',
+                        GITHUB_REPOSITORY='epharm-inkar/epharm', GITHUB_REPOSITORY_ID='1251358775',
+                        GITHUB_REF='refs/heads/main',
                         GITHUB_SHA=COMMIT, COMMAND_LOG=str(self.root / 'commands.jsonl'))
         self.command('git', '''
             import os, pathlib, sys
@@ -53,12 +54,15 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
             import json, os, sys
             with open(os.environ['COMMAND_LOG'],'a') as f:f.write('gh\\n')
             if os.environ.get('API_FAIL'):raise SystemExit(19)
+            assert sys.argv[1:]==['api','repos/'+os.environ['VERIFIED_REPOSITORY']+'/git/matching-refs/tags/'+os.environ['RELEASE_ID']]
             print(os.environ.get('TAG_RESPONSE','[]'))
         ''')
         self.command('python3', '''
             import os, sys
             if len(sys.argv)>1 and sys.argv[1]=='tools/release/verify-release-source.py':
                 with open(os.environ['COMMAND_LOG'],'a') as f:f.write('source-gate\\n')
+                assert sys.argv[2:]==[os.environ['COMMIT'],'--print-repository']
+                print(os.environ.get('VERIFIED_REPOSITORY','epharm-inkar/epharm'))
                 raise SystemExit(17 if os.environ.get('SOURCE_GATE_FAIL') else 0)
             os.execv(REAL_PYTHON,[REAL_PYTHON,*sys.argv[1:]])
         '''.replace('REAL_PYTHON', repr(sys.executable)))
@@ -69,7 +73,9 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         path.chmod(0o700)
 
     def execute(self, script, **changes):
-        return subprocess.run(['bash', '-c', script], env=dict(self.env, **changes), cwd=self.root,
+        environment = dict(self.env, VERIFIED_REPOSITORY='epharm-inkar/epharm')
+        environment.update(changes)
+        return subprocess.run(['bash', '-c', script], env=environment, cwd=self.root,
                               capture_output=True, text=True, timeout=15)
 
     def gate(self, **changes):
@@ -87,15 +93,25 @@ class ReleaseImagesWorkflowTest(unittest.TestCase):
         return self.execute(run_block('archive'), ARCHIVE_FIXTURE=str(path))
 
     def test_valid_main_and_release_candidate_identity(self):
-        for release in ('v0.2.0', 'v0.2.0-rc.1'):
-            with self.subTest(release=release):
-                self.assertEqual(self.execute(run_block('identity'), RELEASE_ID=release).returncode, 0)
+        for repository in ('sabirovv17/epharm', 'epharm-inkar/epharm'):
+            for release in ('v0.2.0', 'v0.2.0-rc.1'):
+                with self.subTest(repository=repository, release=release):
+                    self.assertEqual(self.execute(run_block('identity'), GITHUB_REPOSITORY=repository,
+                                                  RELEASE_ID=release).returncode, 0)
 
-    def test_foreign_repository_nonmain_or_different_dispatch_sha_rejected(self):
-        for field, value in (('GITHUB_REPOSITORY', 'other/epharm'), ('GITHUB_REF', 'refs/heads/codex/test'),
+    def test_foreign_repository_id_nonmain_or_different_dispatch_sha_rejected(self):
+        for field, value in (('GITHUB_REPOSITORY_ID', '999'), ('GITHUB_REPOSITORY_ID', ''),
+                             ('GITHUB_REF', 'refs/heads/codex/test'),
                              ('GITHUB_SHA', 'b' * 40)):
             with self.subTest(field=field):
                 self.assertNotEqual(self.execute(run_block('identity'), **{field: value}).returncode, 0)
+
+    def test_tag_lookup_uses_only_verified_canonical_repository(self):
+        for repository in ('sabirovv17/epharm', 'epharm-inkar/epharm'):
+            with self.subTest(repository=repository):
+                self.assertEqual(self.gate(GITHUB_REPOSITORY=repository,
+                                           VERIFIED_REPOSITORY=repository).returncode, 0)
+        self.assertNotEqual(self.gate(GITHUB_REPOSITORY='attacker/fork').returncode, 0)
 
     def test_sha_version_token_and_command_injections_never_execute_or_echo(self):
         marker = self.root / 'must-not-exist'

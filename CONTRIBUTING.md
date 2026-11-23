@@ -8,9 +8,11 @@ Current workflow for this repository.
 - Work in short-lived task branches.
 - No direct push to `main`.
 - Merge by squash PR.
-- Only the repository owner (`sabirovv17`) may promote a PR into `main`. Other collaborators retain
-  their task branches and PRs. The separate **Main promotion owner** ruleset restricts main updates
-  to that account on pull requests only; it does not bypass the independent CI, CodeQL or PR rules.
+- The organization owner (`sabirovv17`) and delegated repository administrator (`beamingdeamon`)
+  may promote a PR into `main`. Other collaborators retain their task branches and PRs. The separate
+  main-promotion ruleset must permit both maintainers on pull requests only; it must not bypass
+  the independent CI, CodeQL or PR rules. Repository administration does not grant organization
+  ownership or production-server access.
 - `P0 / merge gate` must come from the GitHub Actions app, on the current PR revision. A matching
   status name from another integration is not an accepted substitute.
 

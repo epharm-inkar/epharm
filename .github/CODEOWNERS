@@ -1,22 +1,22 @@
 # CODEOWNERS — кто получает запрос на ревью при изменении файлов.
-# Формат: <path>  <github-user>
+# Формат: <path>  <github-users>
 # Документация: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-customizations/customizing-your-repository/about-code-owners
 
-# Дефолтный owner всего репо.
-*                                   @sabirovv17
+# Владелец и делегированный руководитель разработки.
+*                                   @sabirovv17 @beamingdeamon
 
-# Зоны (раздадим членам команды, когда они появятся).
-/.github/                           @sabirovv17
-/admin-panel/backend/               @sabirovv17
-/admin-panel/frontend/              @sabirovv17
-/storefront/                        @sabirovv17
-/lib/                               @sabirovv17
-/android/                           @sabirovv17
-/ios/                               @sabirovv17
-/App/                               @sabirovv17
-/App.Tests/                         @sabirovv17
-/Models/                            @sabirovv17
-/ops/                               @sabirovv17
-/tools/                             @sabirovv17
-/admin-panel/design-tokens-admin.md @sabirovv17
-/_reference/design-tokens.md        @sabirovv17
+# Ответственные по областям сохраняют независимые проверки PR и CI.
+/.github/                           @sabirovv17 @beamingdeamon
+/admin-panel/backend/               @sabirovv17 @beamingdeamon
+/admin-panel/frontend/              @sabirovv17 @beamingdeamon
+/storefront/                        @sabirovv17 @beamingdeamon
+/lib/                               @sabirovv17 @beamingdeamon
+/android/                           @sabirovv17 @beamingdeamon
+/ios/                               @sabirovv17 @beamingdeamon
+/App/                               @sabirovv17 @beamingdeamon
+/App.Tests/                         @sabirovv17 @beamingdeamon
+/Models/                            @sabirovv17 @beamingdeamon
+/ops/                               @sabirovv17 @beamingdeamon
+/tools/                             @sabirovv17 @beamingdeamon
+/admin-panel/design-tokens-admin.md @sabirovv17 @beamingdeamon
+/_reference/design-tokens.md        @sabirovv17 @beamingdeamon
