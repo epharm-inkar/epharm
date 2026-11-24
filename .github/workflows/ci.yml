@@ -155,7 +155,7 @@ jobs:
             | node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8")).services; if(s.backend.image!=="epharm/backend:v0.1.21"||s.backend.environment.RELEASE_ID!=="v0.1.21"||s.frontend.image!=="epharm/frontend:v0.1.22"||s.frontend.build.args.VITE_RELEASE_COMMIT!=="learner-auth-sidebar-fix") process.exit(1)'
       - name: Validate monitoring and Apple metadata
         run: |
-          docker run --rm --entrypoint promtool -v "$PWD/ops/monitoring/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+          ./tools/check-monitoring.sh
           python3 -m json.tool ops/monitoring/grafana/dashboards/epharm-overview.json >/dev/null
           python3 - <<'PY'
           import plistlib

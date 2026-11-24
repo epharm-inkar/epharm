@@ -1,0 +1,136 @@
+# promtool test rules ops/monitoring/prometheus/tests/epharm-business-alerts.test.yml
+# Test time starts at 1970-01-01 00:00 UTC, so 06:30 is daytime in Almaty and 03:00 or 16:00 is not.
+rule_files:
+  - ../rules/epharm-business-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: sales collapse in the daytime raises both sales alerts
+    interval: 1m
+    input_series:
+      - series: 'epharm_pos_sales_last_hour{server="postgres:5432"}'
+        values: '100x1200'
+      - series: 'epharm_pos_sales_same_hour_avg_7d{server="postgres:5432"}'
+        values: '1000x1200'
+      - series: 'epharm_posm_devices_online{server="postgres:5432"}'
+        values: '500x1200'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: EpharmSalesBelowFloor
+        exp_alerts: []
+      - eval_time: 6h30m
+        alertname: EpharmSalesBelowFloor
+        exp_alerts:
+          - exp_labels: { severity: warning, team: business }
+            exp_annotations:
+              summary: 'Продаж с касс почти нет: 100 за последний час'
+              description: 'Днём (10-20 по Алматы) сервер принял меньше 300 продаж за час, в обычный день 1 500-2 800. Кассы не отправляют продажи или сервер их отвергает: журнал кассы, ответы /api/posm/sales (401, 409).'
+      - eval_time: 16h
+        alertname: EpharmSalesBelowFloor
+        exp_alerts: []
+      - eval_time: 6h30m
+        alertname: EpharmSalesDropped
+        exp_alerts:
+          - exp_labels: { severity: warning, team: business }
+            exp_annotations:
+              summary: 'Продажи с касс упали больше чем в 3 раза: 100 за час'
+              description: 'За последний час принято меньше 30 % от среднего за этот же час в прошлые 7 дней.'
+      - eval_time: 6h30m
+        alertname: EpharmPosmDevicesOffline
+        exp_alerts: []
+      - eval_time: 6h30m
+        alertname: EpharmBusinessMetricsMissing
+        exp_alerts: []
+
+  - name: normal day stays quiet
+    interval: 1m
+    input_series:
+      - series: 'epharm_pos_sales_last_hour'
+        values: '2000x1200'
+      - series: 'epharm_pos_sales_same_hour_avg_7d'
+        values: '1800x1200'
+      - series: 'epharm_posm_devices_online'
+        values: '505x1200'
+    alert_rule_test:
+      - eval_time: 6h30m
+        alertname: EpharmSalesBelowFloor
+        exp_alerts: []
+      - eval_time: 6h30m
+        alertname: EpharmSalesDropped
+        exp_alerts: []
+      - eval_time: 6h30m
+        alertname: EpharmPosmDevicesOffline
+        exp_alerts: []
+
+  - name: low baseline does not trigger the relative drop
+    interval: 1m
+    input_series:
+      - series: 'epharm_pos_sales_last_hour'
+        values: '10x1200'
+      - series: 'epharm_pos_sales_same_hour_avg_7d'
+        values: '50x1200'
+      - series: 'epharm_posm_devices_online'
+        values: '505x1200'
+    alert_rule_test:
+      - eval_time: 6h30m
+        alertname: EpharmSalesDropped
+        exp_alerts: []
+
+  - name: devices offline in the daytime only
+    interval: 1m
+    input_series:
+      - series: 'epharm_pos_sales_last_hour'
+        values: '2000x1200'
+      - series: 'epharm_pos_sales_same_hour_avg_7d'
+        values: '1800x1200'
+      - series: 'epharm_posm_devices_online'
+        values: '120x1200'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: EpharmPosmDevicesOffline
+        exp_alerts: []
+      - eval_time: 6h
+        alertname: EpharmPosmDevicesOffline
+        exp_alerts:
+          - exp_labels: { severity: warning, team: business }
+            exp_annotations:
+              summary: 'Кассы не на связи: 120 на связи вместо 500'
+              description: 'Днём меньше 400 касс прислали пульс за 5 минут. Проверить доступность epharm.inkar.kz снаружи, сертификат, .74 и Caddy.'
+
+  - name: missing business metrics
+    interval: 1m
+    input_series:
+      - series: 'epharm_posm_devices_online'
+        values: '505x120'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: EpharmBusinessMetricsMissing
+        exp_alerts: []
+      - eval_time: 1h
+        alertname: EpharmBusinessMetricsMissing
+        exp_alerts:
+          - exp_labels: { severity: warning, team: business }
+            exp_annotations:
+              summary: 'Нет метрик продаж и касс'
+              description: 'postgres-exporter не отдаёт epharm_pos_sales_* или epharm_posm_devices_*: запросы ops/monitoring/postgres-exporter/queries.yml не загрузились или падают. Тревоги по продажам и кассам сейчас не работают.'
+
+  - name: rejections doubling against the same hour yesterday
+    interval: 1m
+    input_series:
+      # 100 rejections a minute for 25 hours, then 400 a minute.
+      - series: 'http_server_requests_seconds_count{uri="/api/posm/sales",status="401",method="POST"}'
+        values: '0+100x1500 150400+400x200'
+      - series: 'http_server_requests_seconds_count{uri="/api/posm/heartbeat",status="200",method="POST"}'
+        values: '0+1000x1700'
+    alert_rule_test:
+      - eval_time: 24h30m
+        alertname: EpharmPosmRejectionsGrowing
+        exp_alerts: []
+      - eval_time: 26h30m
+        alertname: EpharmPosmRejectionsGrowing
+        exp_alerts:
+          - exp_labels: { severity: warning, team: business }
+            exp_annotations:
+              summary: 'Сервер отвергает запросы касс вдвое чаще, чем вчера: 24000 отказов 401/409 за час'
+              description: 'Обычно 7-11 тысяч в час (вечные повторы старых продаж). Рост значит, что кассы потеряли ключи или продажи массово не принимаются.'
