@@ -1,0 +1,72 @@
+# Business alerts: sales capture and POSM fleet health.
+# Metrics epharm_pos_sales_* and epharm_posm_devices_* come from postgres-exporter
+# (ops/monitoring/postgres-exporter/queries.yml). Prometheus evaluates hour() in UTC:
+# 05:00-15:00 UTC is 10:00-20:00 in Almaty, when every pharmacy is open.
+# Baselines on 24.11.2026: a normal day had 1 500-2 800 accepted sales per daytime hour
+# (15-16.11); about 500 devices send a heartbeat (every 30 s) in the daytime, about 110 at night.
+# Unit tests: epharm-business-alerts.test.yml (promtool test rules).
+
+groups:
+  - name: epharm-business
+    interval: 1m
+    rules:
+      - alert: EpharmSalesBelowFloor
+        expr: |
+          sum(epharm_pos_sales_last_hour) < 300
+          and on() (hour() >= 5 < 15)
+        for: 1h
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: 'Продаж с касс почти нет: {{ $value | printf "%.0f" }} за последний час'
+          description: 'Днём (10-20 по Алматы) сервер принял меньше 300 продаж за час, в обычный день 1 500-2 800. Кассы не отправляют продажи или сервер их отвергает: журнал кассы, ответы /api/posm/sales (401, 409).'
+
+      - alert: EpharmSalesDropped
+        expr: |
+          sum(epharm_pos_sales_last_hour) < 0.3 * sum(epharm_pos_sales_same_hour_avg_7d)
+          and on() sum(epharm_pos_sales_same_hour_avg_7d) >= 100
+          and on() (hour() >= 5 < 15)
+        for: 30m
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: 'Продажи с касс упали больше чем в 3 раза: {{ $value | printf "%.0f" }} за час'
+          description: 'За последний час принято меньше 30 % от среднего за этот же час в прошлые 7 дней.'
+
+      - alert: EpharmPosmDevicesOffline
+        expr: |
+          sum(epharm_posm_devices_online) < 400
+          and on() (hour() >= 5 < 15)
+        for: 15m
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: 'Кассы не на связи: {{ $value | printf "%.0f" }} на связи вместо 500'
+          description: 'Днём меньше 400 касс прислали пульс за 5 минут. Проверить доступность epharm.inkar.kz снаружи, сертификат, .74 и Caddy.'
+
+      - alert: EpharmPosmRejectionsGrowing
+        expr: |
+          sum(increase(http_server_requests_seconds_count{uri=~"/api/posm/.*",status=~"401|409"}[1h]))
+          > 2 * sum(increase(http_server_requests_seconds_count{uri=~"/api/posm/.*",status=~"401|409"}[1h] offset 1d))
+          and on() sum(increase(http_server_requests_seconds_count{uri=~"/api/posm/.*",status=~"401|409"}[1h])) > 15000
+        for: 30m
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: 'Сервер отвергает запросы касс вдвое чаще, чем вчера: {{ $value | printf "%.0f" }} отказов 401/409 за час'
+          description: 'Обычно 7-11 тысяч в час (вечные повторы старых продаж). Рост значит, что кассы потеряли ключи или продажи массово не принимаются.'
+
+      - alert: EpharmBusinessMetricsMissing
+        expr: |
+          absent(epharm_pos_sales_last_hour) or absent(epharm_posm_devices_online)
+        for: 30m
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: 'Нет метрик продаж и касс'
+          description: 'postgres-exporter не отдаёт epharm_pos_sales_* или epharm_posm_devices_*: запросы ops/monitoring/postgres-exporter/queries.yml не загрузились или падают. Тревоги по продажам и кассам сейчас не работают.'

@@ -1,0 +1,41 @@
+# Business metrics for the alerts in prometheus/rules/epharm-business-alerts.yml.
+# Loaded by postgres-exporter through PG_EXPORTER_EXTEND_QUERY_PATH. Each query is cheap
+# (index range scans on pos_sales.printed_at, a 1k-row device table) and cached for 60 s,
+# so the 15 s scrape does not hit the database more than once a minute.
+
+epharm_pos_sales:
+  query: |
+    SELECT
+      (SELECT count(*) FROM pos_sales
+        WHERE printed_at > now() - interval '1 hour' AND printed_at <= now())::float8 AS last_hour,
+      (SELECT count(*) FROM generate_series(1, 7) AS d(days)
+        JOIN pos_sales s
+          ON s.printed_at > now() - make_interval(days => d.days) - interval '1 hour'
+         AND s.printed_at <= now() - make_interval(days => d.days))::float8 / 7 AS same_hour_avg_7d
+  cache_seconds: 60
+  metrics:
+    - last_hour:
+        usage: GAUGE
+        description: Sales receipts printed in the last hour and accepted by the server
+    - same_hour_avg_7d:
+        usage: GAUGE
+        description: Average sales receipts in the same hour of the day over the previous 7 days
+
+epharm_posm_devices:
+  query: |
+    SELECT
+      count(*) FILTER (WHERE active AND last_seen_at > now() - interval '5 minutes')::float8 AS online,
+      count(DISTINCT pharmacy_id) FILTER (WHERE active AND last_seen_at > now() - interval '5 minutes')::float8 AS pharmacies_online,
+      count(*) FILTER (WHERE active)::float8 AS active
+    FROM fulfillment_devices
+  cache_seconds: 60
+  metrics:
+    - online:
+        usage: GAUGE
+        description: Active POSM devices with a heartbeat in the last 5 minutes
+    - pharmacies_online:
+        usage: GAUGE
+        description: Pharmacies with at least one active POSM device online in the last 5 minutes
+    - active:
+        usage: GAUGE
+        description: POSM devices registered and not revoked

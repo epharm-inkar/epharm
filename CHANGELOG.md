@@ -5,6 +5,18 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Monitoring alerts reach Telegram: Alertmanager sends firing and resolved alerts through
+  `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` (the storefront's alert bot); the token
+  stays in a 0600 file, not in the rendered config.
+- Business alerts: accepted sales per daytime hour below 300 or below 30 % of the same
+  hour over the last 7 days, fewer than 400 POSM devices online in the daytime, 401/409
+  rejections doubling against the same hour yesterday, missing business metrics. Metrics
+  come from postgres-exporter queries (`ops/monitoring/postgres-exporter/queries.yml`).
+- `tools/check-monitoring.sh` (CI): rule unit tests, Alertmanager config with and without
+  Telegram, exporter queries against a throwaway PostgreSQL.
+
 ### Fixed
 
 - POSM 1.0.89 separates automatic RPS presentation from grant/session invalidation:
