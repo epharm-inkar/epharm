@@ -387,9 +387,28 @@ public uptime, 5xx ratio, p95 latency, database connections, host disk, core ser
 Alerts cover public/backend/PostgreSQL/Redis/MinIO availability, API error rate and latency, disk
 headroom, connection pressure, restart loops and stale backup/restore tests.
 
-Set `ALERT_WEBHOOK_URL` to the HTTPS endpoint of the incident channel. An empty value deliberately
-keeps alerts visible in Alertmanager while logging that external notifications are muted; that state
-does not pass production acceptance. Send a test alert and verify both firing and resolved messages.
+Business alerts (`ops/monitoring/prometheus/rules/epharm-business-alerts.yml`, team `business`)
+watch what the dashboards above miss: accepted sales per hour (below 300, or below 30 % of the same
+hour over the previous 7 days, 10:00-20:00 Almaty), POSM devices with a heartbeat in the last 5
+minutes (below 400 in the daytime), and 401/409 rejections of POSM calls doubling against the same
+hour yesterday. Their metrics come from postgres-exporter queries in
+`ops/monitoring/postgres-exporter/queries.yml` (cached 60 s). A dead backend, database or public
+endpoint inhibits them, so an outage arrives as one message.
+
+Notifications go to Telegram when both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALERT_CHAT_ID` are set in
+`.env.prod`: the storefront's alert bot and chat (same names on the aptekasosklada.kz server). A
+generic `ALERT_WEBHOOK_URL` can be set as well. With neither, alerts stay visible in Alertmanager
+and the container logs that notifications are muted; that state does not pass production acceptance.
+After changing them, recreate the monitoring profile from the release folder and check firing and
+resolved messages with a test alert:
+
+```bash
+docker compose --env-file .env.prod --env-file .release.env -f docker-compose.prod.yml   --profile monitoring up -d --force-recreate alertmanager postgres-exporter prometheus
+docker exec epharm-alertmanager amtool alert add EpharmTestAlert severity=warning   --annotation=summary='Проверка доставки тревог' --annotation=description='Тестовая тревога, ничего делать не нужно'   --end="$(date -u -d '+3 minutes' +%Y-%m-%dT%H:%M:%SZ)" --alertmanager.url=http://127.0.0.1:9093
+```
+
+`tools/check-monitoring.sh` (run in CI) checks the rules with their unit tests, the rendered
+Alertmanager config and the exporter queries against a throwaway PostgreSQL.
 
 ## Sentry
 
