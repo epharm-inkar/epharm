@@ -51,7 +51,7 @@ All notable production changes to Epharm are recorded here. The format follows
 ### Fixed
 
 - POSM opens the Standard-N database on the pharmacy's main computer when options.ini keeps the server inside
-  `base` (`MANAGER:C:\Standart-Nase\ztrade.fdb`, `MANAGER/3050:...`, `MANAGER:alias`, `inet://...`) and has no
+  `base` (`MANAGER:C:\Standart-N\base\ztrade.fdb`, `MANAGER/3050:...`, `MANAGER:alias`, `inet://...`) and has no
   `Server=` key. The server part used to be dropped, so second cash desks looked for the database locally and
   reported `database_unavailable`: about a hundred tills in 86 pharmacies sent no receipts since 1.0.74 required
   the database for receipt capture (3.11). An explicit `Server=` still wins.
