@@ -76,7 +76,7 @@ internal static partial class Program
         var files = new List<string>();
         foreach (var (name, offers) in ShowcaseScenarios)
         {
-            var window = new RecommendationWindow(offers(), autoCloseSec, _screen);
+            var window = new RecommendationWindow(offers(), autoCloseSec, _screen, "Нұрсая Әбдіқалық");
             RecommendationWindows.Add(window);
             window.Show();
             await Idle();

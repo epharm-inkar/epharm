@@ -43,21 +43,25 @@ namespace CustomerDisplay
         public RecommendationWindow(
             Recommendation rec,
             int autoCloseSec = 30,
-            System.Windows.Forms.Screen? targetScreen = null)
-            : this(new List<Recommendation> { rec }, autoCloseSec, targetScreen)
+            System.Windows.Forms.Screen? targetScreen = null,
+            string? pharmacistName = null)
+            : this(new List<Recommendation> { rec }, autoCloseSec, targetScreen, pharmacistName)
         {
         }
 
         /// <param name="recs">Up to five replacements and five cross-sell suggestions.</param>
         /// <param name="targetScreen">Pharmacist monitor (never the customer display).</param>
+        /// <param name="pharmacistName">Seller read from Standard-N, shown so the pharmacist sees the sale is credited to them.</param>
         public RecommendationWindow(
             List<Recommendation> recs,
             int autoCloseSec = 30,
-            System.Windows.Forms.Screen? targetScreen = null)
+            System.Windows.Forms.Screen? targetScreen = null,
+            string? pharmacistName = null)
         {
             InitializeComponent();
             ShowActivated = false;
             Topmost = true;
+            SetPharmacistName(pharmacistName);
 
             var input = recs ?? new List<Recommendation>();
             _recs = input
@@ -85,6 +89,32 @@ namespace CustomerDisplay
             SizeChanged += OnSizeChanged;
             Closed += OnClosed;
             _topmostGuard.Tick += OnTopmostGuardTick;
+        }
+
+        /// <summary>
+        /// Shows the seller's name (from Standard-N) in the header. A first name plus surname is enough and keeps
+        /// the line short; an empty name hides the greeting. The window never asks the pharmacist to log in.
+        /// </summary>
+        public void SetPharmacistName(string? pharmacistName)
+        {
+            var name = ShortName(pharmacistName);
+            if (name.Length == 0)
+            {
+                PharmacistGreeting.Visibility = Visibility.Collapsed;
+                return;
+            }
+            TbPharmacistName.Text = name;
+            PharmacistGreeting.Visibility = Visibility.Visible;
+        }
+
+        internal static string ShortName(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            var parts = raw.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            // Standard-N stores «Фамилия Имя Отчество»; show surname and first name, drop the patronymic.
+            var kept = parts.Length <= 2 ? parts : parts[..2];
+            var name = string.Join(' ', kept);
+            return name.Length <= 48 ? name : name[..48];
         }
 
         public void UpdateRecommendations(IEnumerable<Recommendation> recommendations, bool freshResponse = true)
