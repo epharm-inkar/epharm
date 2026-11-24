@@ -32,6 +32,10 @@ class MobileRefreshTokenEntity(
 
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
+
+    /** Cabinet opened from a till by a one-time link: the session ends with the shift, through every rotation. */
+    @Column(name = "session_ends_at")
+    var sessionEndsAt: Instant? = null,
 ) {
     fun isActive(now: Instant = Instant.now()): Boolean =
         revokedAt == null && expiresAt.isAfter(now)

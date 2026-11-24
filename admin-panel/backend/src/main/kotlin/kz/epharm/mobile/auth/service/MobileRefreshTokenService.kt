@@ -27,15 +27,17 @@ class MobileRefreshTokenService(
 
     /** Возвращает (rawToken, expiresAt). Raw отдаём клиенту, в БД — только хеш. */
     @Transactional
-    fun issue(pharmacistId: String, now: Instant = Instant.now()): IssuedRefresh {
+    fun issue(pharmacistId: String, now: Instant = Instant.now(), sessionEndsAt: Instant? = null): IssuedRefresh {
         val raw = UUID.randomUUID().toString().replace("-", "") +
             UUID.randomUUID().toString().replace("-", "")
+        val usual = now.plus(refreshTtl)
         val entity = MobileRefreshTokenEntity(
             id = UUID.randomUUID(),
             pharmacistId = pharmacistId,
             tokenHash = RefreshTokenService.hash(raw),
-            expiresAt = now.plus(refreshTtl),
+            expiresAt = sessionEndsAt?.takeIf { it.isBefore(usual) } ?: usual,
             createdAt = now,
+            sessionEndsAt = sessionEndsAt,
         )
         repository.save(entity)
         return IssuedRefresh(raw = raw, expiresAt = entity.expiresAt)
@@ -43,12 +45,16 @@ class MobileRefreshTokenService(
 
     /** Находит активный refresh, revoke + возвращает pharmacistId. null — если невалиден. */
     @Transactional
-    fun rotate(rawToken: String, now: Instant = Instant.now()): String? {
+    fun rotate(rawToken: String, now: Instant = Instant.now()): String? = rotateSession(rawToken, now)?.pharmacistId
+
+    /** Same as [rotate], and tells the end of a shift-long session so the next token keeps it. */
+    @Transactional
+    fun rotateSession(rawToken: String, now: Instant = Instant.now()): Rotated? {
         val entity = repository.findByTokenHash(RefreshTokenService.hash(rawToken)).orElse(null) ?: return null
         if (!entity.isActive(now)) return null
         entity.revokedAt = now
         repository.save(entity)
-        return entity.pharmacistId
+        return Rotated(entity.pharmacistId, entity.sessionEndsAt)
     }
 
     @Transactional
@@ -57,4 +63,5 @@ class MobileRefreshTokenService(
     }
 
     data class IssuedRefresh(val raw: String, val expiresAt: Instant)
+    data class Rotated(val pharmacistId: String, val sessionEndsAt: Instant?)
 }

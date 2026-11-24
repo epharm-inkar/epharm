@@ -3903,6 +3903,58 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H15.14",
+    "group": "H15",
+    "name": "Личное окно фармацевта на кассе без регистрации: кто я, сколько заработал, телефон и пароль",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/no-registration-self-and-cabinet",
+      "ui": [],
+      "api": [
+        "POST /api/posm/self",
+        "POST /api/posm/self/cabinet-link",
+        "POST /api/posm/self/contact"
+      ],
+      "jobs": [],
+      "data": [
+        "pharmacists",
+        "standardn_pharmacist_directory",
+        "pharmacies",
+        "posm_cabinet_links",
+        "pharmacist_wallet_entries",
+        "pending_bonuses",
+        "learner_password_vault"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/self/PosmSelfController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/self/PosmSelfService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/self/StandardNAccountService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/service/PosmPharmacistIdentityService.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V114__no_registration_accounts.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/NoRegistrationSelfIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "POSM / совместимость устройств",
+      "actions": [
+        "Личное окно фармацевта на кассе без регистрации: кто я, сколько заработал, телефон и пароль"
+      ],
+      "scope": "Device-auth кассы (X-Posm-Key), аптека кассы; человек = пользователь Стандарт-Н на кассе, найденный по ИИН в центральном справочнике"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Касса другой аптеки получает 403; неизвестный пользователь Стандарт-Н получает 404 с подсказкой про ИИН",
+      "Карточка фармацевта создаётся из справочника один раз и переиспользуется по ИИН; заблокированная не пересоздаётся",
+      "Касса заполняет только пустые телефон и пароль (телефон без SMS, self_declared); заданные не заменяет (409)",
+      "Фоновая проверка красной точки (link=false) не выпускает одноразовую ссылку"
+    ],
+    "risks": [
+      "Телефон с кассы не подтверждён SMS: восстановление пароля по SMS уйдёт на тот номер, который человек ввёл сам"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H16.01",
     "group": "H16",
     "name": "Открыть контекст подписанного QR challenge",
@@ -7383,6 +7435,52 @@
       "Сохраняются /learn, /learn/training, /learn/recommendations, /learn/certificates, /learn/profile и глубокие course/lesson пути",
       "/learn/catalog и /learn/receipts сохраняют нынешнее совместимое разрешение пути без автоматического включения скрытых компонентов",
       "Язык сохраняется; объединение админок не помещает /learn в admin shell"
+    ],
+    "risks": [],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "L17.08",
+    "group": "L17",
+    "name": "Открыть кабинет с кассы по одноразовой ссылке (кнопка «Мой кабинет» и QR), без пароля и SMS",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/no-registration-self-and-cabinet",
+      "ui": [
+        "admin-panel/frontend/src/features/learner/LearnerOneTimeEntryPage.tsx",
+        "admin-panel/frontend/src/features/learner/oneTimeToken.ts",
+        "admin-panel/frontend/src/app/router.tsx"
+      ],
+      "api": [
+        "POST /api/mobile/auth/one-time"
+      ],
+      "jobs": [],
+      "data": [
+        "posm_cabinet_links",
+        "mobile_refresh_tokens",
+        "pharmacists",
+        "browser learner token/session state"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/auth/service/CabinetLinkService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/auth/service/MobileAuthService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/auth/service/MobileRefreshTokenService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/auth/controller/MobileAuthController.kt"
+      ]
+    },
+    "target": {
+      "section": "ЛК фармацевта",
+      "subsection": "Вход / сессия / глубокие ссылки",
+      "actions": [
+        "Открыть кабинет с кассы по одноразовой ссылке (кнопка «Мой кабинет» и QR), без пароля и SMS"
+      ],
+      "scope": "Собственный PharmacistPrincipal; не admin principal; ссылку выпускает только касса своей аптеки"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Токен 256 бит, хранится только SHA-256, живёт 10 минут, срабатывает один раз; передаётся во фрагменте URL",
+      "Использованная или просроченная ссылка не входит (401) и предлагает вход по ИИН и паролю",
+      "Сессия из такой ссылки длится не дольше смены (12 часов) и при обновлении токена не продлевается"
     ],
     "risks": [],
     "owner": "ePharm unification integration owner"
