@@ -103,7 +103,7 @@ docker run -d --name "$net-exporter" --network "$net" \
   -e DATA_SOURCE_URI="$net-pg:5432/epharm?sslmode=disable" -e DATA_SOURCE_USER=postgres -e DATA_SOURCE_PASS=check \
   -e PG_EXPORTER_EXTEND_QUERY_PATH=/etc/postgres-exporter/queries.yml \
   -v "$mon/postgres-exporter/queries.yml:/etc/postgres-exporter/queries.yml:ro" \
-  "$exporter_image" >/dev/null
+  -p 127.0.0.1:19187:9187 "$exporter_image" >/dev/null
 
 metrics=''
 for _ in $(seq 1 30); do
@@ -117,6 +117,7 @@ expect() {
   local got; got=$(value "$1")
   awk -v g="$got" -v w="$2" 'BEGIN { exit !(g != "" && g + 0 == w + 0) }' || {
     docker logs "$net-exporter" 2>&1 | tail -n 20 >&2
+    grep -E '^(pg_up|pg_exporter_user_queries_load_error|pg_exporter_last_scrape_error|epharm_)' <<<"$metrics" >&2 || echo 'no metrics scraped' >&2
     fail "$1 = '${got}', expected $2"
   }
   echo "ok $1 = $got"
