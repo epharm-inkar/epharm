@@ -1,5 +1,7 @@
 package kz.epharm.pharmacies.service
 
+import kz.epharm.pharmacies.ChainNames
+import kz.epharm.pharmacies.RealPharmacySeeder
 import kz.epharm.pharmacies.dto.ChainDto
 import kz.epharm.auth.access.AdministrativeScope
 import kz.epharm.pharmacies.dto.CreateChainRequest
@@ -124,7 +126,12 @@ class PharmacyService(
             id = generateId(),
             name = req.name.trim(),
             chainId = chain.id,
-            chainName = chain.name,
+            // Under the umbrella chain the real network is only in the name, as in the imported register.
+            chainName = if (chain.id == RealPharmacySeeder.UMBRELLA_CHAIN_ID) {
+                ChainNames.fromPharmacyName(req.name) ?: chain.name
+            } else {
+                chain.name
+            },
             city = req.city.trim(),
             district = req.district.trim(),
             addr = req.addr.trim(),
