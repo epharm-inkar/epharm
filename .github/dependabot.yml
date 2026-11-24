@@ -1,10 +1,13 @@
 version: 2
+# Grouped monthly version updates (24.11.2026). Weekly ungrouped updates opened up to 25 pull requests
+# every Monday; each starts 21 CI jobs, so on 23.11 the checks queued 55-73 minutes for a free runner and
+# took 65-101 minutes instead of about 20. Security updates are not affected by this schedule.
 updates:
   - package-ecosystem: npm
     directory: /admin-panel/frontend
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 2
     groups:
       admin-production:
         dependency-type: production
@@ -14,8 +17,8 @@ updates:
   - package-ecosystem: npm
     directory: /storefront
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 2
     groups:
       storefront-production:
         dependency-type: production
@@ -25,17 +28,26 @@ updates:
   - package-ecosystem: gradle
     directory: /admin-panel/backend
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      backend:
+        patterns: ["*"]
 
   - package-ecosystem: pub
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      mobile:
+        patterns: ["*"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      actions:
+        patterns: ["*"]

@@ -75,6 +75,11 @@ tasks.withType<Test> {
     useJUnitPlatform()
     maxHeapSize = "1g"
     forkEvery = 12
+    // Test classes are independent: every integration class starts its own PostgreSQL container, uses
+    // unique temporary directories and random ports. Half the CPUs (2 forks on a 4-vCPU CI runner,
+    // at most 4 locally) shortens the sequential test phase; EPHARM_TEST_FORKS overrides the count.
+    maxParallelForks = (System.getenv("EPHARM_TEST_FORKS")?.toIntOrNull()
+        ?: (Runtime.getRuntime().availableProcessors() / 2)).coerceIn(1, 4)
     systemProperty("spring.test.context.cache.maxSize", "6")
 }
 
