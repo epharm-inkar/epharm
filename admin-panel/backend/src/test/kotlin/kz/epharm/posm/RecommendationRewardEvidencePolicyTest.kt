@@ -18,6 +18,8 @@ import org.junit.jupiter.params.provider.ValueSource
 /** Pure monetary policy: no Spring, database, HTTP, device credentials or real personal data. */
 class RecommendationRewardEvidencePolicyTest {
     private val policy = RecommendationRewardEvidencePolicy()
+    /** The pre-24.11 behaviour, still available as a configured window: its unit accounting stays covered. */
+    private val windowed = RecommendationRewardEvidencePolicy(Duration.ofSeconds(120))
     private val at = Instant.now().minusSeconds(3600)
     private val identity = RewardSourceIdentity("a".repeat(64), "native-user-17", 80, "workstation-9", "unknown")
     private val barcode = "4600000000012"
@@ -199,15 +201,24 @@ class RecommendationRewardEvidencePolicyTest {
         assertFalse(decide(evidence = refund).eligible)
     }
 
+    private fun decideWindowed(sale: PosSaleEntity, evidence: RewardSaleEvidence): RewardEvidenceDecision =
+        windowed.evaluate(sale, evidence, listOf(show()).associateBy { it.event.id }, ::resolve).single()
+
     @Test
-    fun `quantity is bounded by timely additions and late increase is never rewarded`() {
-        val result = decide(sale(3), evidence(3, listOf(change(after = 2, seconds = 10), change(2, 2, 3, 121))))
+    fun `with a configured window quantity is bounded by timely additions and a late increase is not rewarded`() {
+        val result = decideWindowed(sale(3), evidence(3, listOf(change(after = 2, seconds = 10), change(2, 2, 3, 121))))
         assertTrue(result.eligible); assertEquals(2L, result.packages)
     }
 
     @Test
-    fun `decreases consume qualified units before unqualified units conservatively`() {
-        val result = decide(sale(2), evidence(2, listOf(change(seconds = 10), change(2, 1, 3, 121), change(3, 3, 2, 122))))
+    fun `without a window a later increase in the same checkout is rewarded too`() {
+        val result = decide(sale(3), evidence(3, listOf(change(after = 2, seconds = 10), change(2, 2, 3, 121))))
+        assertTrue(result.eligible); assertEquals(3L, result.packages)
+    }
+
+    @Test
+    fun `with a configured window decreases consume qualified units before unqualified units conservatively`() {
+        val result = decideWindowed(sale(2), evidence(2, listOf(change(seconds = 10), change(2, 1, 3, 121), change(3, 3, 2, 122))))
         assertFalse(result.eligible)
         assertEquals(0L, result.packages)
     }

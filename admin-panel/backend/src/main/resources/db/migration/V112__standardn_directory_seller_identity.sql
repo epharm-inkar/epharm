@@ -10,7 +10,8 @@ ALTER TABLE pharmacies
 ALTER TABLE pharmacies
     ADD CONSTRAINT ck_pharmacies_standardn_profile CHECK (
         (standardn_profile_id IS NULL AND standardn_profile_source IS NULL) OR
-        (standardn_profile_id IS NOT NULL AND standardn_profile_source IN ('caption', 'manual'))
+        (standardn_profile_id IS NOT NULL AND standardn_profile_source IS NOT NULL
+         AND standardn_profile_source IN ('caption', 'manual'))
     );
 CREATE INDEX ix_pharmacies_standardn_profile
     ON pharmacies (standardn_profile_id)
