@@ -75,6 +75,11 @@ describe('fleetFormat', () => {
   it('коротко подписывает состояние Стандарт-Н', () => {
     expect(standardNShort('database_unavailable')).toEqual({ key: 'fleet.sn.noDatabase', tone: 'red' })
     expect(standardNShort('resolved').tone).toBe('green')
+    // 24.11: with the pharmacist login switched off every till reports service_disabled; that is not a read error.
+    expect(standardNShort('service_disabled')).toEqual({ key: 'fleet.sn.disabled', tone: 'ink' })
+    expect(standardNShort('local_disabled')).toEqual({ key: 'fleet.sn.disabled', tone: 'ink' })
+    expect(standardNShort('initializing')).toEqual({ key: 'fleet.sn.unknown', tone: 'ink' })
+    expect(standardNShort('stale_session')).toEqual({ key: 'fleet.sn.other', tone: 'amber' })
     expect(standardNShort('stale_session').key).toBe('fleet.sn.other')
     expect(standardNShort('ambiguous_session')).toEqual({ key: 'fleet.sn.ambiguous', tone: 'amber' })
     expect(standardNShort(null).key).toBe('fleet.sn.unknown')

@@ -78,7 +78,13 @@ export function standardNShort(status: string | null): { key: string; tone: Tone
     case 'ambiguous_session':
       // Стандарт-Н работает, но открыто несколько сессий кассира: продавец не определяется.
       return { key: 'fleet.sn.ambiguous', tone: 'amber' }
+    case 'service_disabled':
+    case 'local_disabled':
+      // Вход фармацевта выключен (сервером или в настройках кассы): касса базу не проверяет, это не ошибка.
+      return { key: 'fleet.sn.disabled', tone: 'ink' }
     case null:
+    case 'initializing':
+    case 'unknown':
       return { key: 'fleet.sn.unknown', tone: 'ink' }
     default:
       return { key: 'fleet.sn.other', tone: 'amber' }
