@@ -11,6 +11,10 @@ enum class PharmacistIdentitySource(val wireValue: String) {
     STANDARDN_EXPLICIT_MAPPING("standardn_explicit_mapping"),
     STANDARDN_RPS_BINDING("standardn_rps_binding"),
     STANDARDN_NAME_MATCH("standardn_name_match"),
+    /** Central Standard-N directory gave the IIN of a registered ePharm pharmacist (V112). Analytics only. */
+    STANDARDN_DIRECTORY("standardn_directory"),
+    /** Central Standard-N directory gave the IIN; the person has no ePharm account yet. */
+    STANDARDN_DIRECTORY_UNREGISTERED("standardn_directory_unregistered"),
     STANDARDN_UNMAPPED("standardn_unmapped"),
     UNRESOLVED("unresolved"),
 }
@@ -22,6 +26,8 @@ data class PosmPharmacistIdentity(
     val source: PharmacistIdentitySource,
     val reportedPharmacistId: String?,
     val reportedPharmacistName: String?,
+    /** IIN of the seller when a trusted path or the central Standard-N directory knows it. */
+    val sellerIin: String? = null,
 )
 
 /**
@@ -36,6 +42,7 @@ class PosmPharmacistIdentityService(
     private val pharmacistRepository: PharmacistRepository,
     private val mappingRepository: PosmPharmacistMappingRepository,
     private val sourceBindings: kz.epharm.posm.staff.SourceStaffBindingService,
+    private val directory: StandardNDirectoryIdentityLookup? = null,
 ) {
     @Transactional(readOnly = true)
     fun resolve(
@@ -47,6 +54,8 @@ class PosmPharmacistIdentityService(
         at: java.time.Instant = java.time.Instant.now(),
         nativeSession: String? = null,
         workstation: String? = null,
+        /** Receipts only: recommendation events and clicks keep the proven paths until bonuses use the directory. */
+        useDirectory: Boolean = false,
     ): PosmPharmacistIdentity {
         val reportedId = reportedPharmacistId.clean()
         val reportedName = reportedPharmacistName.clean()
@@ -64,6 +73,7 @@ class PosmPharmacistIdentityService(
                 source = PharmacistIdentitySource.STANDARDN_EXPLICIT_MAPPING,
                 reportedPharmacistId = reportedId,
                 reportedPharmacistName = reportedName,
+                sellerIin = explicitlyMapped.iin.validIin(),
             )
         }
 
@@ -84,6 +94,24 @@ class PosmPharmacistIdentityService(
                 source = PharmacistIdentitySource.POSM_INTERNAL,
                 reportedPharmacistId = reportedId,
                 reportedPharmacistName = reportedName,
+            )
+        }
+
+        val person = if (useDirectory) directory?.find(pharmacyId, reportedId) else null
+        if (person != null) {
+            // A person may sell in several pharmacies: the IIN, not the home pharmacy, identifies them.
+            val registered = pharmacistRepository.findByIin(person.iin)?.takeIf { it.status == PharmacistStatus.active }
+            return PosmPharmacistIdentity(
+                pharmacistId = registered?.id.orEmpty(),
+                pharmacistName = registered?.name ?: person.fullName,
+                source = if (registered != null) {
+                    PharmacistIdentitySource.STANDARDN_DIRECTORY
+                } else {
+                    PharmacistIdentitySource.STANDARDN_DIRECTORY_UNREGISTERED
+                },
+                reportedPharmacistId = reportedId,
+                reportedPharmacistName = reportedName,
+                sellerIin = person.iin.validIin(),
             )
         }
 
@@ -119,4 +147,10 @@ class PosmPharmacistIdentityService(
     }
 
     private fun String?.clean(): String? = this?.trim()?.takeIf { it.isNotEmpty() }?.take(255)
+
+    private fun String?.validIin(): String? = this?.trim()?.takeIf { IIN.matches(it) }
+
+    private companion object {
+        val IIN = Regex("^[0-9]{12}$")
+    }
 }

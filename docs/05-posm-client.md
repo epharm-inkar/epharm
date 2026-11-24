@@ -320,8 +320,9 @@ click on the read-only popup. Its baseline and timestamp are immutable for that 
 reopening the same offer cannot reset the timer or multiply rewards. Delayed delivery of the
 shown outbox item does not move the display time forward.
 
-A recommended product must be observed being added within **0–120 seconds inclusive** after
-that show, in the same logical `CheckoutSession.SessionId`. An ordered addition in the same
+A recommended product must be observed being added **after** that show, in the same logical
+`CheckoutSession.SessionId` (since 24.11.2026 there is no 120-second cutoff: the server policy
+`RecommendationRewardEvidencePolicy(additionWindow = null)` accepts the whole checkout). An ordered addition in the same
 clock tick is allowed. A product already present in the shown baseline is excluded from automatic
 credit. The client preserves all observed quantity transitions, including decreases and late
 increases; removing/readding a native line gives it a new local generation. Eligibility is limited
@@ -329,7 +330,7 @@ to the remaining, actually sold full packages added in time. Late increases do n
 and decreases conservatively consume eligible quantity first. Multiple shows cannot reward the
 same sold units repeatedly.
 
-Payment can occur later than the 120-second addition window. It still requires the existing
+Payment can occur later than the addition. It still requires the existing
 anchored print cue **and** `IsPostedPhysicalSale`: a freshly verified posted physical document,
 signed final details and fiscal device/number/shift. The logical checkout may contain linked
 documents, but each addition must match the physical document and native line of its completed

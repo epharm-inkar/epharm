@@ -111,4 +111,8 @@ class PosSaleEntity(
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "seller_source", columnDefinition = "jsonb")
     var sellerSource: SaleSellerSource? = null,
+
+    /** IIN of the Standard-N seller from the central directory (V112). Analytics only, never money. */
+    @Column(name = "seller_iin", length = 12)
+    var sellerIin: String? = null,
 )

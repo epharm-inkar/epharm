@@ -26,8 +26,14 @@ data class RewardEvidenceDecision(
     val eligible: Boolean get() = reason == "qualified"
 }
 
-/** Pure financial policy. Marketing attribution and fuzzy names are deliberately not evidence. */
-class RecommendationRewardEvidencePolicy {
+/**
+ * Pure financial policy. Marketing attribution and fuzzy names are deliberately not evidence.
+ *
+ * [additionWindow]: how long after the actual display a recommended product may be added. Null (the
+ * default since 24.11.2026, Grigoriy's decision) means the whole checkout: the product must be added
+ * after the display, in the same checkout session and physical document, and stay in the paid receipt.
+ */
+class RecommendationRewardEvidencePolicy(private val additionWindow: Duration? = null) {
     fun completionProblem(sale: PosSaleEntity, evidence: RewardSaleEvidence): String? {
         val paid = evidence.completion
         if (evidence.version != 1 || evidence.checkoutSessionId != sale.sessionId) return "receipt_context_mismatch"
@@ -210,7 +216,7 @@ class RecommendationRewardEvidencePolicy {
         if (show.shownAt.isBefore(event.shownAt.minusSeconds(300)) || show.shownAt.isAfter(Instant.now().plusSeconds(300)))
             return "display_time_inconsistent"
         val duration = Duration.between(show.shownAt, addedAt)
-        if (duration.isNegative || duration > Duration.ofSeconds(120)) return "addition_outside_window"
+        if (duration.isNegative || (additionWindow != null && duration > additionWindow)) return "addition_outside_window"
         return null
     }
 

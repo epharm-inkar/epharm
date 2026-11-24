@@ -139,6 +139,7 @@ class PosSaleService(
                 rewardEvidence = req.rewardEvidence,
                 deviceId = deviceId,
                 sellerSource = sellerSource,
+                sellerIin = identity.sellerIin,
             ),
         )
         if (identity.pharmacistId.isBlank()) {
