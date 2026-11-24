@@ -450,8 +450,10 @@ class RecommendationRewardFlowIntegrationTest {
         } finally { release.countDown();workers.shutdownNow() }
     }
 
-    @Test fun `the exact two minute addition boundary qualifies but one nanosecond later does not`() {
-        for ((delay, expected) in listOf(Duration.ofSeconds(120) to 400L, Duration.ofSeconds(120).plusNanos(1) to 0L)) {
+    @Test fun `an addition later in the same checkout qualifies, with no two minute cutoff`() {
+        // payment() pays at +180 s, so every addition here is before payment and stays in the paid receipt.
+        for ((delay, expected) in listOf(Duration.ofSeconds(120) to 400L, Duration.ofSeconds(120).plusNanos(1) to 400L,
+                Duration.ofSeconds(160) to 400L)) {
             val f = flow()
             acknowledge(f)
             deliver(f, payment(f, additionDelay = delay))
@@ -471,8 +473,8 @@ class RecommendationRewardFlowIntegrationTest {
         assertThat(spent(f.world.offers.single())).isZero()
     }
 
-    @Test fun `removed packages do not earn and a reappearing generation must satisfy its own addition window`() {
-        for ((readdedAt, expected) in listOf(40L to 200L, 150L to 0L)) {
+    @Test fun `removed packages do not earn and a reappearing generation earns when it stays in the paid receipt`() {
+        for ((readdedAt, expected) in listOf(40L to 200L, 150L to 200L)) {
             val f = flow(quantities = listOf(1))
             acknowledge(f)
             val offer = f.world.offers.single()

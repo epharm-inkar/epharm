@@ -69,7 +69,7 @@ class RecommendationRewardReviewController(private val reviews: RecommendationRe
             fields.keys.indices.forEach { sheet.setColumnWidth(it, 24 * 256) }
             val meta = book.createSheet("Параметры")
             listOf("Состояние" to (state ?: "Все"), "Дата с (Алматы)" to from.orEmpty(), "Дата по (Алматы)" to to.orEmpty(),
-                "Сформировано UTC" to Instant.now().toString(), "Методика" to "Добавлено за 0–120 секунд после фактического показа; оплата может быть позже. Расчёт и зачисление различаются.")
+                "Сформировано UTC" to Instant.now().toString(), "Методика" to "Добавлено в ту же покупку после фактического показа; оплата может быть позже. Расчёт и зачисление различаются.")
                 .forEachIndexed { i, pair -> meta.createRow(i).apply { createCell(0).setCellValue(pair.first); createCell(1).setCellValue(pair.second) } }
             ByteArrayOutputStream().use { out -> book.write(out); out.toByteArray() }
         }

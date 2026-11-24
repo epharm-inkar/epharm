@@ -18,6 +18,8 @@ import org.junit.jupiter.params.provider.ValueSource
 /** Pure monetary policy: no Spring, database, HTTP, device credentials or real personal data. */
 class RecommendationRewardEvidencePolicyTest {
     private val policy = RecommendationRewardEvidencePolicy()
+    /** The pre-24.11 behaviour, still available as a configured window: its unit accounting stays covered. */
+    private val windowed = RecommendationRewardEvidencePolicy(Duration.ofSeconds(120))
     private val at = Instant.now().minusSeconds(3600)
     private val identity = RewardSourceIdentity("a".repeat(64), "native-user-17", 80, "workstation-9", "unknown")
     private val barcode = "4600000000012"
@@ -69,19 +71,21 @@ class RecommendationRewardEvidencePolicyTest {
         policy.evaluate(sale, evidence, shows.associateBy { it.event.id }, ::resolve).single()
 
     @ParameterizedTest
-    @ValueSource(longs = [-1, 0, 119, 120, 121])
-    fun `ordered addition at the same clock tick through 120 seconds is eligible`(seconds: Long) {
-        val decision = decide(evidence = evidence(changes = listOf(change(seconds = seconds))))
-        assertEquals(seconds in 0L..120L, decision.eligible)
-        if (decision.eligible) assertEquals(1L, decision.packages)
+    @ValueSource(longs = [-1, 0, 119, 120, 121, 1800])
+    fun `any addition after the display in the same checkout is eligible, never one before it`(seconds: Long) {
+        val paidAt = at.plusSeconds(maxOf(seconds, 0) + 60)
+        val decision = decide(sale(completedAt = paidAt), evidence(changes = listOf(change(seconds = seconds)), completedAt = paidAt))
+        assertEquals(seconds >= 0, decision.eligible)
+        if (decision.eligible) assertEquals(1L, decision.packages) else assertEquals("addition_outside_window", decision.reason)
     }
 
     @Test
-    fun `120 seconds plus one nanosecond is outside even though payment may be much later`() {
-        val late = change().copy(observedAt = at.plusSeconds(120).plusNanos(1))
-        assertFalse(decide(evidence = evidence(changes = listOf(late))).eligible)
-        val paidAt = at.plusSeconds(5 * 60)
-        assertTrue(decide(sale(completedAt = paidAt), evidence(changes = listOf(change(seconds = 119)), completedAt = paidAt)).eligible)
+    fun `a configured addition window still cuts off one nanosecond after it`() {
+        val windowed = RecommendationRewardEvidencePolicy(java.time.Duration.ofSeconds(120))
+        fun decideWith(change: RewardLineChange) =
+            windowed.evaluate(sale(), evidence(changes = listOf(change)), listOf(show()).associateBy { it.event.id }, ::resolve).single()
+        assertTrue(decideWith(change(seconds = 120)).eligible)
+        assertEquals("addition_outside_window", decideWith(change().copy(observedAt = at.plusSeconds(120).plusNanos(1))).reason)
     }
 
     @ParameterizedTest
@@ -197,15 +201,24 @@ class RecommendationRewardEvidencePolicyTest {
         assertFalse(decide(evidence = refund).eligible)
     }
 
+    private fun decideWindowed(sale: PosSaleEntity, evidence: RewardSaleEvidence): RewardEvidenceDecision =
+        windowed.evaluate(sale, evidence, listOf(show()).associateBy { it.event.id }, ::resolve).single()
+
     @Test
-    fun `quantity is bounded by timely additions and late increase is never rewarded`() {
-        val result = decide(sale(3), evidence(3, listOf(change(after = 2, seconds = 10), change(2, 2, 3, 121))))
+    fun `with a configured window quantity is bounded by timely additions and a late increase is not rewarded`() {
+        val result = decideWindowed(sale(3), evidence(3, listOf(change(after = 2, seconds = 10), change(2, 2, 3, 121))))
         assertTrue(result.eligible); assertEquals(2L, result.packages)
     }
 
     @Test
-    fun `decreases consume qualified units before unqualified units conservatively`() {
-        val result = decide(sale(2), evidence(2, listOf(change(seconds = 10), change(2, 1, 3, 121), change(3, 3, 2, 122))))
+    fun `without a window a later increase in the same checkout is rewarded too`() {
+        val result = decide(sale(3), evidence(3, listOf(change(after = 2, seconds = 10), change(2, 2, 3, 121))))
+        assertTrue(result.eligible); assertEquals(3L, result.packages)
+    }
+
+    @Test
+    fun `with a configured window decreases consume qualified units before unqualified units conservatively`() {
+        val result = decideWindowed(sale(2), evidence(2, listOf(change(seconds = 10), change(2, 1, 3, 121), change(3, 3, 2, 122))))
         assertFalse(result.eligible)
         assertEquals(0L, result.packages)
     }

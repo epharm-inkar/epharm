@@ -7,6 +7,15 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Seller of every receipt by the central Standard-N directory, without ePharm registration: pharmacies are linked
+  to their Standard-N profile by caption after each directory sync (`pharmacies.standardn_profile_id`, HQ links
+  marked `manual` are kept), and `/api/posm/sales` resolves Standard-N USER_ID -> IIN -> the registered ePharm
+  pharmacist (`standardn_directory`) or keeps the directory name (`standardn_directory_unregistered`). The IIN is
+  stored in `pos_sales.seller_iin`. Analytics only: these sources never authorize money, recommendation requests
+  keep the proven paths. Switch: `APP_POSM_IDENTITY_STANDARDN_DIRECTORY_ENABLED` (default on). Checked on prod data:
+  on 48 144 receipts of 15-18.11 that carried the cashier name the directory named the same person in 98.7% of found cases.
+- Standard-N directory names stored as UTF-8 but read through the WIN1251 connection («РљР°СЂРёРјРѕРІР°») are repaired on sync.
+
 - Till builds reach every till only after a checked pilot: a `stable` registration in `/api/admin/app-releases`
   is refused (409) until the same build ran as `pilot` for `POSM_STABLE_AFTER_PILOT_MINUTES` (default 60), a
   pilot till is online on the version and a pilot till sent a receipt. Going back to a previously stable build
@@ -35,6 +44,9 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Changed
 
+- Automatic recommendation reward: a recommended product counts when it is added after the actual display in the same
+  checkout and stays in the paid receipt; the 120-second addition cutoff is gone (Grigoriy's decision 24.11.2026).
+  Producer reports keep their separate 0–120-second metric.
 - V111 adds the partial index `ix_merch_branches_epharm_pharmacy` (built concurrently): every till
   recommendation request looked up its pharmacy's merchandising branch by reading all 680 branches
   (29 million full scans on prod by 24.11).
