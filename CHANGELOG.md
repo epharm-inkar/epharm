@@ -7,6 +7,19 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- No ePharm registration (Grigoriy and Dmitry, 24.11.2026): the pharmacist card is created from the central
+  Standard-N directory (IIN, name, pharmacy) the first time the person sells or gets a recommendation at a till
+  (`pharmacists.account_source = standardn`, phone unique only when set). `/api/posm/self` serves the till's
+  personal window; the till may fill an empty phone (no SMS, `self_declared`) or password but never replaces them.
+  A one-time link (`/learn/enter`, 10 minutes, single use) opens the cabinet signed in; such a session lasts one
+  shift (`mobile_refresh_tokens.session_ends_at`, 12 h). The till registration of POSM 1.0.92 and the cabinet
+  activation by SMS fill such a card instead of refusing the IIN. Recommendation requests resolve the seller
+  through the directory too.
+- Smart replacements: the rules engine does not offer to replace a product that is on a network promotion today
+  (`chain_promo_barcodes`) or that earns the pharmacy at least as much as the promoted one
+  (`product_trade_margins`, measured nightly at 04:30 Almaty from Standard-N, read-only). Settings and an
+  overview with today's verdict per substitution rule: `/api/admin/replacement-guards`. Cross-sells are not
+  filtered. Pilot-only campaigns (`promos.pilot_only`) run only on tills of the POSM pilot channel.
 - Seller of every receipt by the central Standard-N directory, without ePharm registration: pharmacies are linked
   to their Standard-N profile by caption after each directory sync (`pharmacies.standardn_profile_id`, HQ links
   marked `manual` are kept), and `/api/posm/sales` resolves Standard-N USER_ID -> IIN -> the registered ePharm
