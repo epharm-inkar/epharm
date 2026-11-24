@@ -69,7 +69,7 @@ namespace CustomerDisplay
             Background = Brushes.Transparent;
             SizeToContent = SizeToContent.Height;
             Width = 400;
-            Title = "ePharm — личный кабинет";
+            Title = "ePharm: личный кабинет";
             Content = BuildCard(model);
             Model = model;
             MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) DragMove(); };
@@ -256,16 +256,25 @@ namespace CustomerDisplay
             stack.Children.Add(head);
             stack.Children.Add(new TextBlock
             {
-                Text = complete ? "Телефон и пароль сохранены — вход в кабинет с телефона работает."
+                Text = complete ? "Телефон и пароль сохранены: вход в кабинет с телефона работает."
                                 : "Укажите телефон и пароль, чтобы заходить в кабинет с телефона и из дома.",
                 Foreground = Brush("#6B7280"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10),
             });
 
+            // The inputs live across rebuilds (Update): take them out of the previous tree first.
+            Detach(_phone);
+            Detach(_password);
             stack.Children.Add(FieldLabel("Номер телефона"));
-            _phone.Text = model.PhoneBound ? "привязан" : "";
-            stack.Children.Add(_phone);
+            _phone.Text = "";
+            stack.Children.Add(model.PhoneBound ? DoneLine("Телефон привязан") : _phone);
             stack.Children.Add(FieldLabel("Пароль для входа"));
-            stack.Children.Add(_password);
+            _password.Password = "";
+            stack.Children.Add(model.PasswordSet ? DoneLine("Пароль задан. Сменить его можно в кабинете по SMS") : _password);
+            if (complete)
+            {
+                box.Child = stack;
+                return box;
+            }
 
             var save = new Button
             {
@@ -273,7 +282,8 @@ namespace CustomerDisplay
                 Foreground = Brushes.White, Background = Brush("#1F8A70"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
             };
             save.Click += (_, _) => SaveContactRequested?.Invoke(
-                _phone.Text?.Trim(), _password.Password.Length > 0 ? _password.Password : null);
+                model.PhoneBound ? null : _phone.Text?.Trim(),
+                model.PasswordSet || _password.Password.Length == 0 ? null : _password.Password);
             stack.Children.Add(save);
             box.Child = stack;
             return box;
@@ -284,7 +294,7 @@ namespace CustomerDisplay
             var box = new StackPanel { Margin = new Thickness(16, 2, 16, 16) };
             var open = new Button
             {
-                Content = "Мой кабинет — обучение и бонусы", Height = 44, FontSize = 15, FontWeight = FontWeights.SemiBold,
+                Content = "Мой кабинет: обучение и бонусы", Height = 44, FontSize = 15, FontWeight = FontWeights.SemiBold,
                 Foreground = Brush("#112B33"), Background = Brush("#E7EDEF"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
             };
             open.Click += (_, _) => OpenCabinetRequested?.Invoke();
@@ -309,6 +319,33 @@ namespace CustomerDisplay
         {
             Text = text, Foreground = Brush("#70788A"), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4),
         };
+
+        private static void Detach(FrameworkElement element)
+        {
+            if (element.Parent is Panel panel) panel.Children.Remove(element);
+        }
+
+        /** A detail the person already has: shown with a green tick, not editable from the till. */
+        private static UIElement DoneLine(string text)
+        {
+            var row = new Grid { Margin = new Thickness(0, 2, 0, 8) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var tick = new TextBlock
+            {
+                Text = "✓", Foreground = Brush("#1F8A70"), FontSize = 15, FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Top,
+            };
+            var label = new TextBlock
+            {
+                Text = text, Foreground = Brush("#1F6B57"), FontSize = 14, Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top, TextWrapping = TextWrapping.Wrap,
+            };
+            Grid.SetColumn(label, 1);
+            row.Children.Add(tick);
+            row.Children.Add(label);
+            return row;
+        }
 
         private static TextBox NewField(string placeholder) => new()
         {

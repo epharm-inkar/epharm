@@ -33,7 +33,7 @@ public partial class MainWindow
         _selfTray = new System.Windows.Forms.NotifyIcon
         {
             Icon = _selfIconPlain,
-            Text = "ePharm — мой кабинет",
+            Text = "ePharm: мой кабинет",
             Visible = true,
         };
         _selfTray.MouseClick += (_, e) =>
@@ -92,7 +92,7 @@ public partial class MainWindow
         _selfProfileComplete = complete;
         _selfTray.Icon = complete == false ? _selfIconAlert : _selfIconPlain;
         var shortName = RecommendationWindow.ShortName(name);
-        var text = complete == false ? "ePharm: заполните профиль" : shortName.Length > 0 ? "ePharm: " + shortName : "ePharm — мой кабинет";
+        var text = complete == false ? "ePharm: заполните профиль" : shortName.Length > 0 ? "ePharm: " + shortName : "ePharm: мой кабинет";
         _selfTray.Text = text.Length <= 63 ? text : text[..63];
     }
 
@@ -148,7 +148,7 @@ public partial class MainWindow
     private async Task SaveSelfContactAsync(string? phone, string? password)
     {
         if (_epharm == null || _selfWindow == null) return;
-        var cleanPhone = string.IsNullOrWhiteSpace(phone) || phone.Trim() == "привязан" ? null : phone.Trim();
+        var cleanPhone = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
         if (cleanPhone == null && string.IsNullOrEmpty(password))
         {
             _selfWindow.ShowStatus("Введите номер телефона или пароль.", error: true);
