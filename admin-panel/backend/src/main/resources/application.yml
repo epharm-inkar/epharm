@@ -206,7 +206,7 @@ app:
     # Accepted producers of exact fiscal PDF/PNG metadata. Must match the POSM-side allowlist.
     fiscal-artifact-trusted-sources: ${POSM_FISCAL_ARTIFACT_TRUSTED_SOURCES:standardn-kkm-sdk,ofd-api}
     # Сколько секунд пульс кассы считается «живым» (T4, GET /screens/connected).
-    heartbeat-ttl-seconds: ${POSM_HEARTBEAT_TTL:90}
+    heartbeat-ttl-seconds: ${POSM_HEARTBEAT_TTL:150}
   unified-admin:
     primary-owner-id: ${UNIFIED_ADMIN_PRIMARY_OWNER_ID:}
   learner-credentials:

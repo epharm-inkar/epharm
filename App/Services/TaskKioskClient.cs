@@ -135,16 +135,16 @@ public sealed class MerchTaskUnavailableException : Exception
 /// </summary>
 public sealed class TaskKioskPollSchedule
 {
-    // Assignment delivery tolerates a short delay. A per-poll spread prevents a
-    // synchronized fleet restart from exhausting the merchandising DB pool.
-    private const double HealthyMinimumSeconds = 24;
-    private const double HealthyJitterSeconds = 12;
+    // A merchandising task is planned for hours or days, so a new one may reach the cash desk
+    // within a quarter of an hour (the fleet asked every 30 s: 1.05 million requests a day).
+    // A per-poll spread prevents a synchronized fleet restart from hitting the service at once.
+    private const double HealthyMinimumSeconds = 12 * 60;
+    private const double HealthyJitterSeconds = 6 * 60;
     private static readonly TimeSpan[] FailureIntervals =
     [
-        TimeSpan.FromSeconds(30),
         TimeSpan.FromMinutes(1),
-        TimeSpan.FromMinutes(2),
         TimeSpan.FromMinutes(5),
+        TimeSpan.FromMinutes(15),
     ];
 
     private int _failureCount;

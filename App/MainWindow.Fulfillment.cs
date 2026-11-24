@@ -66,44 +66,50 @@ namespace CustomerDisplay
         {
             while (!ct.IsCancellationRequested)
             {
-                await PollFulfillmentAsync(ct).ConfigureAwait(false);
+                var queueAvailable = await PollFulfillmentAsync(ct).ConfigureAwait(false);
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(_posmConfig?.FulfillmentPollSec ?? 10), ct).ConfigureAwait(false);
+                    var delay = PosmPollIntervals.NextFulfillmentPoll(queueAvailable, _posmConfig?.FulfillmentPollSec ?? 10);
+                    await Task.Delay(delay, ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             }
         }
 
-        private async Task PollFulfillmentAsync(CancellationToken ct)
+        /// <returns>
+        /// false when the backend has switched online orders off for this device: the loop then
+        /// asks again in an hour instead of every few seconds. Transient failures return true.
+        /// </returns>
+        private async Task<bool> PollFulfillmentAsync(CancellationToken ct)
         {
-            if (_fulfillmentClient == null || _posmConfig == null) return;
+            if (_fulfillmentClient == null || _posmConfig == null) return true;
             var credential = await EnsureFulfillmentCredentialAsync(ct).ConfigureAwait(false);
-            if (credential == null) return;
+            if (credential == null) return true;
 
             var capabilities = await _fulfillmentClient.CapabilitiesAsync(credential.Token, ct).ConfigureAwait(false);
             if (!capabilities.IsSuccess || capabilities.Value == null)
             {
-                if (capabilities.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden || capabilities.IsUnauthorized)
+                var switchedOff = capabilities.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden;
+                if (switchedOff || capabilities.IsUnauthorized)
                     await Dispatcher.InvokeAsync(() => SetFulfillmentAvailability(false));
                 HandleFulfillmentFailure(capabilities);
-                return;
+                return !switchedOff;
             }
             var available = FulfillmentRules.CanDisplayQueue(_posmConfig.FulfillmentEnabled, capabilities.Value);
             await Dispatcher.InvokeAsync(() => SetFulfillmentAvailability(available));
-            if (!available) return;
+            if (!available) return false;
 
             var submitted = await LoadAllFulfillmentOrdersAsync(credential.Token, "submitted", ct).ConfigureAwait(false);
             if (!submitted.IsSuccess || submitted.Value == null)
             {
                 HandleFulfillmentFailure(submitted);
-                return;
+                return true;
             }
             var active = await LoadAllFulfillmentOrdersAsync(credential.Token, "active", ct).ConfigureAwait(false);
             if (!active.IsSuccess || active.Value == null)
             {
                 HandleFulfillmentFailure(active);
-                return;
+                return true;
             }
 
             List<FulfillmentOrder> newOrders;
@@ -152,6 +158,7 @@ namespace CustomerDisplay
                 RefreshFulfillmentWindows();
                 if (newOrders.Count > 0) ShowFulfillmentNotice(newOrders.Count);
             });
+            return true;
         }
 
         private async Task<FulfillmentApiResult<List<FulfillmentOrder>>> LoadAllFulfillmentOrdersAsync(

@@ -867,6 +867,41 @@ class StaffAuthIntegrationTest {
             login(password="NewPassword123!")
         } finally { release.countDown();executor.shutdownNow() }
     }
+    @Test fun `repeated logins rewrite the IIN observation only when it changes or is an hour old`() {
+        fun checkedAt()=jdbc.queryForObject("SELECT standard_n_iin_checked_at FROM pharmacists WHERE id='staff-person'",java.sql.Timestamp::class.java)!!.toInstant()
+        fun age(interval:String)=jdbc.update("UPDATE pharmacists SET standard_n_iin_checked_at=now()-interval '$interval',standard_n_identity_checked_at=now()-interval '$interval' WHERE id='staff-person'")
+        val matching=context.copy(standardNIin=iin,standardNIinStatus="available")
+        post("/login",StaffLoginRequest(iin,"Password123!",matching))
+        age("10 minutes")
+        val tenMinutesAgo=checkedAt()
+        post("/login",StaffLoginRequest(iin,"Password123!",matching))
+        assertEquals(tenMinutesAgo,checkedAt())
+
+        post("/login",StaffLoginRequest(iin,"Password123!",matching.copy(standardNIin="000101500011")))
+        assertEquals("MISMATCH",jdbc.queryForObject("SELECT standard_n_iin_match_status FROM pharmacists WHERE id='staff-person'",String::class.java))
+        assertTrue(checkedAt().isAfter(tenMinutesAgo))
+
+        age("2 hours")
+        val twoHoursAgo=checkedAt()
+        post("/login",StaffLoginRequest(iin,"Password123!",matching.copy(standardNIin="000101500011")))
+        assertTrue(checkedAt().isAfter(twoHoursAgo))
+    }
+
+    @Test fun `device heartbeat writes last seen at most once a minute`() {
+        fun lastSeen()=jdbc.queryForObject("SELECT last_seen_at FROM fulfillment_devices WHERE device_id='staff-device'",java.sql.Timestamp::class.java)!!.toInstant()
+        fun heartbeat()=mvc.perform(post("/api/posm/heartbeat").header("X-Posm-Key",key)
+            .param("deviceId","staff-device").param("pharmacyId","staff-pharmacy")).andExpect(status().isOk)
+        jdbc.update("UPDATE fulfillment_devices SET last_seen_at=now()-interval '30 seconds' WHERE device_id='staff-device'")
+        val recent=lastSeen()
+        heartbeat()
+        assertEquals(recent,lastSeen())
+
+        jdbc.update("UPDATE fulfillment_devices SET last_seen_at=now()-interval '2 minutes' WHERE device_id='staff-device'")
+        val stale=lastSeen()
+        heartbeat()
+        assertTrue(lastSeen().isAfter(stale.plusSeconds(100)))
+    }
+
     @Test fun `stale admin profile save cannot overwrite a newer cashier IIN observation`() {
         val stale=pharmacists.findById("staff-person").orElseThrow()
         assertEquals("UNKNOWN",stale.standardNIinMatchStatus)

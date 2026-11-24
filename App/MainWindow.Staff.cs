@@ -62,7 +62,7 @@ public partial class MainWindow
                     catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
                     catch { }
                     await Dispatcher.InvokeAsync(() => ApplyStaffCapability(capability));
-                    nextCapabilities = _staffClock().AddSeconds(60);
+                    nextCapabilities = _staffClock().Add(PosmPollIntervals.NextStaffCapabilityCheck(capability));
                 }
                 if (_staffEnabled)
                 {

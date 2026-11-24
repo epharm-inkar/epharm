@@ -322,9 +322,15 @@ class StaffAuthService(
     }
     private fun recordObservation(person:Person,iin:String,context:StaffContext?) {
         val observation=context?.let { StaffIdentityObservation.match(iin,person.name,it) } ?: StaffIdentityMatch("NONE","UNKNOWN")
+        val iinStatus=context?.let { StaffIinObservation.match(iin,it) } ?: "UNKNOWN"
+        // Every cashier check used to rewrite the row (1.74 million updates in three weeks). Write on a
+        // change of the result, and otherwise refresh the check time at most once an hour.
         jdbc.update("""UPDATE pharmacists SET standard_n_iin_match_status=?,standard_n_iin_checked_at=now(),
-            standard_n_identity_match_method=?,standard_n_identity_match_status=?,standard_n_identity_checked_at=now(),updated_at=now() WHERE id=?""",
-            context?.let { StaffIinObservation.match(iin,it) } ?: "UNKNOWN",observation.method,observation.status,person.id)
+            standard_n_identity_match_method=?,standard_n_identity_match_status=?,standard_n_identity_checked_at=now(),updated_at=now()
+            WHERE id=? AND (standard_n_iin_match_status IS DISTINCT FROM ? OR standard_n_identity_match_method IS DISTINCT FROM ?
+              OR standard_n_identity_match_status IS DISTINCT FROM ? OR standard_n_iin_checked_at IS NULL
+              OR standard_n_identity_checked_at IS NULL OR standard_n_iin_checked_at < now()-interval '1 hour')""",
+            iinStatus,observation.method,observation.status,person.id,iinStatus,observation.method,observation.status)
     }
     private fun validateDeviceContext(context:StaffDeviceContext) {
         if(context.processInstanceId.isBlank() || context.processInstanceId.length>256 || context.processInstanceId.any(Char::isISOControl)) invalid()
