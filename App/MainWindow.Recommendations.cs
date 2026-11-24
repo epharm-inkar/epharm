@@ -175,7 +175,7 @@ namespace CustomerDisplay
             {
                 _posmConfig = EpharmConfig.Load();
                 ConfigureLogPath(_posmConfig.AppLogPath);
-                _standardNDb = new StandardNDbLookup(_posmConfig, Log);
+                _standardNDb = new StandardNDbLookup(_posmConfig, Log) { CashierProcessStartedUtc = CashierProcessStartedUtc };
                 if (_posmConfig.Enabled)
                 {
                     // Pilot installations registered an individual device credential for the

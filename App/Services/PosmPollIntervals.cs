@@ -23,6 +23,9 @@ public static class PosmPollIntervals
     /// <summary>The capability endpoint could not be reached: retry sooner than a healthy recheck.</summary>
     public static readonly TimeSpan StaffCapabilityRetry = TimeSpan.FromMinutes(5);
 
+    /// <summary>Login switched off: who sells at the till is still read this often, for the heartbeat only.</summary>
+    public static readonly TimeSpan StaffDiagnosticWhileDisabled = TimeSpan.FromMinutes(5);
+
     public static TimeSpan NextStaffCapabilityCheck(StaffCapabilityCheck capability)
     {
         ArgumentNullException.ThrowIfNull(capability);

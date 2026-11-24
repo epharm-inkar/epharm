@@ -400,4 +400,53 @@ public sealed class StandardNReceiptProjectionTests
         Assert.True(reader.Read());
         return StandardNReceiptProjection.Line(reader);
     }
+
+    // INK-161, 24.11: Standard-N refreshes HEARTBEATS of every unclosed session of a workstation, so sessions left
+    // open by power-offs look alive, the till stopped reading the current receipt and sales were never confirmed
+    // (about 20 of 514 tills still sent receipts). A session older than the running cashier process cannot hold it.
+    [Fact]
+    public void SessionsOlderThanTheRunningCashierProcessDoNotBlockTheReceipt()
+    {
+        var now = new DateTimeOffset(2026, 11, 24, 17, 0, 0, TimeSpan.FromHours(5));
+        var current = new StandardNReceiptSessionRow(900, "cashier-today", 77, "CASH-1", "zkassa") {
+            HeartbeatAt = now.AddSeconds(-20), DatabaseNow = now, SessionStartedAt = now.AddMinutes(-50),
+        };
+        var orphan = current with { SessionId = 800, UserId = "cashier-yesterday", SessionStartedAt = now.AddHours(-26) };
+        var processAge = TimeSpan.FromHours(1);
+
+        Assert.Equal(current, StandardNReceiptProjection.ExactLocalSession("CASH-1", [orphan, current], true, processAge));
+        Assert.Equal(current, StandardNReceiptProjection.ExactLocalSession("CASH-1", [current, orphan], true, processAge));
+        // Without the cashier process start nothing is discarded: no guessing.
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1", [orphan, current], true));
+        // Two sessions started after the process stay ambiguous.
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1",
+            [current, current with { SessionId = 901 }], true, processAge));
+        // A session without a start time is never discarded.
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1",
+            [orphan with { SessionStartedAt = null }, current], true, processAge));
+        // A cashier PC whose clock is a few minutes off still keeps the current session.
+        var skewed = current with { SessionStartedAt = now.AddMinutes(-63) };
+        Assert.Equal(skewed, StandardNReceiptProjection.ExactLocalSession("CASH-1", [orphan, skewed], true, processAge));
+        // Every candidate older than the process: nothing to read.
+        Assert.Null(StandardNReceiptProjection.ExactLocalSession("CASH-1",
+            [orphan, orphan with { SessionId = 801, SessionStartedAt = now.AddHours(-5) }], true, processAge));
+    }
+
+    [Fact]
+    public void SessionQueryReadsTheStartTimeOnlyWhenItIsATimestamp()
+    {
+        Assert.DoesNotContain("STARTDT", StandardNReceiptProjection.CurrentSessionSql(true));
+        Assert.Contains(",s.STARTDT", StandardNReceiptProjection.CurrentSessionSql(true, startedAtTimestamp: true));
+        Assert.Contains(",s.STARTDT", StandardNReceiptProjection.CurrentSessionSql(false, startedAtTimestamp: true));
+    }
+
+    [Fact]
+    public void CashierProcessStartIsReadFromTheProcessIdentity()
+    {
+        var start = new DateTimeOffset(2026, 11, 24, 3, 0, 0, TimeSpan.Zero);
+        Assert.Equal(start, StaffSessionResolver.ProcessStartUtc("4242:" + start.UtcDateTime.Ticks));
+        Assert.Null(StaffSessionResolver.ProcessStartUtc(null));
+        Assert.Null(StaffSessionResolver.ProcessStartUtc("no-ticks"));
+        Assert.Null(StaffSessionResolver.ProcessStartUtc("4242:-1"));
+    }
 }

@@ -20,6 +20,7 @@ internal sealed record StandardNReceiptSessionRow(long SessionId, string UserId,
 {
     public DateTimeOffset? HeartbeatAt { get; init; }
     public DateTimeOffset? DatabaseNow { get; init; }
+    public DateTimeOffset? SessionStartedAt { get; init; }
 }
 
 /// <summary>Strict, shared projection of the actual Firebird query rows; never selects a newest cart.</summary>
@@ -37,10 +38,11 @@ internal static class StandardNReceiptProjection
         RequiredLong(row, "SESSION_ID"), Text(row, "USER_ID") ?? "", OptionalLong(row, "WS_ID"),
         Text(row, "COMPNAME"), Text(row, "PROG")) {
             HeartbeatAt = Timestamp(Value(row, "HEARTBEATS")), DatabaseNow = Timestamp(Value(row, "DB_NOW")),
+            SessionStartedAt = Timestamp(Value(row, "STARTDT")),
         };
 
     public static StandardNReceiptSessionRow? ExactLocalSession(string machine, IReadOnlyList<StandardNReceiptSessionRow> rows,
-        bool requireHeartbeat = false)
+        bool requireHeartbeat = false, TimeSpan? cashierProcessAge = null)
     {
         if (rows.Count > 100) throw new InvalidDataException("Cashier session observation bound exceeded.");
         var canonical = StaffSessionResolver.CanonicalComputer(machine);
@@ -50,11 +52,21 @@ internal static class StandardNReceiptProjection
                 program.Contains("kassir", StringComparison.OrdinalIgnoreCase)) &&
             (!requireHeartbeat || row.HeartbeatAt is { } heartbeat && row.DatabaseNow is { } now &&
                 now >= heartbeat && now - heartbeat < TimeSpan.FromMinutes(5))).ToArray();
+        if (exact.Length > 1 && cashierProcessAge is { } age && age >= TimeSpan.Zero)
+        {
+            // Standard-N refreshes HEARTBEATS of every unclosed session of a workstation and a power-off never
+            // closes one, so earlier sessions look alive (INK-161). A session that started before the running
+            // cashier process cannot hold its receipt. Ages on the database clock, not wall clocks; rows without
+            // both database times are never discarded.
+            exact = exact.Where(row => !(row.DatabaseNow is { } now && row.SessionStartedAt is { } started &&
+                now - started > age + StaffSessionResolver.OrphanMargin)).ToArray();
+        }
         return exact.Length == 1 && exact[0].SessionId > 0 && !string.IsNullOrWhiteSpace(exact[0].UserId) ? exact[0] : null;
     }
 
-    public static string CurrentSessionSql(bool heartbeatTimestamp) =>
+    public static string CurrentSessionSql(bool heartbeatTimestamp, bool startedAtTimestamp = false) =>
         "select first 101 s.ID as SESSION_ID,s.USER_ID,s.WS_ID,s.PROG,w.COMPNAME" +
+        (startedAtTimestamp ? ",s.STARTDT" : "") +
         (heartbeatTimestamp ? ",s.HEARTBEATS,cast(CURRENT_TIMESTAMP as timestamp) as DB_NOW" : "") +
         @" from SESSIONS s join WORKSTATIONS w on w.ID=s.WS_ID
             where s.ENDDT is null and upper(w.COMPNAME) containing @machine

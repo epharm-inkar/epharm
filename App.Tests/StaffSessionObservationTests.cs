@@ -386,4 +386,86 @@ public sealed class StaffSessionObservationTests
         Assert.False(state.Accept(generation, key, "late-grant", Now.AddMinutes(5), Now));
         Assert.True(state.Accept(state.Generation, key, "new-grant", Now.AddMinutes(5), Now));
     }
+
+    // INK-161 (24.11): on 335 of 514 tills Standard-N kept several unclosed cashier sessions with fresh heartbeats
+    // (it refreshes every open session of the workstation, and power-offs never close them). A session started
+    // before the running cashier process cannot be that process's session.
+    private static string ProcessStartedAgo(TimeSpan ago) => "4242:" + Now.Subtract(ago).UtcDateTime.Ticks;
+
+    private static StaffCashSessionRow SessionStartedAgo(TimeSpan ago, long session, string user) =>
+        Row(session: session, user: user) with { SessionStartedAt = Now.Subtract(ago).UtcDateTime };
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnOrphanStartedBeforeTheCashierProcessIsIgnoredEvenWithAFreshHeartbeat(bool reverse)
+    {
+        var current = SessionStartedAgo(TimeSpan.FromMinutes(50), 300, "cashier-today");
+        var orphan = SessionStartedAgo(TimeSpan.FromHours(26), 200, "cashier-yesterday");
+
+        var result = StaffSessionResolver.Resolve(reverse ? [orphan, current] : [current, orphan], "KASSA1",
+            ProcessStartedAgo(TimeSpan.FromHours(1)), observerUtcNow: Now);
+
+        Assert.Equal("resolved", result.Status);
+        Assert.Equal("300", result.Session!.ExternalSessionId);
+        Assert.Equal("cashier-today", result.Session.ExternalUserId);
+    }
+
+    [Fact]
+    public void ManyOrphansFromEarlierDaysStillLeaveTheOneCurrentSession()
+    {
+        var rows = Enumerable.Range(1, 12)
+            .Select(day => SessionStartedAgo(TimeSpan.FromDays(day), 100 + day, "cashier-" + day))
+            .Append(SessionStartedAgo(TimeSpan.FromMinutes(3), 999, "cashier-now"));
+
+        var result = StaffSessionResolver.Resolve(rows, "KASSA1", ProcessStartedAgo(TimeSpan.FromMinutes(4)), observerUtcNow: Now);
+
+        Assert.Equal("resolved", result.Status);
+        Assert.Equal("999", result.Session!.ExternalSessionId);
+    }
+
+    [Fact]
+    public void TwoSessionsStartedAfterTheProcessStayAmbiguous()
+    {
+        var first = SessionStartedAgo(TimeSpan.FromMinutes(40), 300, "cashier-a");
+        var second = SessionStartedAgo(TimeSpan.FromMinutes(10), 301, "cashier-b");
+
+        var result = StaffSessionResolver.Resolve([first, second], "KASSA1", ProcessStartedAgo(TimeSpan.FromHours(1)), observerUtcNow: Now);
+
+        Assert.Equal("ambiguous_session", result.Status);
+        Assert.Null(result.Session);
+    }
+
+    [Fact]
+    public void WhenEverySessionPredatesTheProcessTheDiagnosticSaysSo()
+    {
+        var older = SessionStartedAgo(TimeSpan.FromHours(30), 200, "cashier-a");
+        var old = SessionStartedAgo(TimeSpan.FromHours(5), 201, "cashier-b");
+
+        var result = StaffSessionResolver.Resolve([older, old], "KASSA1", ProcessStartedAgo(TimeSpan.FromHours(1)), observerUtcNow: Now);
+
+        Assert.Equal("session_predates_process", result.Status);
+        Assert.Null(result.Session);
+    }
+
+    [Fact]
+    public void SessionsWithoutAStartTimeCannotBeDiscarded()
+    {
+        var current = SessionStartedAgo(TimeSpan.FromMinutes(50), 300, "cashier-today");
+        var unknown = Row(session: 200, user: "cashier-unknown") with { SessionStartedAt = null };
+
+        var result = StaffSessionResolver.Resolve([current, unknown], "KASSA1", ProcessStartedAgo(TimeSpan.FromHours(1)), observerUtcNow: Now);
+
+        Assert.Equal("ambiguous_session", result.Status);
+    }
+
+    [Fact]
+    public void AnUnreadableProcessStartNeverDiscardsCandidates()
+    {
+        var current = SessionStartedAgo(TimeSpan.FromMinutes(50), 300, "cashier-today");
+        var orphan = SessionStartedAgo(TimeSpan.FromHours(26), 200, "cashier-yesterday");
+
+        Assert.Equal("ambiguous_session", StaffSessionResolver.Resolve([current, orphan], "KASSA1", "no-ticks", observerUtcNow: Now).Status);
+        Assert.Equal("ambiguous_session", StaffSessionResolver.Resolve([current, orphan], "KASSA1", "4242:-5", observerUtcNow: Now).Status);
+    }
 }
