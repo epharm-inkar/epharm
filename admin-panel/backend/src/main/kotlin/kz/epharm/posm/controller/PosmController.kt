@@ -78,7 +78,8 @@ class PosmController(
             sourceNamespace = req.sourceNamespace,
             useDirectory = true,
         )
-        return recommendationService.recommend(req.copy(pharmacistId = identity.pharmacistId))
+        val pilotTill = appReleaseService.isPilotTill(device.pharmacyId, device.deviceId, device.legacy)
+        return recommendationService.recommend(req.copy(pharmacistId = identity.pharmacistId), pilotTill)
             .copy(rewardEvidenceProtocol = rewards.protocol(device))
     }
 

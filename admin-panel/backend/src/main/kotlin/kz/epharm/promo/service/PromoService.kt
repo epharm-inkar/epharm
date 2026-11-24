@@ -94,6 +94,7 @@ class PromoService(
             period = req.period.trim(),
             budget = req.budget,
             budgetUnlimited = req.budgetUnlimited,
+            pilotOnly = req.pilotOnly,
             kpi = req.kpi.trim(),
             cover = req.cover.trim(),
             medusaProductId = medusaProductId,
@@ -216,6 +217,7 @@ class PromoService(
         }
         req.kpi?.let { entity.kpi = it.trim() }
         req.cover?.let { entity.cover = it.trim() }
+        req.pilotOnly?.let { entity.pilotOnly = it }
         // Товарная акция. Смена товара → надо перетянуть цену из Medusa.
         val productChanged = req.medusaProductId != null &&
             req.medusaProductId.trim().takeIf(String::isNotBlank) != entity.medusaProductId

@@ -65,14 +65,15 @@ class RecommendationService(
     }
 
     @Transactional
-    fun recommend(req: RecommendRequest): RecommendResponse {
+    /** [pilotTill]: the till is in the POSM pilot channel, so pilot-only campaigns apply to it. */
+    fun recommend(req: RecommendRequest, pilotTill: Boolean = false): RecommendResponse {
         // A decision already made for this product in the current receipt must not prompt again.
         val decidedSkus = eventRepository.findAllBySessionId(req.sessionId)
             .filter { it.outcome == RecommendationOutcome.rejected || it.outcome == RecommendationOutcome.accepted }
             .map { it.recommendSku }
             .toSet()
 
-        val matchResult = rulesEngine.match(req.cart, req.scannedBarcode)
+        val matchResult = rulesEngine.match(req.cart, req.scannedBarcode, pilotTill)
         val eligible = matchResult.matches.filter { it.recommend.id !in decidedSkus }
         val ranked = eligible.filter { it.rule.type == kz.epharm.rules.entity.RuleType.substitution }
             .take(MAX_RECOMMENDATIONS_PER_KIND) +

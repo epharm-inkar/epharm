@@ -33,6 +33,9 @@ class AppReleaseService(
 
     /** Текущий стабильный релиз для платформы (для кассы). Нет — AppVersionDto.none(). */
     @Transactional(readOnly = true)
+    /** The till is in the POSM pilot channel: it gets pilot releases and pilot-only campaigns. */
+    fun isPilotTill(pharmacyId: String?, deviceId: String?, legacy: Boolean): Boolean = pilot.allows(pharmacyId, deviceId, legacy)
+
     fun currentFor(platform: String): AppVersionDto =
         current(platform, STABLE)?.let(AppVersionDto::of) ?: AppVersionDto.none()
 
