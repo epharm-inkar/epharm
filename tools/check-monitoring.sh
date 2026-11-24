@@ -74,11 +74,12 @@ echo '== postgres-exporter business queries'
 docker network create "$net" >/dev/null
 docker run -d --name "$net-pg" --network "$net" -e POSTGRES_PASSWORD=check -e POSTGRES_DB=epharm "$pg_image" >/dev/null
 for _ in $(seq 1 60); do
-  docker exec "$net-pg" pg_isready -U postgres -d epharm >/dev/null 2>&1 && break
+  # The init phase listens on the socket only and then restarts: wait for TCP.
+  docker exec "$net-pg" pg_isready -h 127.0.0.1 -U postgres -d epharm >/dev/null 2>&1 && break
   sleep 1
 done
 # Only the columns the queries read; names and types as in db/migration (V014, V043).
-docker exec -i "$net-pg" psql -v ON_ERROR_STOP=1 -U postgres -d epharm >/dev/null <<'SQL'
+docker exec -i "$net-pg" psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U postgres -d epharm >/dev/null <<'SQL'
 CREATE TABLE pos_sales (id VARCHAR(64) PRIMARY KEY, pharmacy_id VARCHAR(64) NOT NULL, printed_at TIMESTAMPTZ NOT NULL);
 CREATE INDEX ON pos_sales (printed_at DESC, id DESC);
 CREATE TABLE fulfillment_devices (id UUID PRIMARY KEY, pharmacy_id VARCHAR(64) NOT NULL, active BOOLEAN NOT NULL,
