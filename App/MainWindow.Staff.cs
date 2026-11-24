@@ -51,6 +51,7 @@ public partial class MainWindow
     private async Task StaffObservationLoop(CancellationToken ct)
     {
         var nextCapabilities = DateTimeOffset.MinValue;
+        var nextDiagnostic = DateTimeOffset.MinValue;
         while (!ct.IsCancellationRequested)
         {
             try
@@ -63,6 +64,19 @@ public partial class MainWindow
                     catch { }
                     await Dispatcher.InvokeAsync(() => ApplyStaffCapability(capability));
                     nextCapabilities = _staffClock().Add(PosmPollIntervals.NextStaffCapabilityCheck(capability));
+                    nextDiagnostic = DateTimeOffset.MinValue;
+                }
+                if (!_staffEnabled && _staffClock() >= nextDiagnostic)
+                {
+                    // Login is switched off on the server: still read, every few minutes and without any window or
+                    // session, whether the seller at this till would resolve, so the heartbeat shows it fleet-wide
+                    // before login is switched on again (INK-161).
+                    var process = _staffProcessProbe();
+                    var observation = process.Status == "resolved"
+                        ? _staffLookup?.ObserveStaffSession(process.Identity!) ?? new StaffSessionObservation("database_unavailable")
+                        : new StaffSessionObservation(process.Status);
+                    if (!_staffEnabled) _staffSourceStatus = StaffAuthDiagnostics.NormalizeSource(observation.Status);
+                    nextDiagnostic = _staffClock().Add(PosmPollIntervals.StaffDiagnosticWhileDisabled);
                 }
                 if (_staffEnabled)
                 {

@@ -94,6 +94,16 @@ public static class StaffSessionResolver
             row.DatabaseNow == null || row.SessionStartedAt > row.HeartbeatAt ||
             row.DatabaseNow.Value - row.HeartbeatAt.Value <= maxAge).ToArray();
         if (candidates.Length == 0) return new("stale_session");
+        if (candidates.Length > 1 && TryProcessAge(processIdentity, observerUtcNow, out var runningFor))
+        {
+            // Standard-N refreshes HEARTBEATS of every unclosed session of a workstation, and a power-off never
+            // closes one, so yesterday's sessions look alive (INK-161: 335 of 514 tills). A session that started
+            // before the running cashier process cannot be its session. Ages, not wall clocks, are compared; the
+            // margin absorbs a cashier PC whose clock differs from the database server's.
+            var current = candidates.Where(row => !StartedBeforeProcess(row, runningFor, OrphanMargin)).ToArray();
+            if (current.Length == 0) return new("session_predates_process");
+            candidates = current;
+        }
         if (candidates.Length != 1) return new("ambiguous_session");
         var item = candidates[0];
         if (item.HeartbeatAt == null || item.DatabaseNow == null || item.SessionStartedAt == null)
@@ -116,6 +126,24 @@ public static class StaffSessionResolver
             item.SessionId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             item.WorkstationId!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
+
+    /// <summary>Margin for discarding sessions older than the cashier process; orphans are hours or days old.</summary>
+    public static readonly TimeSpan OrphanMargin = TimeSpan.FromMinutes(5);
+
+    private static bool TryProcessAge(string processIdentity, DateTimeOffset? observerUtcNow, out TimeSpan age)
+    {
+        age = TimeSpan.Zero;
+        var colon = processIdentity.LastIndexOf(':');
+        if (colon < 0 || !long.TryParse(processIdentity[(colon + 1)..], out var ticks) || ticks < 0 || ticks > DateTime.MaxValue.Ticks)
+            return false;
+        age = (observerUtcNow ?? DateTimeOffset.UtcNow) - new DateTimeOffset(new DateTime(ticks, DateTimeKind.Utc));
+        return age >= TimeSpan.Zero;
+    }
+
+    // Only provable: a row without both database times is never discarded.
+    private static bool StartedBeforeProcess(StaffCashSessionRow row, TimeSpan processAge, TimeSpan margin) =>
+        row.DatabaseNow != null && row.SessionStartedAt != null &&
+        row.DatabaseNow.Value - row.SessionStartedAt.Value > processAge + margin;
 }
 
 internal static class StaffSessionQuery
