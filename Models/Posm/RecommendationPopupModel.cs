@@ -14,6 +14,18 @@ namespace CustomerDisplay.Models.Posm
         public RecommendationPopupSection Substitutions { get; init; } = new();
         public RecommendationPopupSection CrossSells { get; init; } = new();
         public int TotalCount => Substitutions.Rows.Count + CrossSells.Rows.Count;
+
+        /// <summary>Largest single-offer bonus in the popup; 0 when no offer pays the pharmacist.</summary>
+        public int MaxBonus => Substitutions.Rows.Concat(CrossSells.Rows)
+            .Select(row => row.BonusAmount).DefaultIfEmpty(0).Max();
+
+        public int BonusOfferCount => Substitutions.Rows.Concat(CrossSells.Rows).Count(row => row.HasBonus);
+
+        /// <summary>Header line: what the pharmacist earns, so the reward is read first.</summary>
+        public string Headline => MaxBonus <= 0
+            ? "Предложите покупателю"
+            : (BonusOfferCount > 1 ? "Ваш бонус до +" : "Ваш бонус +") +
+              RecommendationPopupModelBuilder.Money(MaxBonus);
     }
 
     public sealed class RecommendationPopupSection
@@ -34,7 +46,13 @@ namespace CustomerDisplay.Models.Posm
         public string TriggerContext { get; init; } = "";
         public string Price { get; init; } = "—";
         public string Bonus { get; init; } = "Без вознаграждения";
+        /// <summary>Short badge text: «+200 ₸» or «без бонуса».</summary>
+        public string BonusBadge { get; init; } = "без бонуса";
+        public int BonusAmount { get; init; }
         public bool HasBonus { get; init; }
+        /// <summary>Personal goal progress from the backend, e.g. «Цель «3/10 …» · +2 000 ₸ за выполнение».</summary>
+        public string Goal { get; init; } = "";
+        public bool HasGoal => !string.IsNullOrWhiteSpace(Goal);
         public string PartnerLabel { get; init; } = "";
         public string Stock { get; init; } = "Остаток не подтверждён";
         public bool HasConfirmedStock { get; init; }
@@ -82,7 +100,12 @@ namespace CustomerDisplay.Models.Posm
                 Bonus = recommendation.Bonus > 0
                     ? $"Вознаграждение +{Money(recommendation.Bonus)}"
                     : "Без вознаграждения",
+                BonusBadge = recommendation.Bonus > 0
+                    ? "+" + Money(recommendation.Bonus)
+                    : "без бонуса",
+                BonusAmount = Math.Max(0, recommendation.Bonus),
                 HasBonus = recommendation.Bonus > 0,
+                Goal = GoalLine(recommendation.GoalText, recommendation.GoalBonus),
                 PartnerLabel = recommendation.PartnerLabel?.Trim() ?? "",
                 Stock = StockText(recommendation.Balance),
                 HasConfirmedStock = recommendation.Balance != null &&
@@ -92,6 +115,14 @@ namespace CustomerDisplay.Models.Posm
             }).ToList();
 
             return new RecommendationPopupSection { TriggerText = sharedTrigger, Rows = rows };
+        }
+
+        public static string GoalLine(string? goalText, int? goalBonus)
+        {
+            if (string.IsNullOrWhiteSpace(goalText)) return "";
+            var text = goalText.Trim();
+            text = char.ToUpper(text[0], CultureInfo.GetCultureInfo("ru-RU")) + text[1..];
+            return goalBonus > 0 ? $"{text} · +{Money(goalBonus)} за выполнение" : text;
         }
 
         private static string TriggerPrefix(bool substitution) =>

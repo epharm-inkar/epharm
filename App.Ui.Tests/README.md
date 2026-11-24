@@ -52,9 +52,17 @@ A separate below-fold error case positions the submit button in the viewport, th
 proves a new error scrolls itself into view without test-driven status scrolling,
 focus theft, window activation or lost passwords. Countdown ticks do not trigger this
 product error-reveal path.
+A showcase case renders the real recommendation window on three realistic cashier
+scenarios (`showcase-*.png`). To compare a visual change, run only those renders before
+and after it:
+
+```powershell
+dotnet run --project App.Ui.Tests/CustomerDisplay.Ui.Tests.csproj -c Release -- --recommendation-showcase --output=C:\Temp\epharm-before
+```
+
 A 90-second WPF watchdog closes test windows and returns exit code 3 on timeout.
 
-Exit code 0 means all 55 cases passed; 1 is a test failure; 2 is a missing
+Exit code 0 means all 58 cases passed; 1 is a test failure; 2 is a missing
 interactive session or invalid arguments. Output defaults to `proof` beside the
 executable and includes `qa-proof.json` and fourteen renders of its own WPF content.
 Error screenshots scroll the form to the actual status; they do not imply all fields

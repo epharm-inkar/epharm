@@ -5,6 +5,13 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- POSM recommendation popup leads with the pharmacist's reward: a header with the largest
+  bonus, a large `+N ₸` badge on each paid offer, the server's personal goal line and an
+  auto-close note; ePharm colours and Manrope replace the red section titles. Offers, order,
+  limits and focus behaviour are unchanged. Needs a signed POSM release to reach the tills.
+
 ### Fixed
 
 - POSM 1.0.89 separates automatic RPS presentation from grant/session invalidation:
