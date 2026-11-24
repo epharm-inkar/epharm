@@ -203,6 +203,8 @@ app:
     legacy-device-key-enabled: ${POSM_LEGACY_DEVICE_KEY_ENABLED:true}
     # Base64 DER SubjectPublicKeyInfo for ECDSA P-256 update-manifest signatures.
     update-manifest-public-key-spki: ${POSM_UPDATE_PUBLIC_KEY_SPKI:}
+    # Tills that get pilot client releases first: pharmacyId|deviceId or pharmacyId|* , comma-separated.
+    update-pilot-devices: ${POSM_UPDATE_PILOT_DEVICES:}
     # Accepted producers of exact fiscal PDF/PNG metadata. Must match the POSM-side allowlist.
     fiscal-artifact-trusted-sources: ${POSM_FISCAL_ARTIFACT_TRUSTED_SOURCES:standardn-kkm-sdk,ofd-api}
     # Сколько секунд пульс кассы считается «живым» (T4, GET /screens/connected).

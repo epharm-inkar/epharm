@@ -7,6 +7,11 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- POSM pilot channel: a client release registered with `channel: pilot` reaches only the tills listed in
+  `POSM_UPDATE_PILOT_DEVICES` (`pharmacyId|deviceId` or `pharmacyId|*`); every other till keeps the stable
+  release, and a pilot till always gets the newer of the two. V110 adds `app_releases.channel` and one current
+  release per platform and channel.
+
 - Monitoring alerts reach Telegram: Alertmanager sends firing and resolved alerts through
   `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` (the storefront's alert bot); the token
   stays in a 0600 file, not in the rendered config.

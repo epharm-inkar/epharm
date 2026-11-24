@@ -55,6 +55,7 @@ class AppReleaseIntegrationTest {
             reg.add("spring.datasource.username") { postgres.username }
             reg.add("spring.datasource.password") { postgres.password }
             reg.add("app.posm.legacy-device-key-enabled") { "false" }
+            reg.add("app.posm.update-pilot-devices") { "ph_pilot|KASSA9,ph_whole|*" }
         }
     }
 
@@ -148,6 +149,48 @@ class AppReleaseIntegrationTest {
         ).andExpect(status().isUnauthorized)
     }
 
+    @Test
+    fun `pilot release reaches only listed tills and the fleet keeps the stable release`() {
+        appReleaseService.register(release("1.0.90", "https://cdn.example/v90.zip"))
+        appReleaseService.register(release("1.0.91", "https://cdn.example/v91.zip", channel = "pilot"))
+
+        assertEquals("1.0.91", appReleaseService.currentFor("win-x64", "ph_pilot", "KASSA9", false).version)
+        assertEquals("1.0.91", appReleaseService.currentFor("win-x64", "ph_whole", "MANAGER", false).version)
+        assertEquals("1.0.90", appReleaseService.currentFor("win-x64", "ph_pilot", "KASSA1", false).version)
+        assertEquals("1.0.90", appReleaseService.currentFor("win-x64", "ph_other", "KASSA9", false).version)
+        assertEquals("1.0.90", appReleaseService.currentFor("win-x64", "ph_pilot", "KASSA9", true).version)
+        assertEquals("1.0.90", appReleaseService.currentFor("win-x64").version)
+        // The signed update route with the retired fleet key never joins the pilot.
+        assertEquals("1.0.90", getVersion().version)
+    }
+
+    @Test
+    fun `an older pilot never holds a pilot till below the stable release`() {
+        appReleaseService.register(release("1.0.91", "https://cdn.example/v91.zip", channel = "pilot"))
+        appReleaseService.register(release("1.0.92", "https://cdn.example/v92.zip"))
+
+        assertEquals("1.0.92", appReleaseService.currentFor("win-x64", "ph_pilot", "KASSA9", false).version)
+    }
+
+    @Test
+    fun `each channel keeps exactly one current release`() {
+        appReleaseService.register(release("1.0.90", "https://cdn.example/v90.zip"))
+        appReleaseService.register(release("1.0.91", "https://cdn.example/v91.zip", channel = "pilot"))
+        appReleaseService.register(release("1.0.92", "https://cdn.example/v92.zip", channel = "pilot"))
+
+        assertEquals(listOf("1.0.90"), appReleaseRepository.findAllByPlatformAndChannelAndIsCurrentTrue("win-x64", "stable").map { it.version })
+        assertEquals(listOf("1.0.92"), appReleaseRepository.findAllByPlatformAndChannelAndIsCurrentTrue("win-x64", "pilot").map { it.version })
+        assertEquals("1.0.90", getVersion().version)
+    }
+
+    @Test
+    fun `no stable release still lets a pilot till update and leaves the fleet without an update`() {
+        appReleaseService.register(release("1.0.91", "https://cdn.example/v91.zip", channel = "pilot"))
+
+        assertEquals("1.0.91", appReleaseService.currentFor("win-x64", "ph_pilot", "KASSA9", false).version)
+        assertFalse(appReleaseService.currentFor("win-x64", "ph_other", "KASSA1", false).current)
+    }
+
     private fun getVersion(): AppVersionDto {
         val body = mockMvc.perform(get("/api/posm/app/version").header("X-Posm-Key", POSM_KEY))
             .andExpect(status().isOk)
@@ -155,10 +198,11 @@ class AppReleaseIntegrationTest {
         return objectMapper.readValue(body, AppVersionDto::class.java)
     }
 
-    private fun release(version: String, url: String) = RegisterReleaseRequest(
+    private fun release(version: String, url: String, channel: String = "stable") = RegisterReleaseRequest(
         version = version,
         url = url,
         sha256 = "a".repeat(64),
         manifestSignature = "AQID",
+        channel = channel,
     )
 }

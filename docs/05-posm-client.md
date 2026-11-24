@@ -830,6 +830,19 @@ powershell -ExecutionPolicy Bypass -File scripts\publish-exe.ps1
 
 The release package must include the exe, runtime dependencies, LibVLC files, `posm.json`, and `run.bat`.
 
+## Pilot rollout (backend v0.2.25+)
+
+A client release can go to a few tills before the fleet. `app_releases.channel` is `stable` (every till) or
+`pilot` (V110); each channel has at most one current release per platform. The backend gives a till listed in
+`POSM_UPDATE_PILOT_DEVICES` (`pharmacyId|deviceId` or `pharmacyId|*`, comma-separated; the retired fleet key never
+qualifies) the newer of the current pilot and stable releases; every other till gets the stable release.
+
+1. Set `POSM_UPDATE_PILOT_DEVICES` in `.env.prod` (backend restart) to one or two tills you can watch.
+2. Register the signed package with `"channel": "pilot"` through `POST /api/admin/app-releases`.
+3. Check the pilot tills: heartbeat version, application log, the sales they send.
+4. Register the same signed package with `"channel": "stable"`: the fleet updates on its next check. A stale pilot
+   release never holds a pilot till below the stable one, so the pilot needs no cleanup.
+
 ## Deployment
 
 For long-running cash desk installation:

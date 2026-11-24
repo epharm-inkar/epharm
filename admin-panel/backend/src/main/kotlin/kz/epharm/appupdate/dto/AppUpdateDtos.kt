@@ -1,6 +1,7 @@
 package kz.epharm.appupdate.dto
 
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 import kz.epharm.appupdate.entity.AppReleaseEntity
 import java.time.Instant
@@ -58,6 +59,9 @@ data class RegisterReleaseRequest(
     val mandatory: Boolean = false,
     @field:Size(max = 1024)
     val notes: String = "",
+    /** stable (default): every till; pilot: only tills listed in POSM_UPDATE_PILOT_DEVICES. */
+    @field:Pattern(regexp = "stable|pilot")
+    val channel: String = "stable",
 )
 
 data class AppReleaseDto(
@@ -71,12 +75,14 @@ data class AppReleaseDto(
     val notes: String,
     val isCurrent: Boolean,
     val createdAt: Instant,
+    val channel: String = "stable",
 ) {
     companion object {
         fun of(e: AppReleaseEntity) = AppReleaseDto(
             id = e.id, platform = e.platform, version = e.version, url = e.url, sha256 = e.sha256,
             manifestSignature = e.manifestSignature,
             mandatory = e.mandatory, notes = e.notes, isCurrent = e.isCurrent, createdAt = e.createdAt,
+            channel = e.channel,
         )
     }
 }
