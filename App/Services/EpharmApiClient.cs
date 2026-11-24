@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -14,6 +15,16 @@ namespace CustomerDisplay.Services
     /// возвращают null/false и НЕ бросают — касса не должна тормозить или падать из-за backend.
     /// Аутентификация устройства — заголовок X-Posm-Key.
     /// </summary>
+    /// <summary>Outcome of one attempt to deliver a queued sale.</summary>
+    public enum SaleDeliveryResult
+    {
+        Delivered,
+        /// <summary>Network, timeout or server error: try again later.</summary>
+        Retry,
+        /// <summary>The backend refused this sale for good: retrying the same payload cannot succeed.</summary>
+        Rejected,
+    }
+
     public sealed class EpharmApiClient : IMerchTaskApi, IDisposable
     {
         private readonly HttpClient _http;
@@ -260,6 +271,7 @@ namespace CustomerDisplay.Services
                 }
                 catch (JsonException) { }
                 LastHeartbeatError = null;
+                LastHeartbeatAcceptedAt = DateTimeOffset.UtcNow;
                 return true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -348,19 +360,41 @@ namespace CustomerDisplay.Services
         }
 
         /// <summary>Отправка завершённого чека (источник №1 сверки). false при ошибке → outbox.</summary>
-        public async Task<bool> PostSaleAsync(SaleReport sale, CancellationToken ct = default)
+        public async Task<bool> PostSaleAsync(SaleReport sale, CancellationToken ct = default) =>
+            await SendSaleAsync(sale, ct).ConfigureAwait(false) == SaleDeliveryResult.Delivered;
+
+        /// <summary>
+        /// Like <see cref="PostSaleAsync"/>, but tells a permanent refusal from a transient failure.
+        /// 409 is the backend's identity conflict (the same Standard-N document came back with another
+        /// session or total) and never succeeds on a retry. 401/403 count as permanent only while the
+        /// heartbeat with the same device key is accepted: then the key works and the queued sale
+        /// itself names another pharmacy or device. Without a recent heartbeat it is a transient failure.
+        /// </summary>
+        public async Task<SaleDeliveryResult> SendSaleAsync(SaleReport sale, CancellationToken ct = default)
         {
             try
             {
                 using var resp = await _http.PostAsJsonAsync("/api/posm/sales", sale, JsonOpts, ct)
                     .ConfigureAwait(false);
-                return resp.IsSuccessStatusCode;
+                if (resp.IsSuccessStatusCode) return SaleDeliveryResult.Delivered;
+                if (resp.StatusCode == HttpStatusCode.Conflict) return SaleDeliveryResult.Rejected;
+                if ((resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) && HeartbeatRecentlyAccepted())
+                    return SaleDeliveryResult.Rejected;
+                return SaleDeliveryResult.Retry;
             }
             catch
             {
-                return false;
+                return SaleDeliveryResult.Retry;
             }
         }
+
+        private static readonly TimeSpan HeartbeatEvidenceWindow = TimeSpan.FromMinutes(10);
+
+        /// <summary>Time of the last heartbeat the backend accepted (UTC), null before the first one.</summary>
+        public DateTimeOffset? LastHeartbeatAcceptedAt { get; private set; }
+
+        private bool HeartbeatRecentlyAccepted() =>
+            LastHeartbeatAcceptedAt is { } at && DateTimeOffset.UtcNow - at <= HeartbeatEvidenceWindow;
 
         public void Dispose() => _http.Dispose();
     }

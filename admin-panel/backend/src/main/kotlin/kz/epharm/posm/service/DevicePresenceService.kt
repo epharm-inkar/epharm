@@ -18,7 +18,8 @@ import java.util.concurrent.atomic.AtomicLong
  * мы помним последний пульс по паре pharmacyId + deviceId. Имя компьютера Windows часто
  * повторяется между аптеками (например, KASSA1), поэтому deviceId сам по себе нельзя
  * использовать как ключ присутствия. «Онлайн» = пульс не старше TTL
- * (`app.posm.heartbeat-ttl-seconds`, по умолчанию 90с ≈ 1.5 интервала).
+ * (`app.posm.heartbeat-ttl-seconds`, по умолчанию 150с ≈ 2.5 интервала; `last_seen_at`
+ * в базе обновляется не чаще раза в минуту, см. [DeviceLastSeen]).
  *
  * Redis хранит shared/persistent last-seen, поэтому список не обнуляется при рестарте backend и
  * работает при нескольких инстансах. ConcurrentHashMap остаётся fail-safe, если Redis временно
@@ -26,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 @Service
 class DevicePresenceService(
-    @Value("\${app.posm.heartbeat-ttl-seconds:90}") private val ttlSeconds: Long,
+    @Value("\${app.posm.heartbeat-ttl-seconds:150}") private val ttlSeconds: Long,
     private val redisProvider: ObjectProvider<StringRedisTemplate>? = null,
     private val jdbc: JdbcTemplate? = null,
 ) {

@@ -121,37 +121,36 @@ public sealed class TaskKioskClientTests
     {
         var schedule = new TaskKioskPollSchedule(() => 0.5);
 
-        Assert.Equal(TimeSpan.FromSeconds(30), schedule.Initial);
-        Assert.Equal(TimeSpan.FromSeconds(30), schedule.RecordFailure());
+        Assert.Equal(TimeSpan.FromMinutes(15), schedule.Initial);
         Assert.Equal(TimeSpan.FromMinutes(1), schedule.RecordFailure());
-        Assert.Equal(TimeSpan.FromMinutes(2), schedule.RecordFailure());
         Assert.Equal(TimeSpan.FromMinutes(5), schedule.RecordFailure());
-        Assert.Equal(TimeSpan.FromMinutes(5), schedule.RecordFailure());
-        Assert.Equal(TimeSpan.FromSeconds(30), schedule.RecordSuccess());
-        Assert.Equal(TimeSpan.FromSeconds(30), schedule.RecordFailure());
+        Assert.Equal(TimeSpan.FromMinutes(15), schedule.RecordFailure());
+        Assert.Equal(TimeSpan.FromMinutes(15), schedule.RecordFailure());
+        Assert.Equal(TimeSpan.FromMinutes(15), schedule.RecordSuccess());
+        Assert.Equal(TimeSpan.FromMinutes(1), schedule.RecordFailure());
     }
 
     [Fact]
-    public void HealthyPollSpreadsAcrossTwentyFourToThirtySixSeconds()
+    public void HealthyPollSpreadsAcrossTwelveToEighteenMinutes()
     {
         var early = new TaskKioskPollSchedule(() => 0);
         var late = new TaskKioskPollSchedule(() => 1);
 
-        Assert.Equal(TimeSpan.FromSeconds(24), early.Initial);
-        Assert.Equal(TimeSpan.FromSeconds(36), late.Initial);
-        Assert.Equal(TimeSpan.FromSeconds(24), early.RecordSuccess());
-        Assert.Equal(TimeSpan.FromSeconds(36), late.RecordSuccess());
-        Assert.Equal(TimeSpan.FromSeconds(24), new TaskKioskPollSchedule(() => -1).Initial);
-        Assert.Equal(TimeSpan.FromSeconds(36), new TaskKioskPollSchedule(() => 2).Initial);
+        Assert.Equal(TimeSpan.FromMinutes(12), early.Initial);
+        Assert.Equal(TimeSpan.FromMinutes(18), late.Initial);
+        Assert.Equal(TimeSpan.FromMinutes(12), early.RecordSuccess());
+        Assert.Equal(TimeSpan.FromMinutes(18), late.RecordSuccess());
+        Assert.Equal(TimeSpan.FromMinutes(12), new TaskKioskPollSchedule(() => -1).Initial);
+        Assert.Equal(TimeSpan.FromMinutes(18), new TaskKioskPollSchedule(() => 2).Initial);
     }
 
     [Fact]
-    public void InvalidJitterSampleFallsBackToThirtySeconds()
+    public void InvalidJitterSampleFallsBackToFifteenMinutes()
     {
         var schedule = new TaskKioskPollSchedule(() => double.NaN);
 
-        Assert.Equal(TimeSpan.FromSeconds(30), schedule.Initial);
-        Assert.Equal(TimeSpan.FromSeconds(30), schedule.RecordSuccess());
+        Assert.Equal(TimeSpan.FromMinutes(15), schedule.Initial);
+        Assert.Equal(TimeSpan.FromMinutes(15), schedule.RecordSuccess());
     }
 
     private sealed class FakeMerchTaskApi : IMerchTaskApi

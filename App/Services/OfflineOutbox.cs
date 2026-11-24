@@ -56,6 +56,15 @@ namespace CustomerDisplay.Services
                     attempts      INTEGER NOT NULL DEFAULT 0,
                     next_retry_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS outbox_rejected (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    attempts INTEGER NOT NULL,
+                    rejections INTEGER NOT NULL,
+                    archived_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS outbox_legacy_sale_evidence (
                     id TEXT PRIMARY KEY,
                     kind TEXT NOT NULL,
@@ -66,7 +75,25 @@ namespace CustomerDisplay.Services
                     archived_at TEXT NOT NULL
                 );";
             cmd.ExecuteNonQuery();
+            EnsureRejectionsColumn(conn);
         }
+
+        // Queues written by earlier POSM builds have no rejection counter.
+        private static void EnsureRejectionsColumn(SqliteConnection conn)
+        {
+            using var columns = conn.CreateCommand();
+            columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('outbox') WHERE name = 'rejections';";
+            if (Convert.ToInt64(columns.ExecuteScalar()) > 0) return;
+            using var alter = conn.CreateCommand();
+            alter.CommandText = "ALTER TABLE outbox ADD COLUMN rejections INTEGER NOT NULL DEFAULT 0;";
+            alter.ExecuteNonQuery();
+        }
+
+        /// <summary>A record the backend refused for good is retried at most this often...</summary>
+        public static readonly TimeSpan RejectedRetryInterval = TimeSpan.FromHours(1);
+
+        /// <summary>...and after this many refusals it moves to <c>outbox_rejected</c> (kept, never sent again).</summary>
+        public const int MaxRejections = 5;
 
         public void Enqueue(string id, string kind, string payloadJson)
         {
@@ -122,7 +149,7 @@ namespace CustomerDisplay.Services
             archive.ExecuteNonQuery();
             using var update = conn.CreateCommand();
             update.Transaction = transaction;
-            update.CommandText = @"UPDATE outbox SET payload=$payload,attempts=0,next_retry_at=$now
+            update.CommandText = @"UPDATE outbox SET payload=$payload,attempts=0,rejections=0,next_retry_at=$now
                                    WHERE id=$id AND kind='sale';";
             update.Parameters.AddWithValue("$id", id);
             update.Parameters.AddWithValue("$payload", payloadJson);
@@ -195,7 +222,8 @@ namespace CustomerDisplay.Services
             {
                 using var conn = Open();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "UPDATE outbox SET next_retry_at = $now;";
+                // A record the backend refused for good keeps its hourly schedule: a network flap is no reason to resend it.
+                cmd.CommandText = "UPDATE outbox SET next_retry_at = $now WHERE rejections = 0;";
                 cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("o"));
                 cmd.ExecuteNonQuery();
             }
@@ -214,6 +242,50 @@ namespace CustomerDisplay.Services
                 cmd.Parameters.AddWithValue("$next", next);
                 cmd.Parameters.AddWithValue("$id", id);
                 cmd.ExecuteNonQuery();
+            }
+        }
+
+        /// <summary>
+        /// The backend refused this record for good (see <see cref="SaleDeliveryResult.Rejected"/>).
+        /// Retry it in an hour; after <see cref="MaxRejections"/> refusals move it, unchanged, to
+        /// <c>outbox_rejected</c> so it stops costing a request every few minutes.
+        /// </summary>
+        /// <returns>true when the record was moved to the archive.</returns>
+        public bool RecordRejection(string id)
+        {
+            lock (_lock)
+            {
+                var now = DateTimeOffset.UtcNow;
+                using var conn = Open();
+                using var transaction = conn.BeginTransaction();
+                using var update = conn.CreateCommand();
+                update.Transaction = transaction;
+                update.CommandText = @"UPDATE outbox SET attempts = attempts + 1, rejections = rejections + 1,
+                                       next_retry_at = $next WHERE id = $id;";
+                update.Parameters.AddWithValue("$next", now.Add(RejectedRetryInterval).ToString("o"));
+                update.Parameters.AddWithValue("$id", id);
+                update.ExecuteNonQuery();
+
+                using var archive = conn.CreateCommand();
+                archive.Transaction = transaction;
+                archive.CommandText = @"INSERT OR REPLACE INTO outbox_rejected
+                    (id, kind, payload, created_at, attempts, rejections, archived_at)
+                    SELECT id, kind, payload, created_at, attempts, rejections, $now FROM outbox
+                    WHERE id = $id AND rejections >= $max;";
+                archive.Parameters.AddWithValue("$now", now.ToString("o"));
+                archive.Parameters.AddWithValue("$id", id);
+                archive.Parameters.AddWithValue("$max", MaxRejections);
+                var archived = archive.ExecuteNonQuery() > 0;
+                if (archived)
+                {
+                    using var delete = conn.CreateCommand();
+                    delete.Transaction = transaction;
+                    delete.CommandText = "DELETE FROM outbox WHERE id = $id;";
+                    delete.Parameters.AddWithValue("$id", id);
+                    delete.ExecuteNonQuery();
+                }
+                transaction.Commit();
+                return archived;
             }
         }
 

@@ -28,7 +28,7 @@ class PharmacyService(
     private val chainRepository: ChainRepository,
     private val pharmacistRepository: PharmacistRepository,
     private val administrativeScope: AdministrativeScope,
-    @Value("\${app.posm.heartbeat-ttl-seconds:90}") private val heartbeatTtlSeconds: Long = 90,
+    @Value("\${app.posm.heartbeat-ttl-seconds:150}") private val heartbeatTtlSeconds: Long = 150,
 ) {
 
     @Transactional(readOnly = true)

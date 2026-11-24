@@ -1051,3 +1051,11 @@ identity. They reuse evidence/review validation, with no bonus path. A returned
 subset cannot discard submitted siblings or use rejected photos as new evidence.
 Staff sessions and native ephemeral login attempts must never be promoted from a
 rehearsal database. `MERCH_STAFF_ACCESS_ENABLED` defaults to false.
+
+## POSM write throttling (INK-150)
+
+- `fulfillment_devices.last_seen_at` is written at most once a minute per device
+  (`DeviceLastSeen.STALE_CONDITION` in the heartbeat and fulfillment authentication `UPDATE`);
+  presence counts a device online for `app.posm.heartbeat-ttl-seconds` (`POSM_HEARTBEAT_TTL`, default 150 s).
+- `pharmacists.standard_n_*` IIN and name observation is rewritten only when the result changes,
+  otherwise its check time is refreshed at most once an hour.

@@ -883,13 +883,36 @@ development), deduplicates acknowledgements by delivery token, and retries after
 Current clients also send `X-Device-Id`; legacy clients without the header remain compatible. The
 backend treats merchandising as an optional dependency: timeout, invalid payload, or a 5xx response
 returns HTTP 200 with `available=false` instead of a gateway error. POSM applies an isolated bounded
-backoff (30 seconds, one, two, then five minutes), marks only the task window offline, and keeps the
+backoff (one, five, then fifteen minutes), marks only the task window offline, and keeps the
 recommendation, heartbeat, and sales channel on its normal backend route.
 The CRM does not issue an overdue assignment to a cash desk once its due time has passed; a stale
 locally visible QR must not be treated as a new assignment.
-From POSM 1.0.65, healthy assignment polls use a fresh 24–36-second jitter instead of a fixed
-10-second interval. This reduces load and synchronized bursts across the fleet; task visibility may
-therefore take up to roughly 36 seconds under healthy connectivity.
+From POSM 1.0.65, healthy assignment polls use a fresh jitter instead of a fixed interval. Since
+the INK-150 change it is 12–18 minutes (was 24–36 seconds; the fleet made 1.05 million task requests
+a day): a new task may take up to about 18 minutes to appear, the first poll still runs at start-up.
+
+### Poll intervals (INK-150, 24.11.2026)
+
+Data that is not needed in real time is asked for rarely (`App/Services/PosmPollIntervals.cs`):
+
+| Request | Interval |
+| --- | --- |
+| `POST /api/posm/heartbeat` | 60 s (was 30 s); backend keeps a device online for `POSM_HEARTBEAT_TTL`, default 150 s |
+| `GET /api/posm/tasks` | 12–18 min with jitter; failures back off 1, 5, 15 min |
+| `GET /api/posm/staff/capabilities` | 15 min while enabled, 1 h while switched off, 5 min when unreachable (was 60 s) |
+| `GET /api/posm/fulfillment/capabilities` | configured `FulfillmentPollSec` while the order queue is shown, 1 h once the backend says orders are off |
+
+A server-side switch therefore reaches a running cash desk within these intervals (a restart picks
+it up at once). Recommendations, receipts and the sale queue are not throttled.
+
+### Sales the backend refuses for good
+
+`POST /api/posm/sales` answering 409 (identity conflict: the same Standard-N document came back with
+another session or total), or 401/403 while the heartbeat with the same device key is accepted
+(the queued sale names another pharmacy or device), is a permanent refusal. Such a queue row is
+retried at most once an hour, is not made due by a network change, and after 5 refusals moves
+unchanged to the `outbox_rejected` table of `outbox.db` (kept for investigation, never sent again).
+Network errors, timeouts and 5xx keep the usual backoff (2^n minutes, at most 30).
 
 The primary public QR destination is the CRM's exact HTTPS `/staff` page. During migration the
 backend accepts only that configured page and the legacy exact ePharm `/merch/staff` page; it rejects

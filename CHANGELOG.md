@@ -5,6 +5,15 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- POSM asks for rarely changing data less often (INK-150): heartbeat every 60 s, merchandising
+  tasks every 12–18 min, staff capabilities every 15 min (1 h while off), fulfillment capabilities
+  once an hour while online orders are off. Sales the backend refuses for good (409, or 401/403
+  with a working device key) are retried hourly and archived locally after 5 refusals.
+- Backend writes `fulfillment_devices.last_seen_at` at most once a minute and the pharmacist IIN
+  observation only on change (at most hourly otherwise); presence TTL default is 150 s.
+
 ### Fixed
 
 - POSM 1.0.89 separates automatic RPS presentation from grant/session invalidation:

@@ -41,7 +41,6 @@ namespace CustomerDisplay
         // Heartbeat кассы (T4): периодический «я жив» на backend, чтобы он считал подключённые
         // кассы (Redis TTL). Отдельный таймер, 30с, независим от видео/плейлиста.
         private DispatcherTimer? _heartbeatTimer;
-        private const int HeartbeatSec = 30;
         private int _heartbeatRequestBusy;
         private bool? _heartbeatDelivered;
 
@@ -150,7 +149,7 @@ namespace CustomerDisplay
         }
 
         /// <summary>
-        /// Heartbeat кассы (T4): шлёт «я жив» на backend сразу и далее каждые 30с, чтобы админка
+        /// Heartbeat кассы (T4): шлёт «я жив» на backend сразу и далее раз в минуту, чтобы админка
         /// считала число подключённых касс (backend хранит last-seen в Redis). Транспорт — тот же
         /// HTTP-поллинг, что и плейлист: каждый удар независим, устойчив к обрывам сети, fail-safe
         /// (EpharmApiClient.HeartbeatAsync проглатывает ошибки). deviceId — стабильный id из
@@ -167,10 +166,10 @@ namespace CustomerDisplay
             // Первый удар сразу — касса появляется в счётчике без задержки.
             _ = SendHeartbeatOnceAsync(deviceId, pharmacyId);
 
-            _heartbeatTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(HeartbeatSec) };
+            _heartbeatTimer = new DispatcherTimer { Interval = PosmPollIntervals.Heartbeat };
             _heartbeatTimer.Tick += (_, __) => _ = SendHeartbeatOnceAsync(deviceId, pharmacyId);
             _heartbeatTimer.Start();
-            Log($"Heartbeat кассы запущен: deviceId={deviceId}, каждые {HeartbeatSec}с");
+            Log($"Heartbeat кассы запущен: deviceId={deviceId}, каждые {PosmPollIntervals.Heartbeat.TotalSeconds:0}с");
         }
 
         private async Task SendHeartbeatOnceAsync(string deviceId, string pharmacyId)
