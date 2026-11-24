@@ -131,8 +131,18 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Рекомендации" Foreground="#171A2F"
-                           FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Рекомендации" Foreground="#171A2F"
+                               FontSize="28" FontWeight="Bold"/>
+                    <StackPanel x:Name="PharmacistGreeting" Orientation="Horizontal"
+                                Margin="0,2,0,0" Visibility="Collapsed">
+                        <Ellipse Width="8" Height="8" Fill="#1F8A70" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="TbPharmacistName" Foreground="#1F8A70" FontSize="14"
+                                   FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center"/>
+                        <TextBlock Text=", бонус начислим вам" Foreground="#70788A" FontSize="14"
+                                   Margin="0,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
                 <Button Grid.Column="1" Content="×" Width="42" Height="42" FontSize="28"
                         FontWeight="Light" Foreground="#171B2E" Background="#F0F1F3"
                         BorderThickness="0" Cursor="Hand" Click="OnCloseClick"

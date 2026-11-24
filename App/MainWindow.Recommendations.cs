@@ -200,6 +200,7 @@ namespace CustomerDisplay
                         Log("Индивидуальный ключ POSM восстановлен из защищённого хранилища устройства.");
                     }
                     _epharm = new EpharmApiClient(_posmConfig, Log);
+                    Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(InitStaffSelfTray));
                     // Источник №1 сверки: гарантированная доставка чеков/результатов через outbox.
                     _outbox = new OfflineOutbox(_posmConfig.OutboxDbPath);
                     _pendingShownPings = new PendingShownPings(
@@ -609,7 +610,7 @@ namespace CustomerDisplay
             // Availability is a snapshot, not a perpetual promise. Expire after a minute;
             // a subsequent scan can refresh it. Dismissing a card still records no sale/outcome.
             var target = PharmacistScreen();
-            var win = new RecommendationWindow(recs, 60, target);
+            var win = new RecommendationWindow(recs, 60, target, _currentPharmacistName);
             _recoWindow = win;
             previous?.Close();
             win.Expired += () => _unconfirmedRecommendations = win.Recommendations.ToList();

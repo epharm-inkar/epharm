@@ -20,6 +20,11 @@ All notable production changes to Epharm are recorded here. The format follows
   (`product_trade_margins`, measured nightly at 04:30 Almaty from Standard-N, read-only). Settings and an
   overview with today's verdict per substitution rule: `/api/admin/replacement-guards`. Cross-sells are not
   filtered. Pilot-only campaigns (`promos.pilot_only`) run only on tills of the POSM pilot channel.
+- POSM 1.0.93, no registration on the till: the recommendation popup names the seller signed in to Standard-N
+  («● Айгерим Н., бонус начислим вам»), and the ePharm icon by the clock opens a personal window: name, masked
+  IIN, pharmacy, earned this month, balance, last rewards, phone and password, «Мой кабинет» and a QR that open
+  the web cabinet already signed in. A red dot on the icon stays until phone and password are set; the phone is
+  saved without SMS. A phone or password already set is shown, never replaced from the till.
 - Seller of every receipt by the central Standard-N directory, without ePharm registration: pharmacies are linked
   to their Standard-N profile by caption after each directory sync (`pharmacies.standardn_profile_id`, HQ links
   marked `manual` are kept), and `/api/posm/sales` resolves Standard-N USER_ID -> IIN -> the registered ePharm
