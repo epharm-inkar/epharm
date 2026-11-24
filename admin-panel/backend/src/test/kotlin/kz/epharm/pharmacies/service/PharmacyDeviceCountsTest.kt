@@ -9,6 +9,8 @@ import kz.epharm.pharmacies.dto.UpdatePharmacyRequest
 import kz.epharm.pharmacies.entity.PharmacyEntity
 import kz.epharm.pharmacies.repository.PharmacyDeviceCounts
 import kz.epharm.pharmacies.repository.PharmacyRepository
+import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.pharmacists.repository.PharmacyPharmacistCountRow
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -21,7 +23,37 @@ import java.time.Instant
 class PharmacyDeviceCountsTest {
     private val repository = mockk<PharmacyRepository>()
     private val scope = mockk<AdministrativeScope>()
-    private val service = PharmacyService(repository, mockk(), mockk(), scope, 90)
+    private val pharmacists = mockk<PharmacistRepository>()
+    private val service = PharmacyService(repository, mockk(), pharmacists, scope, 90)
+
+    init {
+        every { pharmacists.countsByPharmacy(any()) } returns emptyList()
+    }
+
+    @Test
+    fun `pharmacist column comes from one live profile aggregate and missing pharmacies are zero`() {
+        val allowed = setOf("staffed", "empty")
+        every { scope.currentPharmacyIds() } returns allowed
+        every { scope.pharmacy(any()) } answers { firstArg<PharmacyDto>() }
+        every { repository.findForAdministration(allowed, null, null) } returns listOf(
+            PharmacyEntity(id = "staffed", pharmacists = 0), PharmacyEntity(id = "empty", pharmacists = 7),
+        )
+        every { repository.deviceCounts(allowed, any(), any()) } returns emptyList()
+        val row = mockk<PharmacyPharmacistCountRow>()
+        every { row.pharmacyId } returns "staffed"
+        every { row.count } returns 3
+        every { pharmacists.countsByPharmacy(allowed) } returns listOf(row)
+
+        assertThat(service.list().map { it.pharmacists }).containsExactly(3, 0)
+        verify(exactly = 1) { pharmacists.countsByPharmacy(allowed) }
+    }
+
+    @Test
+    fun `empty authorization never counts pharmacist profiles`() {
+        every { scope.currentPharmacyIds() } returns emptySet()
+        assertThat(service.list()).isEmpty()
+        verify(exactly = 0) { pharmacists.countsByPharmacy(any()) }
+    }
 
     @Test
     fun `one aggregate is restricted to returned permitted rows and missing groups are real zero`() {

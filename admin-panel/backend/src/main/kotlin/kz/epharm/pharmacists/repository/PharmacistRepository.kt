@@ -16,6 +16,11 @@ interface PharmacistReceiptCountRow {
     val count: Long
 }
 
+interface PharmacyPharmacistCountRow {
+    val pharmacyId: String
+    val count: Long
+}
+
 @Repository
 interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
     fun findAllByOrderByNameAsc(): List<PharmacistEntity>
@@ -39,13 +44,19 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
     fun countByStatusRaw(statusRaw: String): Long
     fun countByPharmacyId(pharmacyId: String): Long
 
-    /** Read-only, exact resolved sellers in their current pharmacy; raw/name matches are not inferred. */
+    /**
+     * Read-only, exact resolved sellers in their current pharmacy; raw/name matches are not inferred.
+     * Sales are filtered by `s.pharmacist_id` first, with the literal `<> ''` predicate, so PostgreSQL
+     * can use the partial index `idx_pos_sales_pharmacist_printed` (V108) instead of reading every
+     * sale of the period through the time index (INK-145: 40-75 s and HTTP 503 on the roster).
+     */
     @Query(nativeQuery = true, value = """
         SELECT p.id AS "pharmacistId", p.pharmacy_id AS "pharmacyId", COUNT(*) AS "count"
-        FROM pharmacists p
-        JOIN pos_sales s ON s.pharmacist_id = p.id AND s.pharmacy_id = p.pharmacy_id
-        WHERE p.id IN (:ids)
-          AND p.id <> '' AND p.pharmacy_id <> ''
+        FROM pos_sales s
+        JOIN pharmacists p ON p.id = s.pharmacist_id AND p.pharmacy_id = s.pharmacy_id
+        WHERE s.pharmacist_id IN (:ids)
+          AND s.pharmacist_id <> ''
+          AND p.pharmacy_id <> ''
           AND s.printed_at >= :since AND s.printed_at <= :observedAt
           AND COALESCE(s.reward_evidence #>> '{completion,status}', '') <> 'refund'
         GROUP BY p.id, p.pharmacy_id
@@ -55,6 +66,15 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
         @Param("since") since: Instant,
         @Param("observedAt") observedAt: Instant,
     ): List<PharmacistReceiptCountRow>
+
+    /** Live profile count per pharmacy; `pharmacies.pharmacists` is a stale seed column (INK-145). */
+    @Query(nativeQuery = true, value = """
+        SELECT p.pharmacy_id AS "pharmacyId", COUNT(*) AS "count"
+        FROM pharmacists p
+        WHERE p.pharmacy_id IN (:pharmacyIds)
+        GROUP BY p.pharmacy_id
+    """)
+    fun countsByPharmacy(@Param("pharmacyIds") pharmacyIds: Set<String>): List<PharmacyPharmacistCountRow>
 
     @Query("""
         SELECT p FROM PharmacistEntity p

@@ -206,9 +206,12 @@ class PharmacyService(
         val counts = pharmacyRepository.deviceCounts(
             entities.map { it.id }.toSet(), observedAt.minusSeconds(heartbeatTtlSeconds), observedAt,
         ).associateBy { it.pharmacyId }
+        val profiles = pharmacistRepository.countsByPharmacy(entities.map { it.id }.toSet())
+            .associate { it.pharmacyId to it.count.toInt() }
         return entities.map { entity ->
             val count = counts[entity.id]
             administrativeScope.pharmacy(PharmacyDto.of(entity).copy(
+                pharmacists = profiles[entity.id] ?: 0,
                 registeredDeviceCount = count?.registered ?: 0,
                 onlineDeviceCount = count?.online ?: 0,
                 deviceCountsObservedAt = observedAt,
