@@ -799,6 +799,61 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H04.08",
+    "group": "H04",
+    "name": "Умные замены: не предлагать замену товара по акции сети или выгодного аптеке не меньше промо-товара",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/smart-replacements",
+      "ui": [],
+      "api": [
+        "GET /api/admin/replacement-guards",
+        "PUT /api/admin/replacement-guards/settings",
+        "PUT /api/admin/replacement-guards/margins",
+        "PUT /api/admin/replacement-guards/chain-promos",
+        "POST /api/admin/replacement-guards/margins/sync"
+      ],
+      "jobs": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/guard/ProductMarginSyncService.kt"
+      ],
+      "data": [
+        "product_trade_margins",
+        "chain_promo_barcodes",
+        "replacement_guard_settings",
+        "rules",
+        "products",
+        "Standard-N WARES / PARTS (read-only)"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/guard/ReplacementGuardService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/guard/ReplacementGuardController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/service/RulesEngineService.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V115__smart_replacement_guard.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/ReplacementGuardDecisionTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/ReplacementGuardIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Рекомендации / редактор акции",
+      "actions": [
+        "Умные замены: не предлагать замену товара по акции сети или выгодного аптеке не меньше промо-товара"
+      ],
+      "scope": "HQ (/api/admin/**); проверка идёт в движке правил на каждом пробитии, только для замен, допродажи не трогает"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Товар по акции сети (штрихкод в chain_promo_barcodes на сегодня по Алматы) не заменяется; после даты окончания замена возвращается сама",
+      "При margin_mode=vs_promo замена не предлагается, если маржа выбранного товара минус маржа промо-товара не меньше порога",
+      "Неизвестная маржа любой стороны замену не блокирует; сбой чтения данных не ломает рекомендации",
+      "Загрузка вручную не перезаписывает маржу, посчитанную по Стандарт-Н; ночная задача читает Стандарт-Н только на чтение"
+    ],
+    "risks": [
+      "Акции сайта пока загружаются вручную (PUT chain-promos): автоматическая подача с сайта ждёт отдельного решения"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H05.01",
     "group": "H05",
     "name": "Список аптек, поиск и pilot/control/rolled",

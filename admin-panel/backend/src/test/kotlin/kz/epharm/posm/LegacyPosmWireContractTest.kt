@@ -106,6 +106,7 @@ class LegacyPosmWireContractTest {
         devices = mockk()
         identity = mockk()
         releases = mockk()
+        every { releases.isPilotTill(any(), any(), any()) } returns false
         tasks = mockk()
         presence = DevicePresenceService(ttlSeconds = 90)
         every { devices.authenticate(any(), any(), any(), any()) } returns
@@ -177,7 +178,7 @@ class LegacyPosmWireContractTest {
     @ValueSource(strings = ["V1057", "V1066"])
     fun `historical recommend body reaches current DTO and additive fields are ignored`(version: String) {
         val captured = slot<RecommendRequest>()
-        every { recommendations.recommend(capture(captured)) } returns RecommendResponse("session-synthetic-1", emptyList())
+        every { recommendations.recommend(capture(captured), any()) } returns RecommendResponse("session-synthetic-1", emptyList())
         val request = step(version, "recommend")
         mvc.perform(wireRequest(request)).andExpect(status().isOk)
         assertThat(captured.captured.pharmacyId).isEqualTo(PHARMACY)
@@ -218,7 +219,7 @@ class LegacyPosmWireContractTest {
         mvc.perform(wireRequest(step(version, "recommend"), blank)).andExpect(status().isBadRequest)
         val missing = body(version, "recommend").apply { remove("pharmacyId") }
         mvc.perform(wireRequest(step(version, "recommend"), missing)).andExpect(status().isBadRequest)
-        verify(exactly = 0) { recommendations.recommend(any()) }
+        verify(exactly = 0) { recommendations.recommend(any(), any()) }
     }
 
     @ParameterizedTest
@@ -419,7 +420,7 @@ class LegacyPosmWireContractTest {
             protectedMvc.perform(wireRequest(step("V1057", name), key = fleetKey))
                 .andExpect(status().isUnauthorized)
         }
-        verify(exactly = 0) { recommendations.recommend(any()) }
+        verify(exactly = 0) { recommendations.recommend(any(), any()) }
         verify(exactly = 0) { sales.record(any(), any(), any()) }
         verify { jdbc wasNot Called }
     }

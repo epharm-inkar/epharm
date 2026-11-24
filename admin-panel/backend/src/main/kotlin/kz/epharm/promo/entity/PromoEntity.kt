@@ -153,6 +153,10 @@ class PromoEntity(
     /** Explicit financial authorization; a numeric zero budget is never interpreted as unlimited. */
     @Column(name = "budget_unlimited", nullable = false)
     var budgetUnlimited: Boolean = false,
+
+    /** Runs only on the tills of the POSM pilot channel (V115), even when active. */
+    @Column(name = "pilot_only", nullable = false)
+    var pilotOnly: Boolean = false,
 ) {
     var status: PromoStatus
         get() = PromoStatus.valueOf(statusRaw)

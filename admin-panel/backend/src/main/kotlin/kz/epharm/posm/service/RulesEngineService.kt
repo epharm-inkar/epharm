@@ -79,11 +79,13 @@ class RulesEngineService(
     private val productRepository: ProductRepository,
     private val promoRepository: PromoRepository,
     private val accCatalogTaxonomy: AccCatalogTaxonomy,
+    /** Smart replacements (24.11.2026): no replacement for a product on a network promotion or that earns no less. */
+    private val replacementGuard: kz.epharm.posm.guard.ReplacementGuard? = null,
 ) {
     private val log = LoggerFactory.getLogger(RulesEngineService::class.java)
 
     @Transactional(readOnly = true)
-    fun match(cart: List<CartItemDto>, scannedBarcode: String? = null): RuleMatchResult {
+    fun match(cart: List<CartItemDto>, scannedBarcode: String? = null, pilotTill: Boolean = false): RuleMatchResult {
         val activeRules = ruleRepository.findActiveMatchReferences()
         // Кампания — мастер-выключатель: правило из неактивной кампании НЕ показываем,
         // даже если оно осталось active в БД (смена статуса кампании не пересохраняет правила).
@@ -97,6 +99,7 @@ class RulesEngineService(
             else promoRepository.findAllById(promoIds)
                 .filter {
                     it.status == PromoStatus.active &&
+                        (!it.pilotOnly || pilotTill) &&
                         (it.dateStart == null || !today.isBefore(it.dateStart)) &&
                         (it.dateEnd == null || !today.isAfter(it.dateEnd))
                 }
@@ -239,6 +242,7 @@ class RulesEngineService(
 
         val survivors = raw
             .filterNot { it.rule.id in suppressed }
+            .filterNot { replacementBlocked(it) }
             .sortedWith(
                 compareBy(
                     { if (it.rule.type.name == "substitution") 0 else 1 }, // substitution раньше crosssell
@@ -251,6 +255,17 @@ class RulesEngineService(
             .distinctBy { it.rule.type to it.recommend.id }
 
         return RuleMatchResult(survivors, conflicts)
+    }
+
+    /**
+     * The customer keeps what they chose when it is on a network promotion now or earns the pharmacy no less than the
+     * promoted product. Only replacements: a cross-sell adds to the basket and never takes the chosen product away.
+     */
+    private fun replacementBlocked(match: RuleMatch): Boolean {
+        if (match.rule.type != kz.epharm.rules.entity.RuleType.substitution) return false
+        val reason = replacementGuard?.blockReason(match.triggerProduct, match.triggerBarcode, match.recommend) ?: return false
+        log.debug("Replacement {} not offered for {}: {}", match.rule.id, match.triggerSku, reason)
+        return true
     }
 
     /**

@@ -75,6 +75,8 @@ data class PromoDto(
     val updatedAt: Instant,
     val barcodes: List<String> = emptyList(),
     val budgetUnlimited: Boolean = false,
+    /** Shown only on the tills of the POSM pilot channel. */
+    val pilotOnly: Boolean = false,
 ) {
     companion object {
         fun of(e: PromoEntity, effectivePharmacies: Int = e.pharmacies): PromoDto = PromoDto(
@@ -86,6 +88,7 @@ data class PromoDto(
             pharmacies = effectivePharmacies,
             budget = e.budget,
             budgetUnlimited = e.budgetUnlimited,
+            pilotOnly = e.pilotOnly,
             spent = e.spent,
             kpi = e.kpi,
             cover = e.cover,
@@ -161,6 +164,8 @@ data class CreatePromoRequest(
     @field:Size(max = BarcodeNormalizer.MAX_CODES)
     val barcodes: List<String> = emptyList(),
     val budgetUnlimited: Boolean = false,
+    /** true: the campaign runs only on the tills of the POSM pilot channel. */
+    val pilotOnly: Boolean = false,
 )
 
 /** A single trigger for the first replacement or cross-sell rule of a new campaign. */
@@ -215,4 +220,6 @@ data class UpdatePromoRequest(
     val barcodes: List<String>? = null,
     /** Omission from an older editor must preserve the existing financial mode. */
     val budgetUnlimited: Boolean? = null,
+    /** true: the campaign runs only on the tills of the POSM pilot channel. */
+    val pilotOnly: Boolean? = null,
 )
