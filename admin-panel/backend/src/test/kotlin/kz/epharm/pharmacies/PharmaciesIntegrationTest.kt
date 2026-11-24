@@ -136,6 +136,38 @@ class PharmaciesIntegrationTest {
     }
 
     @Test
+    fun `pharmacist column counts live profiles instead of the stale stored counter`() {
+        pharmacyRepository.saveAndFlush(PharmacyEntity(
+            id = "europharma_1", name = "Europharma №101", chainId = "europharma", chainName = "Europharma",
+            city = "Алматы", district = "", addr = "",
+        ).also { it.group = PharmacyGroup.pilot })
+        listOf("one" to "europharma_0", "two" to "europharma_0").forEachIndexed { i, (id, pharmacy) ->
+            pharmacistRepository.saveAndFlush(PharmacistEntity(
+                id = "u_$id", name = "Synthetic $id", iin = "99000000000$i", phone = "+7 (700) 000-00-0$i",
+                pharmacyId = pharmacy, pharmacyName = "Europharma №100", city = "Алматы",
+            ))
+        }
+
+        mockMvc.perform(get("/api/admin/pharmacies").header("Authorization", bearer))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[?(@.id == 'europharma_0')].pharmacists").value(2))
+            .andExpect(jsonPath("$[?(@.id == 'europharma_1')].pharmacists").value(0))
+        mockMvc.perform(get("/api/admin/pharmacies/europharma_0").header("Authorization", bearer))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.pharmacists").value(2))
+    }
+
+    @Test
+    fun `roster receipt index exists valid and partial on resolved sellers`() {
+        val definition = jdbc.queryForObject("""
+            SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            WHERE c.relname = 'idx_pos_sales_pharmacist_printed' AND i.indisvalid
+        """.trimIndent(), String::class.java)
+        assertThat(definition).contains("(pharmacist_id, printed_at)").contains("WHERE ((pharmacist_id)::text <> ''::text)")
+    }
+
+    @Test
     fun `device counts keep offline registrations exclude revoked and separate same device name across pharmacies`() {
         pharmacyRepository.saveAndFlush(PharmacyEntity(
             id = "ph_other", name = "Other pharmacy", chainId = "biosfera", chainName = "Биосфера",
