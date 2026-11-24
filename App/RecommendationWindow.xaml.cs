@@ -70,9 +70,6 @@ namespace CustomerDisplay
             if (_recs.Count == 0) _recs.Add(new Recommendation());
 
             _targetScreen = targetScreen;
-            TbFooter.Text = autoCloseSec > 0
-                ? $"Закроется само через {autoCloseSec} с · список листается колесом мыши"
-                : "Список листается колесом мыши";
             Bind(RecommendationPopupModelBuilder.Build(_recs));
 
             if (autoCloseSec > 0)
@@ -119,7 +116,6 @@ namespace CustomerDisplay
                 model.Substitutions.TriggerText,
                 StringComparison.OrdinalIgnoreCase);
 
-            TbHeadline.Text = model.Headline;
             TopTriggerContext.Visibility = topSubstitutionTrigger || topCrossSellTrigger
                 ? Visibility.Visible : Visibility.Collapsed;
             TbTopTriggerLabel.Text = topSubstitutionTrigger ? "ПОКУПАТЕЛЬ ПОПРОСИЛ" : "УЖЕ В ЧЕКЕ";
