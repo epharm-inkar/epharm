@@ -16,6 +16,28 @@ services:
     image: postgres:16-alpine
     container_name: epharm-postgres
     restart: always
+    # Sized for the shared 4-core / 7 GB host (backend limited to 2 GB). Applying a change restarts
+    # PostgreSQL for a few seconds; tills keep sales in their queues meanwhile.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-16MB}
+      - -c
+      - maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - log_min_duration_statement=${POSTGRES_LOG_MIN_DURATION_MS:-1000}
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+    # Parallel query workers use /dev/shm; Docker's 64 MB default is too small for these work_mem values.
+    shm_size: 256mb
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-epharm}
       POSTGRES_USER: ${POSTGRES_USER:-epharm}
