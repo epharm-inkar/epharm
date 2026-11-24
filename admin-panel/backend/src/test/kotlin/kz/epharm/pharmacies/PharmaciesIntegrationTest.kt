@@ -330,11 +330,11 @@ class PharmaciesIntegrationTest {
         pharmacy("ph_typo", "Курмет-Фарм г.Усть-Каменагорск ул.Ауезова 20", "Курмет-Фарм", "Усть-Каменагорск")
         pharmacy("sloc_01KSBH8M075A0WRTF1SXT6XPFY", "Ирбис Транс Систем г.Актау ТРЦ Байтерек закрыта", "Ирбис Транс Систем", "Актау")
         pharmacy("sloc_01KSBRMS3ACBVBTYKHGTTZ2R5F", "Ирбис Транс Систем г.Алматы Саина 16 Магнум закрыта", "Ирбис Транс Систем", "Алматы")
+        entityManager.flush()
         jdbc.update(
             "INSERT INTO fulfillment_devices(id, device_id, pharmacy_id, secret_sha256, secret_hint) VALUES (?, 'KASSA1', ?, ?, 'hint')",
             UUID.randomUUID(), "sloc_01KSBRMS3ACBVBTYKHGTTZ2R5F", "a".repeat(64),
         )
-        entityManager.flush()
 
         val script = javaClass.classLoader.getResource("db/migration/V108__pharmacy_directory_cleanup.sql")!!.readText()
         // The test transaction's own connection, so the script sees the rows saved above.
