@@ -69,19 +69,21 @@ class RecommendationRewardEvidencePolicyTest {
         policy.evaluate(sale, evidence, shows.associateBy { it.event.id }, ::resolve).single()
 
     @ParameterizedTest
-    @ValueSource(longs = [-1, 0, 119, 120, 121])
-    fun `ordered addition at the same clock tick through 120 seconds is eligible`(seconds: Long) {
-        val decision = decide(evidence = evidence(changes = listOf(change(seconds = seconds))))
-        assertEquals(seconds in 0L..120L, decision.eligible)
-        if (decision.eligible) assertEquals(1L, decision.packages)
+    @ValueSource(longs = [-1, 0, 119, 120, 121, 1800])
+    fun `any addition after the display in the same checkout is eligible, never one before it`(seconds: Long) {
+        val paidAt = at.plusSeconds(maxOf(seconds, 0) + 60)
+        val decision = decide(sale(completedAt = paidAt), evidence(changes = listOf(change(seconds = seconds)), completedAt = paidAt))
+        assertEquals(seconds >= 0, decision.eligible)
+        if (decision.eligible) assertEquals(1L, decision.packages) else assertEquals("addition_outside_window", decision.reason)
     }
 
     @Test
-    fun `120 seconds plus one nanosecond is outside even though payment may be much later`() {
-        val late = change().copy(observedAt = at.plusSeconds(120).plusNanos(1))
-        assertFalse(decide(evidence = evidence(changes = listOf(late))).eligible)
-        val paidAt = at.plusSeconds(5 * 60)
-        assertTrue(decide(sale(completedAt = paidAt), evidence(changes = listOf(change(seconds = 119)), completedAt = paidAt)).eligible)
+    fun `a configured addition window still cuts off one nanosecond after it`() {
+        val windowed = RecommendationRewardEvidencePolicy(java.time.Duration.ofSeconds(120))
+        fun decideWith(change: RewardLineChange) =
+            windowed.evaluate(sale(), evidence(changes = listOf(change)), listOf(show()).associateBy { it.event.id }, ::resolve).single()
+        assertTrue(decideWith(change(seconds = 120)).eligible)
+        assertEquals("addition_outside_window", decideWith(change().copy(observedAt = at.plusSeconds(120).plusNanos(1))).reason)
     }
 
     @ParameterizedTest

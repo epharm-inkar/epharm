@@ -450,8 +450,9 @@ class RecommendationRewardFlowIntegrationTest {
         } finally { release.countDown();workers.shutdownNow() }
     }
 
-    @Test fun `the exact two minute addition boundary qualifies but one nanosecond later does not`() {
-        for ((delay, expected) in listOf(Duration.ofSeconds(120) to 400L, Duration.ofSeconds(120).plusNanos(1) to 0L)) {
+    @Test fun `an addition later in the same checkout qualifies, with no two minute cutoff`() {
+        for ((delay, expected) in listOf(Duration.ofSeconds(120) to 400L, Duration.ofSeconds(120).plusNanos(1) to 400L,
+                Duration.ofMinutes(10) to 400L)) {
             val f = flow()
             acknowledge(f)
             deliver(f, payment(f, additionDelay = delay))
