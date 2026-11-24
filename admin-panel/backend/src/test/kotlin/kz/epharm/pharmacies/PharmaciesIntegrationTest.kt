@@ -345,7 +345,7 @@ class PharmaciesIntegrationTest {
     }
 
     @Test
-    fun `V108 cleanup fixes networks cities and switches off closed pharmacies without a till`() {
+    fun `V109 cleanup fixes networks cities and switches off closed pharmacies without a till`() {
         chainRepository.save(
             ChainEntity(id = RealPharmacySeeder.UMBRELLA_CHAIN_ID, name = "Inkar", color = "#16C97A", points = 0)
                 .also { it.group = PharmacyGroup.rolled },
@@ -368,7 +368,7 @@ class PharmaciesIntegrationTest {
             UUID.randomUUID(), "sloc_01KSBRMS3ACBVBTYKHGTTZ2R5F", "a".repeat(64),
         )
 
-        val script = javaClass.classLoader.getResource("db/migration/V108__pharmacy_directory_cleanup.sql")!!.readText()
+        val script = javaClass.classLoader.getResource("db/migration/V109__pharmacy_directory_cleanup.sql")!!.readText()
         // The test transaction's own connection, so the script sees the rows saved above.
         org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(
             org.springframework.jdbc.datasource.DataSourceUtils.getConnection(jdbc.dataSource!!),

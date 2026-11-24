@@ -8,7 +8,7 @@ package kz.epharm.pharmacies
  * parser glued a village onto it (`JNK-фарм с.Жети`). Reports by network need one spelling, the one the network's
  * own pharmacy list uses. Warehouses (`Склад ...`) are not pharmacies of a network and get no name here.
  *
- * Keep in step with `V108__pharmacy_directory_cleanup.sql`, which applied the same rules to the stored rows.
+ * Keep in step with `V109__pharmacy_directory_cleanup.sql`, which applied the same rules to the stored rows.
  */
 object ChainNames {
     private val rules: List<Pair<Regex, String>> = listOf(

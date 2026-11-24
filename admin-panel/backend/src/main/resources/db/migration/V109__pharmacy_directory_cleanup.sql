@@ -1,4 +1,4 @@
--- V108: pharmacy register cleanup (INK-154, data of 23.11.2026).
+-- V109: pharmacy register cleanup (INK-154, data of 23.11.2026).
 -- The register was loaded once from the storefront's stock locations (seed/pharmacies.json). The network is
 -- only part of the pharmacy name and was spelled in many ways, the old parser glued villages onto it and cut
 -- city names. Nothing refreshes these columns at night: the 06:30 job recalculates sales metrics only.

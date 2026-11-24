@@ -20,6 +20,10 @@ spring:
     enabled: true
     baseline-on-migrate: false
     locations: classpath:db/migration
+    # Session-level advisory lock instead of a transactional one: with the default transactional lock Flyway keeps
+    # a transaction open on another connection, and `CREATE INDEX CONCURRENTLY` (V108) waits for it forever.
+    postgresql:
+      transactional-lock: false
   servlet:
     multipart:
       max-file-size: 60MB
