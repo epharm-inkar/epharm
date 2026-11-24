@@ -871,7 +871,11 @@ For the historical source, backend is the only consumer of Medusa from this repo
 - product list/detail/category data;
 - images, barcodes, MNN/ATC/rx metadata;
 - product recommendation data;
-- pharmacy stock locations exported into `seed/pharmacies.json`.
+- pharmacy stock locations exported into `seed/pharmacies.json`. This one-time export is the only source
+  of the pharmacy register (`RealPharmacySeeder`, empty table only); nothing refreshes names, cities or
+  networks later, the 06:30 job recalculates sales metrics only. Pharmacies under the umbrella chain
+  `inkar` get their network from the start of the name in one spelling (`ChainNames`), also when created
+  in the admin panel. Closed pharmacies are `"active": false` in the file.
 
 Mobile/admin receive normalized DTOs from this backend, not raw Medusa responses.
 

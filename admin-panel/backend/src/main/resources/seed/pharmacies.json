@@ -2,7 +2,7 @@
   {
     "id": "sloc_01KSAHYDS95829RCE3XPY7VREP",
     "name": "ТОО \"Tengripharm\" г.Астана, ул. Сокпакбаева, 6",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Сокпакбаева, 6"
   },
@@ -51,8 +51,8 @@
   {
     "id": "sloc_01KSAHYDS9HGPVGPEJV9PXTRBW",
     "name": "Аспект-траст Боролдай Барыс 117 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Аспект-траст",
+    "city": "Боралдай",
     "addr": "Аспект-траст Боролдай Барыс 117 Алм-ая область"
   },
   {
@@ -72,21 +72,21 @@
   {
     "id": "sloc_01KSAHYDS9Y1WAC2FX6K85Y3NM",
     "name": "Лимон фарм г.Караганда, ул.Назарбаева 17/1",
-    "chain": "Лимон фарм",
+    "chain": "Лимон Фарм",
     "city": "Караганда",
     "addr": "ул.Назарбаева 17/1"
   },
   {
     "id": "sloc_01KSAHYDSA1VGSDZXRFMF0W4ZE",
     "name": "Jnk-фарм г.Павлодар, Бестужева 6 50/3",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "Бестужева 6 50/3"
   },
   {
     "id": "sloc_01KSAHYDSA37FKN6KJA3Q32N6H",
     "name": "ТОО \"Tengripharm\" г.Астана, ул.Букар Жырау 36",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Букар Жырау 36"
   },
@@ -100,14 +100,14 @@
   {
     "id": "sloc_01KSAHYDSA3GS21TR3KTF95DJQ",
     "name": "Ирбис Транс Систем Водник 1.1а Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Водник",
     "addr": "Ирбис Транс Систем Водник 1.1а Алм-ая область"
   },
   {
     "id": "sloc_01KSAHYDSA4G7YBM6XRVQG8Z6V",
     "name": "ТОО \"Tengripharm\" г.Астана, Кумисбекова 4",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Кумисбекова 4"
   },
@@ -121,7 +121,7 @@
   {
     "id": "sloc_01KSAHYDSA76CBMATJ7KQ5XZVG",
     "name": "ТОО \"Tengripharm\" г.Астана Лесная Поляна ВП 15",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Лесная Поляна ВП 15"
   },
@@ -135,15 +135,15 @@
   {
     "id": "sloc_01KSAHYDSA8XH6RQASAX51V9K5",
     "name": "ТОО \"Tengripharm\" г.Астана Иманова 42",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Иманова 42"
   },
   {
     "id": "sloc_01KSAHYDSAC3KGXHSRTYHM6H87",
     "name": "Ирбис Транс Систем Ыбырай Алтынсарин (Жаужурек), 13 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Алматинская область",
     "addr": "Ирбис Транс Систем Ыбырай Алтынсарин (Жаужурек), 13 Алм-ая область"
   },
   {
@@ -156,8 +156,8 @@
   {
     "id": "sloc_01KSAHYDSAF1MGE8QF2CPD09TK",
     "name": "Jnk-фарм г.Усть-каменагорск ул.Утепова 27",
-    "chain": "Jnk-фарм",
-    "city": "Усть-каменагорск",
+    "chain": "JNK-фарм",
+    "city": "Усть-Каменогорск",
     "addr": "ул.Утепова 27"
   },
   {
@@ -170,14 +170,14 @@
   {
     "id": "sloc_01KSAHYDSAG1H1JEG44G5CHAQY",
     "name": "ТОО \"Tengripharm\" г.Астана, ул. Момышулы, 16",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Момышулы, 16"
   },
   {
     "id": "sloc_01KSAHYDSAGGYTA3FFWWHRFP75",
     "name": "ТОО \"Tengripharm\" г.Астана Нурсултан Мангелик Ел 17",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Нурсултан Мангелик Ел 17"
   },
@@ -198,7 +198,7 @@
   {
     "id": "sloc_01KSAHYDSAHGCDM67Z7KQHDDC8",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Карасай батыра 25",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Карасай батыра 25"
   },
@@ -233,7 +233,7 @@
   {
     "id": "sloc_01KSAHYDSAVG613VV8KR324MR7",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Косшыгулулы 11,Н.П 7",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Косшыгулулы 11,Н.П 7"
   },
@@ -247,7 +247,7 @@
   {
     "id": "sloc_01KSAHYDSAVSX7AAWVDB7PQYVF",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Косшыгулулы 6",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Косшыгулулы 6"
   },
@@ -268,14 +268,14 @@
   {
     "id": "sloc_01KSAHYDSAX03MRR8ADEMC8AK1",
     "name": "ТОО \"Tengripharm\" г.Астана Сейфуллина 41",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Сейфуллина 41"
   },
   {
     "id": "sloc_01KSAHYDSAXJ41VZKKCRQC3M1M",
     "name": "ТОО \"Tengripharm\" г.Астана,ул.Мухаметжанова 8",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Мухаметжанова 8"
   },
@@ -296,8 +296,8 @@
   {
     "id": "sloc_01KSAHYDSB0BEEG93FABFDNFTK",
     "name": "Ирбис Транс Систем Алтын Адам 140 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Есик",
     "addr": "Ирбис Транс Систем Алтын Адам 140 Алм-ая область"
   },
   {
@@ -338,14 +338,14 @@
   {
     "id": "sloc_01KSAHYDSB2X042YH51YM2S37E",
     "name": "JNK-фарм с.Жетиген, ул Валиханова 92Г",
-    "chain": "JNK-фарм с.Жети",
-    "city": "ен",
+    "chain": "JNK-фарм",
+    "city": "Жетиген",
     "addr": "ул Валиханова 92Г"
   },
   {
     "id": "sloc_01KSAHYDSB3BQFA9ZY28HBYANX",
     "name": "ТОО \"Tengripharm\" г.Астана,ул.Саpытогай, д13, н. п. 11",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Саpытогай, д13, н. п. 11"
   },
@@ -394,7 +394,7 @@
   {
     "id": "sloc_01KSAHYDSBCJ8J04MHVW8BE89M",
     "name": "ТОО \"Tengripharm\" г.Астана Нурмагамбетова 21",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Нурмагамбетова 21"
   },
@@ -499,8 +499,8 @@
   {
     "id": "sloc_01KSAHYDSBTFWR5RSFJKTMYQ63",
     "name": "Ирбис Транс Систем Кунаева д3",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Есик",
     "addr": "Ирбис Транс Систем Кунаева д3"
   },
   {
@@ -520,7 +520,7 @@
   {
     "id": "sloc_01KSAHYDSBVDK50WGYP8A7BKDH",
     "name": "ТОО \"Tengripharm\" г.Астана Абая 63",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Абая 63"
   },
@@ -555,7 +555,7 @@
   {
     "id": "sloc_01KSAHYDSBZDRC828M4VV8RMZ4",
     "name": "ТОО \"Tengripharm\" г.Астана Абылай хана 58",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Абылай хана 58"
   },
@@ -576,7 +576,7 @@
   {
     "id": "sloc_01KSAHYDSC2XF5P61M6BCJTQD5",
     "name": "ТОО \"Tengripharm\" г.Астана, ул.Улы Дала 55",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Улы Дала 55"
   },
@@ -590,7 +590,7 @@
   {
     "id": "sloc_01KSAHYDSC3Y6V37GB3FYPHQFP",
     "name": "ТОО \"Tengripharm\" г.Астана Кенесары 4",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Кенесары 4"
   },
@@ -639,7 +639,7 @@
   {
     "id": "sloc_01KSAHYDSCAY9EA18EAX3XHF59",
     "name": "ИРБИС Жер г.Талдыкорган Шевченко 128",
-    "chain": "ИРБИС Жер",
+    "chain": "Ирбис-Жер",
     "city": "Талдыкорган",
     "addr": "Шевченко 128"
   },
@@ -765,14 +765,14 @@
   {
     "id": "sloc_01KSAHYDSCWMYE9AZK8RGJFCWS",
     "name": "ТОО \"Tengripharm\" г.Астана Кошкарбаева 48",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Кошкарбаева 48"
   },
   {
     "id": "sloc_01KSAHYDSCWR1EEA1N8TMX9HKE",
     "name": "ТОО \"Tengripharm\" г.Астана,ул.Лесная поляна 11",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Лесная поляна 11"
   },
@@ -793,8 +793,8 @@
   {
     "id": "sloc_01KSAHYDSCYNTA3M8R30YFHX1W",
     "name": "Лимон Фарм Жезказган Абая 81",
-    "chain": "Лимон Фарм Жезказ",
-    "city": "ан",
+    "chain": "Лимон Фарм",
+    "city": "Жезказган",
     "addr": "Абая 81"
   },
   {
@@ -821,7 +821,7 @@
   {
     "id": "sloc_01KSAHYDSD2V1WWZ1EKPNY3W70",
     "name": "ТОО \"Tengripharm\" г.Астана Толе Би 46 нп 5",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Толе Би 46 нп 5"
   },
@@ -863,21 +863,21 @@
   {
     "id": "sloc_01KSAHYDSD79FH3X27DPKW3D1H",
     "name": "Ирбис Транс Систем Ибрагимова 14 Алм-ая область",
-    "chain": "Ирбис Транс Систем Ибра",
-    "city": "имова",
+    "chain": "Ирбис Транс Систем",
+    "city": "Есик",
     "addr": "14 Алм-ая область"
   },
   {
     "id": "sloc_01KSAHYDSD7SWG70WH63QJW6MJ",
     "name": "ТОО \"Tengripharm\" г.Астана Туран 55/10",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Туран 55/10"
   },
   {
     "id": "sloc_01KSAHYDSD96YH17NZ08YHA8SS",
     "name": "ТОО \"Tengripharm\" г.Астана, ул.Абылай Хана 26",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Абылай Хана 26"
   },
@@ -905,7 +905,7 @@
   {
     "id": "sloc_01KSAHYDSDC43NDWE7SF2XHAKC",
     "name": "ТОО \"Tengripharm\" г.Астана, ул. Бектурова 17",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Бектурова 17"
   },
@@ -933,8 +933,8 @@
   {
     "id": "sloc_01KSAHYDSDFMX7B22Q18VQ97JZ",
     "name": "Ирбис Транс Систем Конаев мкр 4 д 30",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Конаев",
     "addr": "Ирбис Транс Систем Конаев мкр 4 д 30"
   },
   {
@@ -1017,7 +1017,7 @@
   {
     "id": "sloc_01KSAHYDSDRCHGFXRBAAZR2QCA",
     "name": "ТОО \"Tengripharm\" г.Астана , ул. Керей-Жанибек хандар 28",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Керей-Жанибек хандар 28"
   },
@@ -1045,7 +1045,7 @@
   {
     "id": "sloc_01KSAHYDSDWKAXDAY7WR3XJ7GB",
     "name": "ТОО \"Tengripharm\" г.Астана ул. Мангилик ел 49, блок А",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Мангилик ел 49, блок А"
   },
@@ -1059,8 +1059,8 @@
   {
     "id": "sloc_01KSAHYDSDXHF1V3EXPV10VYDJ",
     "name": "Ирбис Транс Систем Конаев мкр 3 д 8/3",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Конаев",
     "addr": "Ирбис Транс Систем Конаев мкр 3 д 8/3"
   },
   {
@@ -1073,7 +1073,7 @@
   {
     "id": "sloc_01KSAHYDSDZ2K5WTETVRS1DVA2",
     "name": "ТОО \"Tengripharm\" г.Астана , ул. А-52, д. 8",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. А-52, д. 8"
   },
@@ -1094,7 +1094,7 @@
   {
     "id": "sloc_01KSAHYDSE0X11YTHQH1YARX46",
     "name": "ТОО \"Tengripharm\" г.Астана Айтматова 60",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Айтматова 60"
   },
@@ -1122,7 +1122,7 @@
   {
     "id": "sloc_01KSAHYDSE390M6GQM7ZKMHJD7",
     "name": "Лимон фарм г.Караганда, мкр.Степной 3,д 8",
-    "chain": "Лимон фарм",
+    "chain": "Лимон Фарм",
     "city": "Караганда",
     "addr": "мкр.Степной 3,д 8"
   },
@@ -1150,8 +1150,8 @@
   {
     "id": "sloc_01KSAHYDSE5M8Q87W91KSM21JD",
     "name": "Ирбис Транс Систем ул. Алмерек Абыз 131 А Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Есик",
     "addr": "Ирбис Транс Систем ул. Алмерек Абыз 131 А Алм-ая область"
   },
   {
@@ -1164,7 +1164,7 @@
   {
     "id": "sloc_01KSAHYDSE7JSQ53WJN8EFFSQS",
     "name": "ТОО \"Tengripharm\" г.Астана Кенесары 45",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Кенесары 45"
   },
@@ -1206,8 +1206,8 @@
   {
     "id": "sloc_01KSAHYDSEC4ED0C9PX6M5BZJ3",
     "name": "Ирбис Транс Систем Боролдай Аэродромная 98 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Боралдай",
     "addr": "Ирбис Транс Систем Боролдай Аэродромная 98 Алм-ая область"
   },
   {
@@ -1311,15 +1311,15 @@
   {
     "id": "sloc_01KSAHYDSER81E6532HNPAJ8VX",
     "name": "JNK-фарм село Есык ул. Колхозная 68",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "JNK-фарм",
+    "city": "Есик",
     "addr": "JNK-фарм село Есык ул. Колхозная 68"
   },
   {
     "id": "sloc_01KSAHYDSEREH6WNSZH3JQ4J57",
     "name": "Ирбис Транс Систем Жансугурова 118/2 Алм-ая область",
-    "chain": "Ирбис Транс Систем Жансу",
-    "city": "урова",
+    "chain": "Ирбис Транс Систем",
+    "city": "Алматинская область",
     "addr": "118/2 Алм-ая область"
   },
   {
@@ -1374,7 +1374,7 @@
   {
     "id": "sloc_01KSAHYDSF1KA2M4HFM1Z0R4A0",
     "name": "ТОО \"Tengripharm\" г.Астана,ул.Богенбай батыра 54",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Богенбай батыра 54"
   },
@@ -1409,7 +1409,7 @@
   {
     "id": "sloc_01KSAHYDSF39VQW1C7F39PZG12",
     "name": "ТОО \"Tengripharm\" г.Астана, ул. Улы-дала 41",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Улы-дала 41"
   },
@@ -1430,7 +1430,7 @@
   {
     "id": "sloc_01KSAHYDSF4KPET6QWPW4Y2BZB",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Бокейхана 11",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Бокейхана 11"
   },
@@ -1458,7 +1458,7 @@
   {
     "id": "sloc_01KSAHYDSF9QPWYQNB2QB0HZSZ",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Абылай Хана 21",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Абылай Хана 21"
   },
@@ -1479,7 +1479,7 @@
   {
     "id": "sloc_01KSAHYDSFD89ARBES8QHX115C",
     "name": "ТОО \"Tengripharm\" г.Астана , ул. Нажмидинова 27",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Нажмидинова 27"
   },
@@ -1493,15 +1493,15 @@
   {
     "id": "sloc_01KSAHYDSFDJS0C0EMVRWJF2ZD",
     "name": "ТОО \"Tengripharm\" г.Астана,ул. Жиринтаева, 14",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Жиринтаева, 14"
   },
   {
     "id": "sloc_01KSAHYDSFDQQB5E8KNEPZB4F2",
     "name": "Курмет-Фарм пос.Боралдай, ул.Байконур 23",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Курмет-Фарм",
+    "city": "Боралдай",
     "addr": "Курмет-Фарм пос.Боралдай, ул.Байконур 23"
   },
   {
@@ -1514,7 +1514,7 @@
   {
     "id": "sloc_01KSAHYDSFGJJPQ5JA33SK3M4M",
     "name": "Jnk-фарм г.Павлодар ул.Камзина 12",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Камзина 12"
   },
@@ -1528,7 +1528,7 @@
   {
     "id": "sloc_01KSAHYDSFJ158R9373V347B4J",
     "name": "ТОО \"Tengripharm\" г.Астана Ул. Достык 8",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Ул. Достык 8"
   },
@@ -1556,7 +1556,7 @@
   {
     "id": "sloc_01KSAHYDSFMXRPSPPHV0JH71EX",
     "name": "ТОО \"Tengripharm\" г.Астана Багланова 6",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Багланова 6"
   },
@@ -1626,7 +1626,7 @@
   {
     "id": "sloc_01KSAHYDSFWZE4ZKY2D6587DG6",
     "name": "ТОО \"Tengripharm\" г.Астана Валиханова 27",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Валиханова 27"
   },
@@ -1661,7 +1661,7 @@
   {
     "id": "sloc_01KSAHYDSG37PTDDTM8M1P215J",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Сейфуллина 24",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Сейфуллина 24"
   },
@@ -1689,7 +1689,7 @@
   {
     "id": "sloc_01KSAHYDSG4RM5AWXQK7SKB0BD",
     "name": "ТОО \"Tengripharm\" г.Астана, ул. Асфендиярова, 5",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Асфендиярова, 5"
   },
@@ -1724,7 +1724,7 @@
   {
     "id": "sloc_01KSAHYDSG7WH744KVC3PQ4T6J",
     "name": "ТОО \"Tengripharm\" г.Астана, Кордай 79а",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Кордай 79а"
   },
@@ -1738,7 +1738,7 @@
   {
     "id": "sloc_01KSAHYDSG9WZ1TE8W2G1JVNS3",
     "name": "ТОО \"Tengripharm\" г.Астана ул. Нарикбаева д 22",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Нарикбаева д 22"
   },
@@ -1759,7 +1759,7 @@
   {
     "id": "sloc_01KSAHYDSGB9K25V5W7XCDS2PA",
     "name": "ТОО \"Tengripharm\" г.Астана,ул.Мустафина 13",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Мустафина 13"
   },
@@ -1780,7 +1780,7 @@
   {
     "id": "sloc_01KSAHYDSGF87TXSNSC351JMRD",
     "name": "ТОО \"Tengripharm\" г.Астана,ул. Есенберлина 18",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Есенберлина 18"
   },
@@ -1808,7 +1808,7 @@
   {
     "id": "sloc_01KSAHYDSGKWW0WDJVXE3QD5GA",
     "name": "ТОО \"Tengripharm\" г.Астана, ул.Рыскулбекова 29",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Рыскулбекова 29"
   },
@@ -1822,7 +1822,7 @@
   {
     "id": "sloc_01KSAHYDSGMQ19JJDPWG1PVXJG",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Мухамедханова 10",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Мухамедханова 10"
   },
@@ -1836,14 +1836,14 @@
   {
     "id": "sloc_01KSAHYDSGR928GBDSHNFDHM35",
     "name": "ТОО \"Tengripharm\" г. Астана , Аль-фараби 15",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Аль-фараби 15"
   },
   {
     "id": "sloc_01KSAHYDSGS8DFR28TQW5V1JSZ",
     "name": "Jnk-фарм г.Павлодар ул.Украинская 38А",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Украинская 38А"
   },
@@ -1857,15 +1857,15 @@
   {
     "id": "sloc_01KSAHYDSGT6KEWX7G2352X2MM",
     "name": "Jnk-фарм г.Павлодар ул.Айманова 50",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Айманова 50"
   },
   {
     "id": "sloc_01KSAHYDSGV4229V6XX182Y97E",
     "name": "Ирбис Транс Систем Узынагаш толе би 51а Алм-ая область",
-    "chain": "Ирбис Транс Систем Узына",
-    "city": "аш",
+    "chain": "Ирбис Транс Систем",
+    "city": "Узынагаш",
     "addr": "толе би 51а Алм-ая область"
   },
   {
@@ -1906,8 +1906,8 @@
   {
     "id": "sloc_01KSAHYDSGZ9NAWXPTXJSC2HZC",
     "name": "Ирбис Транс Систем Жаркент Юлдашева 13/1",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Жаркент",
     "addr": "Ирбис Транс Систем Жаркент Юлдашева 13/1"
   },
   {
@@ -2046,7 +2046,7 @@
   {
     "id": "sloc_01KSAHYDSHH2B5F57HFYKM7H5G",
     "name": "JNk-фарм г.Алматы Утеген батыра 73б",
-    "chain": "JNk-фарм",
+    "chain": "JNK-фарм",
     "city": "Алматы",
     "addr": "Утеген батыра 73б"
   },
@@ -2081,7 +2081,7 @@
   {
     "id": "sloc_01KSAHYDSHJX6JD8RFGKZY7W30",
     "name": "ТОО \"Tengripharm\" г.Астана, ул.Улы Дала 65\\1",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Улы Дала 65\\1"
   },
@@ -2089,7 +2089,7 @@
     "id": "sloc_01KSAHYDSHKR2SBBNS4JTNXT7R",
     "name": "Ирбис Транс Систем г.Кунаева микрорайон 5 участок 23/1",
     "chain": "Ирбис Транс Систем",
-    "city": "Кунаева",
+    "city": "Конаев",
     "addr": "микрорайон 5 участок 23/1"
   },
   {
@@ -2102,7 +2102,7 @@
   {
     "id": "sloc_01KSAHYDSHMDPRQK2A8SFWGBX8",
     "name": "Jnk-фарм г.Павлодар, Украинская 39/2",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "Украинская 39/2"
   },
@@ -2130,7 +2130,7 @@
   {
     "id": "sloc_01KSAHYDSHRWKGA556BD3PHCY1",
     "name": "ТОО \"Tengripharm\" г.Астана,ул. Богенбай батыра, 39",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул. Богенбай батыра, 39"
   },
@@ -2144,7 +2144,7 @@
   {
     "id": "sloc_01KSAHYDSHV6GVPQR6XAQDPW32",
     "name": "ТОО \"Tengripharm\" г.Астана,ул.Багыстан Е-17",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Багыстан Е-17"
   },
@@ -2186,7 +2186,7 @@
   {
     "id": "sloc_01KSAHYDSHZBS763PDB3V2B6N1",
     "name": "ТОО \"Tengripharm\" г.Астана, ул.Бейбитшилик 50",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Бейбитшилик 50"
   },
@@ -2235,8 +2235,8 @@
   {
     "id": "sloc_01KSAHYDSJ6EHP68VM4R33WWCX",
     "name": "Ирбис Транс Систем с.Панфилова ул Кулжа д 59 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Панфилово",
     "addr": "Ирбис Транс Систем с.Панфилова ул Кулжа д 59 Алм-ая область"
   },
   {
@@ -2312,7 +2312,7 @@
   {
     "id": "sloc_01KSAHYDSJGG2CE5C38W667FDZ",
     "name": "ТОО \"Tengripharm\" г.Астана,ул.Байтурсынова 47",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Байтурсынова 47"
   },
@@ -2397,7 +2397,7 @@
     "id": "sloc_01KSAHYDSJV696FSH3NZX15XKP",
     "name": "Курмет-Фарм г.Усть-Каменагорск ул.Ауезова 20",
     "chain": "Курмет-Фарм",
-    "city": "Усть-Каменагорск",
+    "city": "Усть-Каменогорск",
     "addr": "ул.Ауезова 20"
   },
   {
@@ -2466,7 +2466,7 @@
   {
     "id": "sloc_01KSAHYDSK2K346HCPVKBYHVG3",
     "name": "Jnk-фарм г.Павлодар ул.Малайсары Батыра 8",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Малайсары Батыра 8"
   },
@@ -2522,8 +2522,8 @@
   {
     "id": "sloc_01KSAHYDSKBX8FQYXEGG0EXP26",
     "name": "Ирбис Транс Систем Байсерке Аркабая 4 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Байсерке",
     "addr": "Ирбис Транс Систем Байсерке Аркабая 4 Алм-ая область"
   },
   {
@@ -2578,14 +2578,14 @@
   {
     "id": "sloc_01KSAHYDSKHGWTJZQBB9BYHDPV",
     "name": "Jnk-фарм г.Павлодар ул.Лермонтова 46",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Лермонтова 46"
   },
   {
     "id": "sloc_01KSAHYDSKKC5JWFEKKTF2G5N9",
     "name": "Jnk-фарм г.Павлодар ул.Бектурова 29",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Бектурова 29"
   },
@@ -2606,7 +2606,7 @@
   {
     "id": "sloc_01KSAHYDSKPNHKS8J7MEYJKVZ8",
     "name": "Jnk-фарм г.Павлодар Аксу ул Астана 7",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "Аксу ул Астана 7"
   },
@@ -2627,7 +2627,7 @@
   {
     "id": "sloc_01KSAHYDSKQQ8W406EXSTYAHSB",
     "name": "Jnk-фарм г.Караганда ул.Ерубаева 45",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Караганда",
     "addr": "ул.Ерубаева 45"
   },
@@ -2669,21 +2669,21 @@
   {
     "id": "sloc_01KSAHYDSKYSNR7X767KNND3X4",
     "name": "Ирбис Транс Систем п.Отеген Батыра Батталханова 4б Алм-ая область",
-    "chain": "Ирбис Транс Систем п.Оте",
-    "city": "ен",
+    "chain": "Ирбис Транс Систем",
+    "city": "Отеген батыр",
     "addr": "Батыра Батталханова 4б Алм-ая область"
   },
   {
     "id": "sloc_01KSAHYDSKZ3K1NK0GVSRWYY93",
     "name": "Ирбис Транс Систем ул. Байболова д 111 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Есик",
     "addr": "Ирбис Транс Систем ул. Байболова д 111 Алм-ая область"
   },
   {
     "id": "sloc_01KSAHYDSKZ833BF6DPFT9V7T0",
     "name": "ТОО \"Tengripharm\" г.Астана Туркестан 10",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "Туркестан 10"
   },
@@ -2788,8 +2788,8 @@
   {
     "id": "sloc_01KSAHYDSMJXQFMK9R50WNTD17",
     "name": "JNK-фарм мкр.Водник Алатау 2 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "JNK-фарм",
+    "city": "Водник",
     "addr": "JNK-фарм мкр.Водник Алатау 2 Алм-ая область"
   },
   {
@@ -2858,15 +2858,15 @@
   {
     "id": "sloc_01KSAHYDSMTGV8JD8BCA9VD0C8",
     "name": "Jnk-фарм г.Алматы ул.Айнабулак 4.175",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Алматы",
     "addr": "ул.Айнабулак 4.175"
   },
   {
     "id": "sloc_01KSAHYDSMTVE5R704YV5SBQYH",
     "name": "Ирбис-Жер Шелек Жибек жолы 116А Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис-Жер",
+    "city": "Шелек",
     "addr": "Ирбис-Жер Шелек Жибек жолы 116А Алм-ая область"
   },
   {
@@ -2893,7 +2893,7 @@
   {
     "id": "sloc_01KSAHYDSMVQAC2XW4ZHKJTY0X",
     "name": "Jnk-фарм г.Павлодар ул.Ломова 52-31",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Ломова 52-31"
   },
@@ -2928,7 +2928,7 @@
   {
     "id": "sloc_01KSAHYDSMY3M9RKT3GC1RRV8T",
     "name": "ТОО \"Tengripharm\" г.Астана ул.Женис 20",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
     "addr": "ул.Женис 20"
   },
@@ -3005,7 +3005,7 @@
   {
     "id": "sloc_01KSAHYDSN6BS6RER48V29P4F3",
     "name": "Лимон фарм г.Караганда, ул.Аманжолова 3",
-    "chain": "Лимон фарм",
+    "chain": "Лимон Фарм",
     "city": "Караганда",
     "addr": "ул.Аманжолова 3"
   },
@@ -3068,8 +3068,8 @@
   {
     "id": "sloc_01KSAHYDSNC5KM9TKKJQMBHPT1",
     "name": "Ирбис-Жер Каскелен, ул.Абылай Хана стр-е 92А",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис-Жер",
+    "city": "Каскелен",
     "addr": "Ирбис-Жер Каскелен, ул.Абылай Хана стр-е 92А"
   },
   {
@@ -3145,7 +3145,7 @@
   {
     "id": "sloc_01KSAHYDSNKDM2XJYJVWT1TZHT",
     "name": "Лимон фарм г.Караганда,Темиртау Республики 8",
-    "chain": "Лимон фарм",
+    "chain": "Лимон Фарм",
     "city": "Караганда",
     "addr": "Темиртау Республики 8"
   },
@@ -3299,8 +3299,8 @@
   {
     "id": "sloc_01KSAHYDSPA5SA3MRBHRTY6HPW",
     "name": "JNK-фарм Водник Абылай хана 5а Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "JNK-фарм",
+    "city": "Водник",
     "addr": "JNK-фарм Водник Абылай хана 5а Алм-ая область"
   },
   {
@@ -3341,8 +3341,8 @@
   {
     "id": "sloc_01KSAHYDSPFH1QQDF16TC3GM4S",
     "name": "Ирбис-Жер Байтерек ул.Алмерек Абыз 54 Алм-ая область",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис-Жер",
+    "city": "Байтерек",
     "addr": "Ирбис-Жер Байтерек ул.Алмерек Абыз 54 Алм-ая область"
   },
   {
@@ -3383,14 +3383,14 @@
   {
     "id": "sloc_01KSBH8KZY5NZN47MVA231VB9Y",
     "name": "Ирбис-Жер РПО г.Шымкент ,ул.Уалиханова 186",
-    "chain": "Ирбис-Жер РПО",
+    "chain": "Ирбис-Жер",
     "city": "Шымкент",
     "addr": "ул.Уалиханова 186"
   },
   {
     "id": "sloc_01KSBH8KZYM0S15313ZRFGHFG9",
     "name": "Ирбис-Жер Алм.область г.Конаев мик-н 2 дом 3 А",
-    "chain": "Ирбис-Жер Алм.область",
+    "chain": "Ирбис-Жер",
     "city": "Конаев",
     "addr": "мик-н 2 дом 3 А"
   },
@@ -3433,7 +3433,7 @@
     "id": "sloc_01KSBH8KZZNTVAT3JKBK47TBYM",
     "name": "Лимон Фарм г.Жезгазкан Алашахана 16/2",
     "chain": "Лимон Фарм",
-    "city": "Жезгазкан",
+    "city": "Жезказган",
     "addr": "Алашахана 16/2"
   },
   {
@@ -3502,8 +3502,8 @@
   {
     "id": "sloc_01KSBH8M01GFASVNMKB2V81X41",
     "name": "ИРБИС ТРАНС СИСТЕМ Нурсултан Мангелик Ел 51/2",
-    "chain": "ИРБИС ТРАНС СИСТЕМ Нурсултан Ман",
-    "city": "елик",
+    "chain": "Ирбис Транс Систем",
+    "city": "Астана",
     "addr": "Ел 51/2"
   },
   {
@@ -3537,8 +3537,8 @@
   {
     "id": "sloc_01KSBH8M03T66GJKBJE8Z6956C",
     "name": "Ирбис Транс Систем п.Сарозек Мадибекулы",
-    "chain": "Inkar",
-    "city": "—",
+    "chain": "Ирбис Транс Систем",
+    "city": "Сарыозек",
     "addr": "Ирбис Транс Систем п.Сарозек Мадибекулы"
   },
   {
@@ -3553,7 +3553,8 @@
     "name": "Ирбис Транс Систем г.Актау 27-й мкр., ТРЦ Байтерек закрыта",
     "chain": "Ирбис Транс Систем",
     "city": "Актау",
-    "addr": "27-й мкр., ТРЦ Байтерек закрыта"
+    "addr": "27-й мкр., ТРЦ Байтерек закрыта",
+    "active": false
   },
   {
     "id": "sloc_01KSBH8M07KJJ86Q6AW93ZXVXY",
@@ -3565,7 +3566,7 @@
   {
     "id": "sloc_01KSBH8M08CGG527V5YSQF1XKF",
     "name": "Jnk-фарм г.Павлодар, ул.Иссыкульская 97/5",
-    "chain": "Jnk-фарм",
+    "chain": "JNK-фарм",
     "city": "Павлодар",
     "addr": "ул.Иссыкульская 97/5"
   },
@@ -3581,7 +3582,8 @@
     "name": "Курмет-Фарм г.Усть-Каменогорск , ул.Чехова 55 закрыта",
     "chain": "Курмет-Фарм",
     "city": "Усть-Каменогорск",
-    "addr": "ул.Чехова 55 закрыта"
+    "addr": "ул.Чехова 55 закрыта",
+    "active": false
   },
   {
     "id": "sloc_01KSBH8M08F6D0J0X5N3RTNMRT",
@@ -3593,16 +3595,18 @@
   {
     "id": "sloc_01KSBH8M08SJNS8KGMTHRQAVA0",
     "name": "ТОО \"Tengripharm\" г.Астана,Куиши Дина 12 закрыта",
-    "chain": "ТОО \"Tengripharm",
+    "chain": "ТОО \"Tengripharm\"",
     "city": "Астана",
-    "addr": "Куиши Дина 12 закрыта"
+    "addr": "Куиши Дина 12 закрыта",
+    "active": false
   },
   {
     "id": "sloc_01KSBH8M08TG18FQ5KNTG2M29R",
     "name": "Аспект-траст г.Атырау ул.Сатпаева 43а закрыта",
     "chain": "Аспект-траст",
     "city": "Атырау",
-    "addr": "ул.Сатпаева 43а закрыта"
+    "addr": "ул.Сатпаева 43а закрыта",
+    "active": false
   },
   {
     "id": "sloc_01KSBH8M09X8A13VD0AQ7GBGPF",
@@ -3644,7 +3648,8 @@
     "name": "Ирбис Транс Систем г.Алматы Саина 16 Магнум закрыта",
     "chain": "Ирбис Транс Систем",
     "city": "Алматы",
-    "addr": "Саина 16 Магнум закрыта"
+    "addr": "Саина 16 Магнум закрыта",
+    "active": false
   },
   {
     "id": "sloc_01KSBRMS3BWY9NV8DCGBM7575A",

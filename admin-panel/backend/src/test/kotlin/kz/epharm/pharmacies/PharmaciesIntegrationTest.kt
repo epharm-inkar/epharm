@@ -294,6 +294,70 @@ class PharmaciesIntegrationTest {
     }
 
     @Test
+    fun `POST create under the umbrella chain takes the network from the name`() {
+        chainRepository.save(
+            ChainEntity(id = RealPharmacySeeder.UMBRELLA_CHAIN_ID, name = "Inkar", color = "#16C97A", points = 0)
+                .also { it.group = PharmacyGroup.rolled },
+        )
+        fun create(name: String) = mockMvc.perform(
+            post("/api/admin/pharmacies")
+                .header("Authorization", bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                    mapOf("name" to name, "chainId" to "inkar", "city" to "Павлодар", "group" to "rolled"),
+                )),
+        ).andExpect(status().isOk)
+
+        create("Jnk-фарм г.Павлодар Кутузова 1").andExpect(jsonPath("$.chainName").value("JNK-фарм"))
+        create("Аптека г.Алматы Жетысу 2, 85").andExpect(jsonPath("$.chainName").value("Inkar"))
+    }
+
+    @Test
+    fun `V108 cleanup fixes networks cities and switches off closed pharmacies without a till`() {
+        chainRepository.save(
+            ChainEntity(id = RealPharmacySeeder.UMBRELLA_CHAIN_ID, name = "Inkar", color = "#16C97A", points = 0)
+                .also { it.group = PharmacyGroup.rolled },
+        )
+        fun pharmacy(id: String, name: String, chain: String, city: String) = pharmacyRepository.save(
+            PharmacyEntity(id = id, name = name, chainId = "inkar", chainName = chain, city = city)
+                .also { it.group = PharmacyGroup.rolled },
+        )
+        pharmacy("sloc_01KSAHYDSB2X042YH51YM2S37E", "JNK-фарм с.Жетиген, ул Валиханова 92Г", "JNK-фарм с.Жети", "ен")
+        pharmacy("sloc_01KSAHYDSCAY9EA18EAX3XHF59", "ИРБИС Жер г.Талдыкорган Шевченко 128", "ИРБИС Жер", "Талдыкорган")
+        pharmacy("sloc_01KSAHYDSDXHF1V3EXPV10VYDJ", "Ирбис Транс Систем Конаев мкр 3 д 8/3", "Inkar", "Конаев")
+        pharmacy("ph_tengri", "ТОО \"Tengripharm\" г.Астана Абая 63", "ТОО \"Tengripharm", "Астана")
+        pharmacy("ph_store", "Склад ТОО Курмет-Фарм", "Inkar", "—")
+        pharmacy("ph_typo", "Курмет-Фарм г.Усть-Каменагорск ул.Ауезова 20", "Курмет-Фарм", "Усть-Каменагорск")
+        pharmacy("sloc_01KSBH8M075A0WRTF1SXT6XPFY", "Ирбис Транс Систем г.Актау ТРЦ Байтерек закрыта", "Ирбис Транс Систем", "Актау")
+        pharmacy("sloc_01KSBRMS3ACBVBTYKHGTTZ2R5F", "Ирбис Транс Систем г.Алматы Саина 16 Магнум закрыта", "Ирбис Транс Систем", "Алматы")
+        entityManager.flush()
+        jdbc.update(
+            "INSERT INTO fulfillment_devices(id, device_id, pharmacy_id, secret_sha256, secret_hint) VALUES (?, 'KASSA1', ?, ?, 'hint')",
+            UUID.randomUUID(), "sloc_01KSBRMS3ACBVBTYKHGTTZ2R5F", "a".repeat(64),
+        )
+
+        val script = javaClass.classLoader.getResource("db/migration/V108__pharmacy_directory_cleanup.sql")!!.readText()
+        // The test transaction's own connection, so the script sees the rows saved above.
+        org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(
+            org.springframework.jdbc.datasource.DataSourceUtils.getConnection(jdbc.dataSource!!),
+            org.springframework.core.io.ByteArrayResource(script.toByteArray()),
+        )
+        entityManager.clear()
+
+        fun row(id: String) = jdbc.queryForMap("SELECT chain_name, city, active FROM pharmacies WHERE id = ?", id)
+        assertThat(row("sloc_01KSAHYDSB2X042YH51YM2S37E")).containsEntry("chain_name", "JNK-фарм").containsEntry("city", "Жетиген")
+        assertThat(row("sloc_01KSAHYDSCAY9EA18EAX3XHF59")).containsEntry("chain_name", "Ирбис-Жер")
+        // City was already corrected by hand: the guard keeps it.
+        assertThat(row("sloc_01KSAHYDSDXHF1V3EXPV10VYDJ")).containsEntry("chain_name", "Ирбис Транс Систем").containsEntry("city", "Конаев")
+        assertThat(row("ph_tengri")).containsEntry("chain_name", "ТОО \"Tengripharm\"")
+        assertThat(row("ph_store")).containsEntry("chain_name", "Inkar").containsEntry("city", "—")
+        assertThat(row("ph_typo")).containsEntry("city", "Усть-Каменогорск")
+        assertThat(row("sloc_01KSBH8M075A0WRTF1SXT6XPFY")).containsEntry("active", false)
+        // Closed in the name but a till key is registered: left on for a check with the network.
+        assertThat(row("sloc_01KSBRMS3ACBVBTYKHGTTZ2R5F")).containsEntry("active", true)
+    }
+
+    @Test
     fun `POST create с unknown chain → 400`() {
         val payload = """
             {"name":"X","chainId":"nope","city":"X","group":"pilot"}
