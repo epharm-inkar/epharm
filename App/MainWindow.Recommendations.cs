@@ -609,7 +609,7 @@ namespace CustomerDisplay
             // Availability is a snapshot, not a perpetual promise. Expire after a minute;
             // a subsequent scan can refresh it. Dismissing a card still records no sale/outcome.
             var target = PharmacistScreen();
-            var win = new RecommendationWindow(recs, 60, target);
+            var win = new RecommendationWindow(recs, 60, target, _currentPharmacistName);
             _recoWindow = win;
             previous?.Close();
             win.Expired += () => _unconfirmedRecommendations = win.Recommendations.ToList();
