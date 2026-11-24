@@ -8,6 +8,18 @@ namespace CustomerDisplay.Models.Posm
     {
         public bool Ok { get; set; }
         public int? RewardEvidenceProtocol { get; set; }
+        /// <summary>Pharmacy of the authenticated till key (servers from v0.2.26); shown in «Состояние ePharm».</summary>
+        public string? PharmacyName { get; set; }
+        /// <summary>Notice from HQ for every till (servers from v0.2.26); absent when there is none.</summary>
+        public TillNoticeDto? Notice { get; set; }
+    }
+
+    public sealed class TillNoticeDto
+    {
+        public string? Id { get; set; }
+        public string? Ru { get; set; }
+        public string? Kk { get; set; }
+        public string? Level { get; set; }
     }
 
     // DTO для обмена с backend POSM Rules Engine (/api/posm/*).

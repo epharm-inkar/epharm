@@ -259,18 +259,29 @@ namespace CustomerDisplay.Services
                 {
                     RewardEvidenceProtocol = null;
                     LastHeartbeatError = $"HTTP {(int)resp.StatusCode} {resp.StatusCode}";
+                    HeartbeatFailingSince ??= DateTimeOffset.UtcNow;
                     _log?.Invoke($"heartbeat: HTTP {(int)resp.StatusCode} {resp.StatusCode}");
                     return false;
                 }
                 // Older/unknown/malformed capabilities never enable financial evidence.
                 RewardEvidenceProtocol = null;
+                TillNotice? notice = null;
+                string? pharmacyName = null;
                 try
                 {
                     var capability = await resp.Content.ReadFromJsonAsync<HeartbeatResponse>(JsonOpts, cts.Token).ConfigureAwait(false);
                     if (capability?.Ok == true && capability.RewardEvidenceProtocol == 1) RewardEvidenceProtocol = 1;
+                    if (capability?.Ok == true)
+                    {
+                        notice = ToTillNotice(capability.Notice);
+                        pharmacyName = string.IsNullOrWhiteSpace(capability.PharmacyName) ? null : capability.PharmacyName.Trim();
+                    }
                 }
                 catch (JsonException) { }
+                LastTillNotice = notice;
+                if (pharmacyName != null) LastPharmacyName = pharmacyName.Length > 120 ? pharmacyName[..120] : pharmacyName;
                 LastHeartbeatError = null;
+                HeartbeatFailingSince = null;
                 LastHeartbeatAcceptedAt = DateTimeOffset.UtcNow;
                 return true;
             }
@@ -283,6 +294,7 @@ namespace CustomerDisplay.Services
                 RewardEvidenceProtocol = null;
                 var desc = Describe(ex);
                 LastHeartbeatError = desc;
+                HeartbeatFailingSince ??= DateTimeOffset.UtcNow;
                 if (ShouldLog(ref _lastHeartbeatErrorLog, ref _lastHeartbeatErrorKey, desc))
                     _log?.Invoke($"heartbeat: временно не доставлен ({desc}); повторю по таймеру");
                 return false;
@@ -392,6 +404,27 @@ namespace CustomerDisplay.Services
 
         /// <summary>Time of the last heartbeat the backend accepted (UTC), null before the first one.</summary>
         public DateTimeOffset? LastHeartbeatAcceptedAt { get; private set; }
+
+        /// <summary>Start of the current run of failed heartbeats (UTC), null while the link works.</summary>
+        public DateTimeOffset? HeartbeatFailingSince { get; private set; }
+
+        /// <summary>HQ notice from the last accepted heartbeat; null when the server sent none.</summary>
+        public TillNotice? LastTillNotice { get; private set; }
+
+        /// <summary>Pharmacy name of this till key from the last accepted heartbeat (newer servers only).</summary>
+        public string? LastPharmacyName { get; private set; }
+
+        internal static TillNotice? ToTillNotice(TillNoticeDto? dto)
+        {
+            if (dto == null) return null;
+            static string? Clean(string? value, int max) =>
+                string.IsNullOrWhiteSpace(value) ? null : value.Trim() is var text && text.Length > max ? text[..max] : value.Trim();
+            var id = Clean(dto.Id, 64);
+            var ru = Clean(dto.Ru, 600);
+            if (id == null || ru == null) return null;
+            var level = string.Equals(dto.Level?.Trim(), "warning", StringComparison.OrdinalIgnoreCase) ? "warning" : "info";
+            return new TillNotice(id, ru, Clean(dto.Kk, 600) ?? "", level);
+        }
 
         private bool HeartbeatRecentlyAccepted() =>
             LastHeartbeatAcceptedAt is { } at && DateTimeOffset.UtcNow - at <= HeartbeatEvidenceWindow;
