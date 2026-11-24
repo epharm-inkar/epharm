@@ -121,7 +121,7 @@ namespace CustomerDisplay.Models.Posm
         {
             if (string.IsNullOrWhiteSpace(goalText)) return "";
             var text = goalText.Trim();
-            text = char.ToUpper(text[0], CultureInfo.GetCultureInfo("ru-RU")) + text[1..];
+            text = char.ToUpperInvariant(text[0]) + text[1..];
             return goalBonus > 0 ? $"{text} · +{Money(goalBonus)} за выполнение" : text;
         }
 
