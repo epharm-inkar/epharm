@@ -15,6 +15,7 @@ import AIExam from '@/features/ai-exam/AIExamPage'
 
 const LoginPage = lazy(() => import('@/features/auth/LoginPage'))
 const LearnerTraining = lazy(() => import('@/features/learner/LearnerTrainingPage'))
+const LearnerOneTimeEntry = lazy(() => import('@/features/learner/LearnerOneTimeEntryPage'))
 const MerchClaim = lazy(() => import('@/features/merch/MerchClaimPage'))
 const Dashboard = lazy(() => import('@/features/dashboard/DashboardPage'))
 const CampaignReports = lazy(() => import('@/features/reports/CampaignReportsPage'))
@@ -82,6 +83,7 @@ export function AppRouter() {
       <Route path="/merch/portal" element={publicPortal(<MerchPortal />)} />
       <Route path="/producer" element={publicPortal(<Producer />)} />
       <Route path="/learn" element={withSuspense(<LearnerTraining />)} />
+      <Route path="/learn/enter" element={withSuspense(<LearnerOneTimeEntry />)} />
       <Route path="/learn/merch/tasks/:taskId" element={withSuspense(<LearnerTraining />)} />
       <Route path="/learn/merch/visits" element={withSuspense(<LearnerTraining />)} />
       <Route path="/learn/merch/claim" element={withSuspense(<MerchClaim />)} />

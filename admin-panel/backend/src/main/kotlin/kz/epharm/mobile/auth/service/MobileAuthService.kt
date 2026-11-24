@@ -44,7 +44,25 @@ class MobileAuthService(
     private val jwtService: JwtService,
     private val mobileRefreshTokenService: MobileRefreshTokenService,
     private val credentialVault: kz.epharm.learnercredentials.LearnerPasswordVault,
+    private val cabinetLinks: CabinetLinkService? = null,
+    /** A cabinet opened from a till (shared computer) stays signed in for one shift at most. */
+    @org.springframework.beans.factory.annotation.Value("\${app.posm.cabinet-session-hours:12}")
+    private val cabinetSessionHours: Long = 12,
 ) {
+
+    /** One-time link from the till (no password): opens the cabinet signed in as the person known from Standard-N. */
+    @Transactional
+    fun loginWithCabinetLink(token: String): MobileAuthResponse {
+        val pharmacistId = cabinetLinks?.consume(token)
+            ?: throw AppException(ErrorCode.INVALID_CREDENTIALS, "Ссылка устарела. Откройте кабинет заново кнопкой на кассе", HttpStatus.UNAUTHORIZED)
+        val pharmacist = pharmacistRepository.findById(pharmacistId).orElseThrow {
+            AppException(ErrorCode.USER_NOT_FOUND, "Фармацевт не найден", HttpStatus.UNAUTHORIZED)
+        }
+        ensureNotBlocked(pharmacist)
+        val now = Instant.now()
+        val sessionEndsAt = now.plus(java.time.Duration.ofHours(cabinetSessionHours.coerceIn(1, 24)))
+        return MobileAuthResponse(tokens = issueTokens(pharmacist, now, sessionEndsAt), pharmacist = MeDto.of(pharmacist))
+    }
 
     @Transactional
     fun login(rawIin: String, password: String): MobileAuthResponse {
@@ -211,13 +229,14 @@ class MobileAuthService(
             )
         val pharmacist = pharmacistRepository.findByIdForUpdate(pharmacistId) ?: throw AppException(ErrorCode.USER_NOT_FOUND, "Фармацевт не найден", HttpStatus.UNAUTHORIZED)
         val now = Instant.now()
-        if (mobileRefreshTokenService.rotate(rawRefreshToken, now) != pharmacist.id) throw AppException(
-            ErrorCode.INVALID_REFRESH_TOKEN, "Refresh-токен недействителен или истёк", HttpStatus.UNAUTHORIZED)
+        val rotated = mobileRefreshTokenService.rotateSession(rawRefreshToken, now)
+            ?.takeIf { it.pharmacistId == pharmacist.id }
+            ?: throw AppException(ErrorCode.INVALID_REFRESH_TOKEN, "Refresh-токен недействителен или истёк", HttpStatus.UNAUTHORIZED)
         if (pharmacist.status == PharmacistStatus.blocked) {
             mobileRefreshTokenService.revokeAllForPharmacist(pharmacist.id)
             throw AppException(ErrorCode.PHARMACIST_BLOCKED, "Аккаунт заблокирован", HttpStatus.FORBIDDEN)
         }
-        return RefreshResponse(tokens = issueTokens(pharmacist, now))
+        return RefreshResponse(tokens = issueTokens(pharmacist, now, rotated.sessionEndsAt))
     }
 
     @Transactional
@@ -314,9 +333,9 @@ class MobileAuthService(
         val standardNCity: String? = null,
     )
 
-    private fun issueTokens(pharmacist: PharmacistEntity, now: Instant = Instant.now()): AuthTokens {
+    private fun issueTokens(pharmacist: PharmacistEntity, now: Instant = Instant.now(), sessionEndsAt: Instant? = null): AuthTokens {
         val access = jwtService.issuePharmacistToken(pharmacist.id, pharmacist.name, pharmacist.phone, now)
-        val refresh = mobileRefreshTokenService.issue(pharmacist.id, now)
+        val refresh = mobileRefreshTokenService.issue(pharmacist.id, now, sessionEndsAt)
         return AuthTokens(
             accessToken = access,
             accessTokenExpiresAt = now.plus(jwtService.accessTtl),

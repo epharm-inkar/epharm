@@ -96,6 +96,28 @@ class StandardNDirectorySellerIdentityTest {
         assertNull(result.sellerIin)
     }
 
+    @Test fun `without registration the card is created from the directory and receives the receipt`() {
+        val accounts = mockk<kz.epharm.posm.self.StandardNAccountService>()
+        val withAccounts = PosmPharmacistIdentityService(people, mappings, bindings, directory, accounts)
+        every { directory.find("ph", "34") } returns directoryPerson
+        every { people.findByIin(iin) } returns null
+        every { accounts.ensure(directoryPerson, "ph") } returns person("ph_auto", pharmacy = "ph")
+        val result = withAccounts.resolve("ph", "34", null, "device", namespace, at, "41", "ws", useDirectory = true)
+        assertEquals("ph_auto", result.pharmacistId)
+        assertEquals(PharmacistIdentitySource.STANDARDN_DIRECTORY, result.source)
+        assertEquals(iin, result.sellerIin)
+    }
+
+    @Test fun `a blocked card found by IIN is never re-created`() {
+        val accounts = mockk<kz.epharm.posm.self.StandardNAccountService>()
+        val withAccounts = PosmPharmacistIdentityService(people, mappings, bindings, directory, accounts)
+        every { directory.find("ph", "34") } returns directoryPerson
+        every { people.findByIin(iin) } returns person("ph_person", pharmacy = "ph", status = PharmacistStatus.blocked)
+        val result = withAccounts.resolve("ph", "34", null, "device", namespace, at, "41", "ws", useDirectory = true)
+        assertEquals("", result.pharmacistId)
+        verify(exactly = 0) { accounts.ensure(any(), any()) }
+    }
+
     @Test fun `directory beats a weak same-name match`() {
         every { directory.find("ph", "34") } returns directoryPerson
         every { people.findByIin(iin) } returns null

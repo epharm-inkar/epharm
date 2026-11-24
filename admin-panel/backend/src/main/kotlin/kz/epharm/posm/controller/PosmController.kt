@@ -76,6 +76,7 @@ class PosmController(
             reportedPharmacistName = req.pharmacistName,
             deviceId = device.deviceId,
             sourceNamespace = req.sourceNamespace,
+            useDirectory = true,
         )
         return recommendationService.recommend(req.copy(pharmacistId = identity.pharmacistId))
             .copy(rewardEvidenceProtocol = rewards.protocol(device))

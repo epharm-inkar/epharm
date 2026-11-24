@@ -43,6 +43,8 @@ class PosmPharmacistIdentityService(
     private val mappingRepository: PosmPharmacistMappingRepository,
     private val sourceBindings: kz.epharm.posm.staff.SourceStaffBindingService,
     private val directory: StandardNDirectoryIdentityLookup? = null,
+    /** No registration (24.11.2026): creates the card from the directory on first sight. */
+    private val accounts: kz.epharm.posm.self.StandardNAccountService? = null,
 ) {
     @Transactional(readOnly = true)
     fun resolve(
@@ -54,7 +56,7 @@ class PosmPharmacistIdentityService(
         at: java.time.Instant = java.time.Instant.now(),
         nativeSession: String? = null,
         workstation: String? = null,
-        /** Receipts only: recommendation events and clicks keep the proven paths until bonuses use the directory. */
+        /** Receipts and recommendation requests from tills; HQ review keeps the proven paths. */
         useDirectory: Boolean = false,
     ): PosmPharmacistIdentity {
         val reportedId = reportedPharmacistId.clean()
@@ -100,7 +102,8 @@ class PosmPharmacistIdentityService(
         val person = if (useDirectory) directory?.find(pharmacyId, reportedId) else null
         if (person != null) {
             // A person may sell in several pharmacies: the IIN, not the home pharmacy, identifies them.
-            val registered = pharmacistRepository.findByIin(person.iin)?.takeIf { it.status == PharmacistStatus.active }
+            val account = pharmacistRepository.findByIin(person.iin) ?: accounts?.ensure(person, pharmacyId)
+            val registered = account?.takeIf { it.status == PharmacistStatus.active }
             return PosmPharmacistIdentity(
                 pharmacistId = registered?.id.orEmpty(),
                 pharmacistName = registered?.name ?: person.fullName,

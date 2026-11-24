@@ -49,6 +49,11 @@ class MobileAuthController(
         return mobileAuthService.login(req.iin, req.password)
     }
 
+    /** One-time link from the till «Мой кабинет» button or QR (no password, no SMS). */
+    @PostMapping("/one-time")
+    fun oneTime(@Valid @RequestBody req: CabinetLinkLoginRequest): MobileAuthResponse =
+        mobileAuthService.loginWithCabinetLink(req.token)
+
     @PostMapping("/activation/status")
     fun activationStatus(@Valid @RequestBody req: ActivationStatusRequest): ActivationStatusResponse =
         mobileAuthService.activationStatus(req.iin)
@@ -94,3 +99,9 @@ class MobileAuthController(
         return mobileAuthService.me(p.pharmacistId)
     }
 }
+
+data class CabinetLinkLoginRequest(
+    @field:jakarta.validation.constraints.NotBlank
+    @field:jakarta.validation.constraints.Size(max = 64)
+    val token: String,
+)
