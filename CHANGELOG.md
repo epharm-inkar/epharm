@@ -19,6 +19,11 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Fixed
 
+- POSM 1.0.91 restores sales capture on busy tills. Only the current and recently
+  seen receipts take a print cue, old groups are read apart from them, and groups
+  unseen for 6 hours (or the oldest ones while more than 28 of 32 slots are taken)
+  move to a private local archive without creating a sale. Before this, one receipt
+  paid while its cue was missed, or 32 held receipts, stopped capture for good.
 - POSM 1.0.89 separates automatic RPS presentation from grant/session invalidation:
   prompt for a confirmed Standard-N user change, preserve an unfinished same-user
   form through technical context changes, and refresh context only on explicit

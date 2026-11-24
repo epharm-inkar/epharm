@@ -701,6 +701,18 @@ to manufacture eligibility. Missing legacy provenance is recovered only from the
 reward identity; otherwise evidence remains unresolved. Idle connectivity changes do not mark
 an unused future checkout incomplete; a gap in an already observed checkout remains sticky.
 
+POSM 1.0.91 keeps old groups from stopping capture (November 2026: tills stopped confirming
+sales once one old group competed with every new print or 32 groups never resolved). A doc-less
+print cue is offered only to the current receipt and to groups seen as the active receipt within
+the last 10 minutes (groups loaded from disk count as seen at program start, so a print right
+after a restart still finds its receipt); old groups are probed in a separate read, so an
+unreadable one cannot hold back the receipt being printed. A group not seen for 6 hours (by the till's clock or by its
+Standard-N open/post/print times), or the oldest non-live groups while more than 28 slots are
+taken, is copied verbatim to the private `stale-observed-groups` folder and leaves the hot journal.
+That move creates no sale, ACK or reward and touches no draft or outbox entry. If the same
+document is observed again, a fresh group starts; sales stay deduplicated by `pharmacyId + DOCS.ID`.
+The stale folder is a local diagnostic copy bounded at 2048 entries/64 MiB, oldest pruned first.
+
 The candidate also withholds the two known unsafe legacy sources (`standardn-document-switch`
 and `standardn-firebird-close`) from raw-sale replay, without deleting their rows or starving other
 queued events. A later real print of the same physical document preserves the old pending files

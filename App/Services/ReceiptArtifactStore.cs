@@ -48,7 +48,7 @@ namespace CustomerDisplay.Services
     /// reconstructs a fiscal-looking image from its cart. A local artifact is removed only after
     /// the structured sale was acknowledged and the configured inspection retention elapsed.
     /// </summary>
-    public sealed class ReceiptArtifactStore
+    public sealed partial class ReceiptArtifactStore
     {
         private const string PayloadFileName = "sale.json";
         private const string MetadataFileName = "fiscal-receipt.json";
