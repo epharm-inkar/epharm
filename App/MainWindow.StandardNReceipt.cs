@@ -454,6 +454,12 @@ namespace CustomerDisplay
             _currentStandardNSessionId = pharmacist.SessionId;
             _pharmacistFromDb = true;
 
+            if (!string.Equals(previousId, pharmacist.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                // A new cashier at the till: refresh the ePharm icon (red dot until their profile is filled).
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() => _ = RefreshSelfStatusAsync()));
+            }
+
             if (!string.Equals(previousId, pharmacist.Id, StringComparison.OrdinalIgnoreCase) ||
                 previousSession != pharmacist.SessionId)
             {

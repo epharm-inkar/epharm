@@ -91,6 +91,49 @@ namespace CustomerDisplay.Services
         }
 
         /// <summary>Корзина → рекомендации. null при любой ошибке/таймауте (popup не покажется).</summary>
+        /// <summary>Personal ePharm window: the Standard-N user at this till, earnings and profile (no login).</summary>
+        public Task<PosmSelfResult<PosmSelfDto>> GetSelfAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
+            PostSelfAsync<PosmSelfDto>("/api/posm/self", req, ct);
+
+        /// <summary>Saves the phone (no SMS) and/or password typed in the personal window.</summary>
+        public Task<PosmSelfResult<PosmSelfDto>> SaveSelfContactAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
+            PostSelfAsync<PosmSelfDto>("/api/posm/self/contact", req, ct);
+
+        /// <summary>A fresh one-time link that opens the web cabinet signed in (for the «Мой кабинет» button).</summary>
+        public Task<PosmSelfResult<PosmCabinetLinkDto>> GetCabinetLinkAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
+            PostSelfAsync<PosmCabinetLinkDto>("/api/posm/self/cabinet-link", req, ct);
+
+        private async Task<PosmSelfResult<T>> PostSelfAsync<T>(string path, PosmSelfRequestDto req, CancellationToken ct) where T : class
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            try
+            {
+                using var resp = await _http.PostAsJsonAsync(path, req, JsonOpts, cts.Token).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                    return new(await resp.Content.ReadFromJsonAsync<T>(JsonOpts, cts.Token).ConfigureAwait(false), null);
+                string? message = null;
+                try
+                {
+                    using var body = await JsonDocument.ParseAsync(
+                        await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false), cancellationToken: cts.Token).ConfigureAwait(false);
+                    if (body.RootElement.TryGetProperty("message", out var m)) message = m.GetString();
+                }
+                catch { }
+                _log?.Invoke($"self {path}: HTTP {(int)resp.StatusCode}");
+                return new(null, string.IsNullOrWhiteSpace(message) ? "Сервер ePharm сейчас не ответил. Попробуйте через минуту." : message);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _log?.Invoke($"self {path}: {Describe(ex)}");
+                return new(null, "Нет связи с сервером ePharm. Проверьте интернет и попробуйте ещё раз.");
+            }
+        }
+
         public async Task<RecommendResponse?> RecommendAsync(RecommendRequest req, CancellationToken ct = default)
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);

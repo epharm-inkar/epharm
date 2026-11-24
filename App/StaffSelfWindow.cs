@@ -32,6 +32,8 @@ namespace CustomerDisplay
         public bool PasswordSet { get; init; }
         /// <summary>One-time, device-issued cabinet link (opens /learn already signed in). Minutes-lived.</summary>
         public string? CabinetUrl { get; init; }
+        /// <summary>Shown instead of the profile when the person is not known yet (no Standard-N sign-in, no IIN).</summary>
+        public string? Notice { get; init; }
     }
 
     /// <summary>
@@ -44,7 +46,8 @@ namespace CustomerDisplay
     public sealed class StaffSelfWindow : Window
     {
         private static readonly CultureInfo Kz = CultureInfo.GetCultureInfo("ru-RU");
-        public event Action<string>? OpenCabinetRequested;
+        /// <summary>«Мой кабинет»: the host asks the server for a fresh one-time link and opens the browser.</summary>
+        public event Action? OpenCabinetRequested;
         public event Action<string?, string?>? SaveContactRequested;
 
         private readonly TextBox _phone = NewField("+7 ___ ___ __ __");
@@ -68,6 +71,7 @@ namespace CustomerDisplay
             Width = 400;
             Title = "ePharm — личный кабинет";
             Content = BuildCard(model);
+            Model = model;
             MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) DragMove(); };
             KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
             if (targetScreen != null)
@@ -82,6 +86,26 @@ namespace CustomerDisplay
             }
         }
 
+        public StaffSelfModel Model { get; private set; }
+
+        /// <summary>Replaces what the window shows (after saving the profile or a periodic refresh).</summary>
+        public void Update(StaffSelfModel model)
+        {
+            Model = model;
+            Content = BuildCard(model);
+        }
+
+        /// <summary>Shows a short status line under the header (saved, error) without rebuilding the window.</summary>
+        public void ShowStatus(string text, bool error)
+        {
+            if (_status == null) return;
+            _status.Text = text;
+            _status.Foreground = Brush(error ? "#B23127" : "#1F6B57");
+            _status.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private TextBlock? _status;
+
         private UIElement BuildCard(StaffSelfModel model)
         {
             var card = new Border
@@ -93,6 +117,19 @@ namespace CustomerDisplay
             };
             var root = new StackPanel();
             root.Children.Add(BuildHeader(model));
+            _status = new TextBlock { FontSize = 13, Margin = new Thickness(16, 10, 16, 0), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+            root.Children.Add(_status);
+            if (!string.IsNullOrWhiteSpace(model.Notice) && model.FullName.Length == 0)
+            {
+                root.Children.Add(new Border
+                {
+                    Margin = new Thickness(16, 14, 16, 16), CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 12, 14, 13),
+                    Background = Brush("#F4F6F7"),
+                    Child = new TextBlock { Text = model.Notice, Foreground = Brush("#374151"), FontSize = 14, TextWrapping = TextWrapping.Wrap },
+                });
+                card.Child = root;
+                return card;
+            }
             root.Children.Add(BuildEarnings(model));
             if (model.Recent.Count > 0) root.Children.Add(BuildHistory(model));
             root.Children.Add(BuildContact(model));
@@ -121,7 +158,8 @@ namespace CustomerDisplay
                 Foreground = Brushes.White, FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 2, 0, 0), TextWrapping = TextWrapping.Wrap,
             });
             var sub = new List<string>();
-            if (model.Iin.Length == 12) sub.Add("ИИН " + model.Iin[..6] + "•••••" + model.Iin[^1..]);
+            if (model.Iin.Length > 0)
+                sub.Add("ИИН " + (model.Iin.Contains('•') || model.Iin.Length != 12 ? model.Iin : model.Iin[..6] + "•••••" + model.Iin[^1..]));
             if (model.Pharmacy.Length > 0) sub.Add(model.Pharmacy);
             if (sub.Count > 0)
                 left.Children.Add(new TextBlock { Text = string.Join("  ·  ", sub), Foreground = Brush("#8FB3AE"), FontSize = 12, Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
@@ -249,7 +287,7 @@ namespace CustomerDisplay
                 Content = "Мой кабинет — обучение и бонусы", Height = 44, FontSize = 15, FontWeight = FontWeights.SemiBold,
                 Foreground = Brush("#112B33"), Background = Brush("#E7EDEF"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
             };
-            open.Click += (_, _) => { if (model.CabinetUrl is { Length: > 0 } url) OpenCabinetRequested?.Invoke(url); };
+            open.Click += (_, _) => OpenCabinetRequested?.Invoke();
             box.Children.Add(open);
 
             if (model.CabinetUrl is { Length: > 0 } cabinet)

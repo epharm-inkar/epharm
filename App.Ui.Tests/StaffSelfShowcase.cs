@@ -48,6 +48,10 @@ internal static partial class Program
                 new("substitution", "Венолекс 450 мг №60", 300, new DateTimeOffset(2026, 11, 24, 17, 22, 0, TimeSpan.FromHours(5))),
             },
         }),
+        ("staff-self-3-not-recognised", new StaffSelfModel
+        {
+            Notice = "Не нашли вас в справочнике Стандарт-Н: попросите МАС заполнить ИИН в вашей карточке пользователя",
+        }),
     };
 
     private static int RunStaffSelfShowcaseOnly(Application application)
