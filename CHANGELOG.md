@@ -30,6 +30,9 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Changed
 
+- V111 adds the partial index `ix_merch_branches_epharm_pharmacy` (built concurrently): every till
+  recommendation request looked up its pharmacy's merchandising branch by reading all 680 branches
+  (29 million full scans on prod by 24.11).
 - Backend gzip-compresses JSON responses over 8 KB when the client accepts gzip (`server.compression`):
   neither Caddy on .76 nor nginx on .74 compressed JSON, so the 657 KB fleet snapshot now travels as ~50 KB.
   POSM does not ask for gzip (no `AutomaticDecompression`), so till responses are unchanged.
