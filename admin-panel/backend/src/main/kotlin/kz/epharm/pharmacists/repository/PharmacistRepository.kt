@@ -47,7 +47,7 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
     /**
      * Read-only, exact resolved sellers in their current pharmacy; raw/name matches are not inferred.
      * Sales are filtered by `s.pharmacist_id` first, with the literal `<> ''` predicate, so PostgreSQL
-     * can use the partial index `idx_pos_sales_pharmacist_printed` (V108) instead of reading every
+     * can use the partial index `idx_pos_sales_pharmacist_printed` (V109) instead of reading every
      * sale of the period through the time index (INK-145: 40-75 s and HTTP 503 on the roster).
      */
     @Query(nativeQuery = true, value = """
