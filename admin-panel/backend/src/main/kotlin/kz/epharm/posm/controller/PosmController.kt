@@ -124,6 +124,7 @@ class PosmController(
             at = req.rewardEvidence?.completion?.completedAt ?: req.printedAt,
             nativeSession = (sellerSource?.nativeSessionId ?: req.rewardEvidence?.completion?.identity?.nativeSessionId)?.toString(),
             workstation = sellerSource?.workstationId ?: req.rewardEvidence?.completion?.identity?.workstationId,
+            useDirectory = true,
         )
         val effective = req.copy(
             pharmacistId = identity.pharmacistId,
