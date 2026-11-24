@@ -50,11 +50,13 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Fixed
 
-- POSM 1.0.92 determines the seller on tills where Standard-N keeps earlier cashier sessions open: sessions that
-  started before the running cashier process are ignored. Standard-N refreshes the heartbeat of every unclosed
-  session of a workstation and a power-off never closes one, so on 24.11 335 of 514 tills reported
-  `ambiguous_session` and pharmacist login failed. While the login is switched off on the server the till still
-  reports, every five minutes and without any window, whether the seller would resolve.
+- POSM 1.0.92 reads receipts and determines the seller on tills where Standard-N keeps earlier cashier sessions
+  open: sessions that started before the running cashier program are ignored, both by the receipt reader and by
+  the pharmacist login. Standard-N refreshes the heartbeat of every unclosed session of a workstation and a
+  power-off never closes one, so the receipt reader found several live sessions, read no receipt and confirmed
+  no sale (24.11: about 20 of 514 tills still sent receipts, 1.0.91 did not change it), and 335 tills reported
+  `ambiguous_session` for login. While the login is switched off on the server the till still reports, every
+  five minutes and without any window, whether the seller would resolve.
 - POSM opens the Standard-N database on the pharmacy's main computer when options.ini keeps the server inside
   `base` (`MANAGER:C:\Standart-N\base\ztrade.fdb`, `MANAGER/3050:...`, `MANAGER:alias`, `inet://...`) and has no
   `Server=` key. The server part used to be dropped, so second cash desks looked for the database locally and

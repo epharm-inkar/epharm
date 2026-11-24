@@ -242,12 +242,13 @@ public sealed partial class StandardNDbLookup
     {
         var machine = StaffSessionResolver.CanonicalComputer(_machineName);
         if (machine.Length == 0) return null;
-        var heartbeatTimestamp = ReadStaffSessionTimestampShape(connection, transaction).Heartbeat;
+        var shape = ReadStaffSessionTimestampShape(connection, transaction);
+        var heartbeatTimestamp = shape.Heartbeat;
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandTimeout = TimeoutSec();
         // Vendor sessions can remain open after a crash; only a supported DB heartbeat proves liveness.
-        command.CommandText = StandardNReceiptProjection.CurrentSessionSql(heartbeatTimestamp);
+        command.CommandText = StandardNReceiptProjection.CurrentSessionSql(heartbeatTimestamp, shape.StartedAt);
         command.Parameters.AddWithValue("@machine", machine);
         using var reader = command.ExecuteReader();
         var rows = new List<StandardNReceiptSessionRow>();
@@ -255,7 +256,8 @@ public sealed partial class StandardNDbLookup
         {
             rows.Add(StandardNReceiptProjection.Session(reader));
         }
-        var selected = StandardNReceiptProjection.ExactLocalSession(machine, rows, heartbeatTimestamp);
+        var processAge = CashierProcessStartedUtc?.Invoke() is { } start ? DateTimeOffset.UtcNow - start : (TimeSpan?)null;
+        var selected = StandardNReceiptProjection.ExactLocalSession(machine, rows, heartbeatTimestamp, processAge);
         if (selected == null) return null;
         _userNameCache.TryGet(ReceiptConnectionNamespace(connection), selected.UserId, out var name, selected.SessionId);
         return new(selected.SessionId, selected.UserId, name, selected.WorkstationId, selected.WorkstationName, true);

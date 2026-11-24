@@ -130,13 +130,21 @@ public static class StaffSessionResolver
     /// <summary>Margin for discarding sessions older than the cashier process; orphans are hours or days old.</summary>
     public static readonly TimeSpan OrphanMargin = TimeSpan.FromMinutes(5);
 
+    /// <summary>Start of the cashier process from its identity («pid:start ticks UTC»); null when unreadable.</summary>
+    public static DateTimeOffset? ProcessStartUtc(string? processIdentity)
+    {
+        if (string.IsNullOrWhiteSpace(processIdentity)) return null;
+        var colon = processIdentity.LastIndexOf(':');
+        if (colon < 0 || !long.TryParse(processIdentity[(colon + 1)..], out var ticks) || ticks < 0 || ticks > DateTime.MaxValue.Ticks)
+            return null;
+        return new DateTimeOffset(new DateTime(ticks, DateTimeKind.Utc));
+    }
+
     private static bool TryProcessAge(string processIdentity, DateTimeOffset? observerUtcNow, out TimeSpan age)
     {
         age = TimeSpan.Zero;
-        var colon = processIdentity.LastIndexOf(':');
-        if (colon < 0 || !long.TryParse(processIdentity[(colon + 1)..], out var ticks) || ticks < 0 || ticks > DateTime.MaxValue.Ticks)
-            return false;
-        age = (observerUtcNow ?? DateTimeOffset.UtcNow) - new DateTimeOffset(new DateTime(ticks, DateTimeKind.Utc));
+        if (ProcessStartUtc(processIdentity) is not { } start) return false;
+        age = (observerUtcNow ?? DateTimeOffset.UtcNow) - start;
         return age >= TimeSpan.Zero;
     }
 

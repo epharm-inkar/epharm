@@ -150,6 +150,27 @@ public partial class MainWindow
         return trusted;
     }
 
+    private readonly object _cashierProbeLock = new();
+    private DateTimeOffset _cashierProbeAt = DateTimeOffset.MinValue;
+    private DateTimeOffset? _cashierProbeStart;
+
+    /// <summary>
+    /// Start of the single running cashier program for the receipt reader (cached ten seconds: the reader asks
+    /// every few seconds). Null when none or several run, then no session is discarded.
+    /// </summary>
+    private DateTimeOffset? CashierProcessStartedUtc()
+    {
+        lock (_cashierProbeLock)
+        {
+            var now = DateTimeOffset.UtcNow;
+            if (now - _cashierProbeAt < TimeSpan.FromSeconds(10)) return _cashierProbeStart;
+            _cashierProbeAt = now;
+            var presence = ObserveStaffProcess();
+            _cashierProbeStart = presence.Status == "resolved" ? StaffSessionResolver.ProcessStartUtc(presence.Identity) : null;
+            return _cashierProbeStart;
+        }
+    }
+
     private static StaffProcessPresence ObserveStaffProcess()
     {
         try

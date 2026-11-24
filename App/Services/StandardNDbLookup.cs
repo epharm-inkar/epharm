@@ -85,6 +85,12 @@ namespace CustomerDisplay.Services
         private readonly StandardNUserNameCache _userNameCache = new();
         private bool _disposed;
 
+        /// <summary>
+        /// Start of the single running cashier program (zkassa/kassir), UTC, or null when none or several run.
+        /// Lets the receipt reader ignore sessions Standard-N left open before that program started (INK-161).
+        /// </summary>
+        public Func<DateTimeOffset?>? CashierProcessStartedUtc { get; set; }
+
         public StandardNDbLookup(EpharmConfig cfg, Action<string> log, string? machineName = null)
         {
             _cfg = cfg;
