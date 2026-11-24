@@ -8,5 +8,8 @@ import org.springframework.stereotype.Repository
 interface AppReleaseRepository : JpaRepository<AppReleaseEntity, String> {
     fun findFirstByPlatformAndIsCurrentTrue(platform: String): AppReleaseEntity?
     fun findAllByPlatformAndIsCurrentTrue(platform: String): List<AppReleaseEntity>
+    fun findFirstByPlatformAndChannelAndIsCurrentTrue(platform: String, channel: String): AppReleaseEntity?
+    fun findAllByPlatformAndChannelAndIsCurrentTrue(platform: String, channel: String): List<AppReleaseEntity>
     fun findAllByOrderByCreatedAtDesc(): List<AppReleaseEntity>
+    fun findAllByPlatformAndVersionAndSha256(platform: String, version: String, sha256: String): List<AppReleaseEntity>
 }

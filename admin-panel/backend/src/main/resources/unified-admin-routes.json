@@ -1138,6 +1138,16 @@
     "mode": "NOT_READY"
   },
   {
+    "api": "GET /api/admin/screens/fleet",
+    "permission": {
+      "module": "pharmacies_products",
+      "subsection": "registers",
+      "action": "view",
+      "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
     "api": "GET /api/admin/screens/playlists",
     "permission": {
       "module": "pharmacies_products",

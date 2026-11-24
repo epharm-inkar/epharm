@@ -44,4 +44,8 @@ class AppReleaseEntity(
 
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
+
+    /** stable: all tills; pilot: only tills in POSM_UPDATE_PILOT_DEVICES (V110). */
+    @Column(name = "channel", nullable = false, length = 16)
+    var channel: String = "stable",
 )

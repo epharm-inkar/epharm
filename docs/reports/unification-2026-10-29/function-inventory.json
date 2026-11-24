@@ -1904,6 +1904,42 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H09.05",
+    "group": "H09",
+    "name": "Все кассы: связь, экран покупателя, Стандарт-Н, эфир и чеки по каждой кассе",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "release/2026-11-24",
+      "ui": [
+        "admin-panel/frontend/src/features/screens/FleetPanel.tsx",
+        "admin-panel/frontend/src/features/screens/fleetFormat.ts",
+        "admin-panel/frontend/src/features/screens/ScreensPage.tsx"
+      ],
+      "api": ["GET /api/admin/screens/fleet"],
+      "jobs": [],
+      "data": ["screen presence / register heartbeat state", "pharmacies", "fulfillment_devices", "pos_sales", "playlists", "playlist_pharmacy_assignments", "slides"],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/screens/service/ScreenFleetService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/screens/service/ScreenService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/screens/controller/ScreenController.kt"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "Кассы и экраны",
+      "actions": ["Все кассы: связь, экран покупателя, Стандарт-Н, эфир и чеки по каждой кассе"],
+      "scope": "D1: только явно выданные действия и аптеки/дивизионы; главный HQ — вся сеть"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Показаны все активные ключи касс и кассы на связи без ключа: связь, версия, мониторы, Стандарт-Н",
+      "Эфир кассы совпадает с /api/posm/playlists/active для её аптеки",
+      "Чеки по кассе и по аптеке за сегодня (Алматы) и 7 дней; при сбое чтения продаж salesAvailable=false, а не нули"
+    ],
+    "risks": [],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H10.01",
     "group": "H10",
     "name": "Совместимый реестр плейлистов",

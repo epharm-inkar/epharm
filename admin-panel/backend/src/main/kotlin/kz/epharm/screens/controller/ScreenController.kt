@@ -10,10 +10,12 @@ import kz.epharm.screens.dto.ConnectedRegistersSummaryDto
 import kz.epharm.screens.dto.CreatePlaylistRequest
 import kz.epharm.screens.dto.PlaylistDto
 import kz.epharm.screens.dto.PosmCoverageDto
+import kz.epharm.screens.dto.ScreenFleetDto
 import kz.epharm.screens.dto.SlideDto
 import kz.epharm.screens.dto.SetBroadcastProfilePharmaciesRequest
 import kz.epharm.screens.dto.UpdatePlaylistRequest
 import kz.epharm.screens.entity.PlaylistStatus
+import kz.epharm.screens.service.ScreenFleetService
 import kz.epharm.screens.service.ScreenPresenceService
 import kz.epharm.screens.service.ScreenService
 import org.springframework.http.HttpStatus
@@ -43,6 +45,7 @@ import java.time.ZoneId
 class ScreenController(
     private val screenService: ScreenService,
     private val screenPresenceService: ScreenPresenceService,
+    private val screenFleetService: ScreenFleetService,
 ) {
 
     /** Лёгкий endpoint для числа онлайн-касс без резолва полного справочника аптек. */
@@ -52,6 +55,13 @@ class ScreenController(
     /** Целевой охват сети vs фактически зарегистрированные/online POSM-кассы. */
     @GetMapping("/coverage")
     fun coverage(): PosmCoverageDto = screenPresenceService.coverage()
+
+    /**
+     * Все кассы сети одним снимком: на связи или нет, версия, экран покупателя, Стандарт-Н,
+     * что назначено на экран и продажи аптеки. Страница «Кассы и экраны».
+     */
+    @GetMapping("/fleet")
+    fun fleet(): ScreenFleetDto = screenFleetService.fleet()
 
     /**
      * Сколько касс сейчас онлайн (T4) — пульсы за последний TTL. Для каждой кассы резолвим

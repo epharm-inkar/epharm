@@ -19,17 +19,18 @@ class AppReleasePublicationTest {
         val request = RegisterReleaseRequest("1.0.81", "https://example.invalid/release.zip", " win-x64 ", "a".repeat(64), "AQID")
         every { verifier.validate(request) } just Runs
         every { jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?, 718096))", "win-x64") } returns emptyList()
-        every { repo.findAllByPlatformAndIsCurrentTrue("win-x64") } returns listOf(old)
+        every { repo.findAllByPlatformAndChannelAndIsCurrentTrue("win-x64", "stable") } returns listOf(old)
         every { repo.save(any()) } answers { firstArg() }
         every { repo.flush() } just Runs
-        val result = AppReleaseService(repo, verifier, jdbc).register(request)
+        // Ordering of one publication; the pilot-before-stable rule has its own tests (StableReleaseGate*).
+        val result = AppReleaseService(repo, verifier, jdbc, requirePilotBeforeStable = false).register(request)
         assertFalse(old.isCurrent)
         assertTrue(result.isCurrent)
         assertEquals("win-x64", result.platform)
         verifyOrder {
             verifier.validate(request)
             jdbc.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?, 718096))", "win-x64")
-            repo.findAllByPlatformAndIsCurrentTrue("win-x64")
+            repo.findAllByPlatformAndChannelAndIsCurrentTrue("win-x64", "stable")
             repo.save(old)
             repo.flush()
             repo.save(match { it.id != old.id && it.isCurrent })

@@ -5,6 +5,7 @@
 //   • «Баннеры приложения» — управление баннерами главного экрана (BannersPanel).
 
 import { useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Button, Modal, PageHeader, SearchInput, SectionCard, Tabs, useToast } from '@/ui'
 import {
   IconChevDown,
@@ -35,6 +36,7 @@ import { resolveEpharmMediaUrl } from '@/lib/media'
 import type { ActiveSlideDto, PharmacyDto } from '@/lib/api-types'
 import { useT } from '@/i18n'
 import { BannersPanel, type BannerEditing } from './BannersPanel'
+import { FleetPanel } from './FleetPanel'
 import { staffAuthStatusLabel } from './staffAuthStatus'
 import { staffSourceStatusLabel } from './staffSourceStatus'
 
@@ -44,9 +46,25 @@ const TARGETED_PROFILE_ID = 'pl_broadcast_targeted'
 type BroadcastViewMode = 'grid' | 'list'
 type PharmacyPickerView = 'all' | 'selected'
 
+type ScreensTab = 'screens' | 'fleet' | 'banners'
+const SCREENS_TABS: readonly ScreensTab[] = ['screens', 'fleet', 'banners']
+
 export default function ScreensPage() {
   const t = useT()
-  const [tab, setTab] = useState<'screens' | 'banners'>('screens')
+  // Вкладка живёт в адресе (?tab=fleet), чтобы на «Все кассы» можно было дать ссылку.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') as ScreensTab | null
+  const tab: ScreensTab = requestedTab && SCREENS_TABS.includes(requestedTab) ? requestedTab : 'screens'
+  const setTab = (next: ScreensTab) =>
+    setSearchParams(
+      (current) => {
+        const params = new URLSearchParams(current)
+        if (next === 'screens') params.delete('tab')
+        else params.set('tab', next)
+        return params
+      },
+      { replace: true },
+    )
   const [bannerEditing, setBannerEditing] = useState<BannerEditing>(null)
 
   return (
@@ -56,6 +74,7 @@ export default function ScreensPage() {
       <Tabs
         items={[
           { value: 'screens', label: t('scr.tabScreens') },
+          { value: 'fleet', label: t('scr.tabFleet') },
           { value: 'banners', label: t('scr.tabBanners') },
         ]}
         value={tab}
@@ -76,9 +95,11 @@ export default function ScreensPage() {
 
       {tab === 'screens' ? (
         <div className="flex flex-col gap-4">
-          <ConnectedRegistersCard />
+          <ConnectedRegistersCard onShowFleet={() => setTab('fleet')} />
           <BroadcastCard />
         </div>
+      ) : tab === 'fleet' ? (
+        <FleetPanel />
       ) : (
         <BannersPanel editing={bannerEditing} setEditing={setBannerEditing} />
       )}
@@ -87,7 +108,7 @@ export default function ScreensPage() {
 }
 
 // ─── Подключённые кассы (онлайн) ─────────────────────────────────────────────
-function ConnectedRegistersCard() {
+function ConnectedRegistersCard({ onShowFleet }: { onShowFleet: () => void }) {
   const t = useT()
   const toast = useToast()
   const [exporting, setExporting] = useState(false)
@@ -154,6 +175,9 @@ function ConnectedRegistersCard() {
               {devicesExpanded ? t('scr.connectedCollapse') : t('scr.connectedExpand')}
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={onShowFleet} data-testid="connected-show-fleet">
+            {t('scr.showFleet')}
+          </Button>
           <Button
             variant="outline"
             size="sm"

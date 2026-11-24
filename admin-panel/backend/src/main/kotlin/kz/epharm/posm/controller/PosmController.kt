@@ -154,8 +154,9 @@ class PosmController(
         @RequestParam(required = false) deviceId: String?,
         @RequestParam(required = false) currentVersion: String?,
     ): AppVersionDto {
-        deviceAuthentication.authenticateForUpdate(key, claimedDeviceId = deviceId)
-        val release = appReleaseService.currentFor(platform)
+        val device = deviceAuthentication.authenticateForUpdate(key, claimedDeviceId = deviceId)
+        // A till in POSM_UPDATE_PILOT_DEVICES may get a newer pilot release; every other till gets the stable one.
+        val release = appReleaseService.currentFor(platform, device.pharmacyId, device.deviceId ?: deviceId, device.legacy)
         log.info(
             "POSM update check: deviceId={}, currentVersion={}, targetVersion={}, platform={}",
             deviceId?.take(128) ?: "legacy",

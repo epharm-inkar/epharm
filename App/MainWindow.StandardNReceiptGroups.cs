@@ -67,7 +67,10 @@ public partial class MainWindow
         var markerAt = observedAt ?? _receiptProofClock();
         if (_standardNCurrentReceipt != null) _physicalReceiptRetryAfter.Remove(ObservedGroupKey(_standardNCurrentReceipt));
         var cueId = Guid.NewGuid().ToString("N");
-        long[] Candidates(StandardNObservedReceiptGroup group) => group.ObservedActiveDocumentIds.Except(group.PrintDocumentTimes.Keys)
+        // An old group (posted without its own cue, unreadable, held for hours) must not compete with
+        // the receipt being printed now: it made every later print ambiguous or unreadable (INK-122).
+        long[] Candidates(StandardNObservedReceiptGroup group) => !IsLiveForPrintCue(group) ? Array.Empty<long>() :
+            group.ObservedActiveDocumentIds.Except(group.PrintDocumentTimes.Keys)
             .Except(group.QueuedDocumentIds).Except(group.ResolvedEmptyDocumentIds)
             .Where(id => permittedDocuments == null || permittedDocuments.Contains(id)).ToArray();
         var changes = _observedReceiptGroups.Values.Select(group => group with
@@ -111,13 +114,17 @@ public partial class MainWindow
         var fingerprints = candidates.ToDictionary(group => ObservedGroupKey(group.Snapshot),
             group => JsonSerializer.Serialize(group, EpharmJson.Options), StringComparer.Ordinal);
         var frozen = fingerprints.Values.Select(json => JsonSerializer.Deserialize<StandardNObservedReceiptGroup>(json, EpharmJson.Options)!).ToArray();
+        var liveKeys = candidates.Where(IsLiveForPrintCue).Select(group => ObservedGroupKey(group.Snapshot)).ToHashSet(StringComparer.Ordinal);
         _physicalReceiptProbeTask = Task.Run(() =>
         {
             var available = new List<StandardNObservedReceiptGroup>();
             var states = new List<StandardNReceiptSnapshot>();
             // An old, unresolved database must not poison every probe of the current one.
             // Keep failures pending; aggregate successful reads before the one cue-ambiguity decision.
-            foreach (var partition in frozen.GroupBy(ObservedSourceNamespace, StringComparer.Ordinal))
+            // An old group that no longer reads (vanished document, unproven session) is read apart
+            // from live ones, so its failure cannot hold back the receipt being printed (INK-122).
+            foreach (var partition in frozen.GroupBy(group => (ObservedSourceNamespace(group) ?? "") + "\0" +
+                         (liveKeys.Contains(ObservedGroupKey(group.Snapshot)) ? "live" : "old"), StringComparer.Ordinal))
             {
                 var batch = partition.ToArray();
                 try
@@ -279,6 +286,7 @@ public partial class MainWindow
             _receiptArtifacts!.RetireObservedGroup(group);
             _rewardJournal?.Retire(group.CheckoutSessionId);
             _observedReceiptGroups.Remove(key);
+            _observedGroupSeenAt.Remove(key);
             _physicalReceiptRetryAfter.Remove(key);
             _receiptObservations.LogChanged();
             _lastFinalizedStandardNDocumentId = state.DocumentId;
@@ -398,6 +406,7 @@ public partial class MainWindow
                 documents.Where(document => document.Status == 0).Select(document => document.DocumentId)).Distinct().ToArray() };
         if (SaveObservedReceiptGroup(group))
         {
+            MarkObservedGroupSeen(effective);
             _session = CheckoutSession.RestoreObserved(group.CheckoutSessionId, group.PharmacistId,
                 group.PharmacistName, group.Snapshot.SessionId);
             _standardNCurrentReceipt = effective;

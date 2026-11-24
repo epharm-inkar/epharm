@@ -20,7 +20,8 @@ export function Tabs<V extends string>({ items, value, onChange, trailing }: Tab
     // на tabs — иначе длинные русские лейблы («Кросс-селл») переносятся на 2 строки,
     // когда trailing-блок (search+filter) занимает много места.
     <div className="hairline flex items-end justify-between gap-4 border-b">
-      <div className="flex flex-none items-center gap-6">
+      {/* На телефоне вкладки прокручиваются вбок, а не обрезаются; с md как раньше. */}
+      <div className="scrollbar-thin flex min-w-0 items-center gap-6 overflow-x-auto md:flex-none md:overflow-visible">
         {items.map((it) => (
           <button
             key={it.value}

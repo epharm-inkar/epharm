@@ -20,6 +20,10 @@ spring:
     enabled: true
     baseline-on-migrate: false
     locations: classpath:db/migration
+    # Session-level advisory lock instead of a transactional one: with the default transactional lock Flyway keeps
+    # a transaction open on another connection, and `CREATE INDEX CONCURRENTLY` (V109) waits for it forever.
+    postgresql:
+      transactional-lock: false
   servlet:
     multipart:
       max-file-size: 60MB
@@ -27,6 +31,13 @@ spring:
 
 server:
   port: 8080
+  # JSON больше 8 КБ уходит сжатым, если клиент просит gzip (браузер просит всегда): снимок всех
+  # касс 657 КБ сжимается примерно до 50 КБ. Прокси перед backend (Caddy на .76, nginx на .74)
+  # JSON сами не сжимают. Касса gzip не просит (в POSM нет AutomaticDecompression): её ответы прежние.
+  compression:
+    enabled: true
+    mime-types: application/json
+    min-response-size: 8KB
   error:
     include-message: always
     include-binding-errors: always
@@ -199,10 +210,17 @@ app:
     legacy-device-key-enabled: ${POSM_LEGACY_DEVICE_KEY_ENABLED:true}
     # Base64 DER SubjectPublicKeyInfo for ECDSA P-256 update-manifest signatures.
     update-manifest-public-key-spki: ${POSM_UPDATE_PUBLIC_KEY_SPKI:}
+    # Tills that get pilot client releases first: pharmacyId|deviceId or pharmacyId|* , comma-separated.
+    update-pilot-devices: ${POSM_UPDATE_PILOT_DEVICES:}
+    # A build reaches every till only after a checked pilot of the same build (owner's rule 24.11.2026):
+    # stable registration needs the pilot to run this long, a pilot till online on the version and a
+    # pilot receipt since the pilot started. Going back to a build that was stable before is allowed.
+    require-pilot-before-stable: true
+    stable-after-pilot-minutes: ${POSM_STABLE_AFTER_PILOT_MINUTES:60}
     # Accepted producers of exact fiscal PDF/PNG metadata. Must match the POSM-side allowlist.
     fiscal-artifact-trusted-sources: ${POSM_FISCAL_ARTIFACT_TRUSTED_SOURCES:standardn-kkm-sdk,ofd-api}
     # Сколько секунд пульс кассы считается «живым» (T4, GET /screens/connected).
-    heartbeat-ttl-seconds: ${POSM_HEARTBEAT_TTL:90}
+    heartbeat-ttl-seconds: ${POSM_HEARTBEAT_TTL:150}
   unified-admin:
     primary-owner-id: ${UNIFIED_ADMIN_PRIMARY_OWNER_ID:}
   learner-credentials:

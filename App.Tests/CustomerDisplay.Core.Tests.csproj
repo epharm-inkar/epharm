@@ -44,6 +44,8 @@
     <Compile Include="..\App\Services\BackendFailoverHandler.cs" Link="Services\BackendFailoverHandler.cs" />
     <Compile Include="..\App\Services\FiscalReceiptInboxSource.cs" Link="Services\FiscalReceiptInboxSource.cs" />
     <Compile Include="..\App\Services\ReceiptArtifactStore.cs" Link="Services\ReceiptArtifactStore.cs" />
+    <Compile Include="..\App\Services\ReceiptArtifactStore.StaleGroups.cs" Link="Services\ReceiptArtifactStore.StaleGroups.cs" />
+    <Compile Include="..\App\Services\ObservedGroupCapacity.cs" Link="Services\ObservedGroupCapacity.cs" />
     <Compile Include="..\App\Services\ReceiptSaleId.cs" Link="Services\ReceiptSaleId.cs" />
     <Compile Include="..\App\Services\RecommendationRewardJournal.cs" Link="Services\RecommendationRewardJournal.cs" />
     <Compile Include="..\App\MainWindow.Rewards.cs" Link="ReceiptLifecycle\MainWindow.Rewards.cs" />
@@ -85,10 +87,12 @@
     <Compile Include="..\App\Services\StaffPasswordValidation.cs" Link="Services\StaffPasswordValidation.cs" />
     <Compile Include="..\App\Services\StaffAuthClient.cs" Link="Services\StaffAuthClient.cs" />
     <Compile Include="..\App\Services\StaffAuthDiagnostics.cs" Link="Services\StaffAuthDiagnostics.cs" />
+    <Compile Include="..\App\Services\PosmPollIntervals.cs" Link="Services\PosmPollIntervals.cs" />
     <Compile Include="..\Models\Posm\StaffAuthentication.cs" Link="Models\StaffAuthentication.cs" />
     <Compile Include="..\App\Services\TaskKioskSnooze.cs" Link="Services\TaskKioskSnooze.cs" />
     <Compile Include="..\App\Services\MerchShownOutbox.cs" Link="Services\MerchShownOutbox.cs" />
     <Compile Include="..\App\Services\MerchTaskDeliveryReply.cs" Link="Services\MerchTaskDeliveryReply.cs" />
     <Compile Include="..\App\Config\EpharmConfig.cs" Link="Config\EpharmConfig.cs" />
+    <Compile Include="..\App\Services\StandardNConnectTarget.cs" Link="Services\StandardNConnectTarget.cs" />
   </ItemGroup>
 </Project>

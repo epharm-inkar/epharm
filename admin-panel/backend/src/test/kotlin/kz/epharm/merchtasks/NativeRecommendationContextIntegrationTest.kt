@@ -75,6 +75,15 @@ class NativeRecommendationContextIntegrationTest {
             VALUES(?,'EPHARM','https://epharm.inkar.kz',?,'{}',?,?,?,'4871234567890',?,'Exact source script','["first"]',123,?)""",id,id,organization,scope,kind,offer,priority)
         return id
     }
+    @Test fun `branch lookup by pharmacy uses the partial index instead of reading every branch`() {
+        val definition = jdbc.queryForObject("""
+            SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            WHERE c.relname = 'ix_merch_branches_epharm_pharmacy' AND i.indisvalid
+        """.trimIndent(), String::class.java)
+        assertThat(definition).contains("(epharm_pharmacy_id)").contains("pharmacy_binding_verified").contains("active")
+    }
+
     @Test fun `verified empty feed is healthy and unknown pharmacy stays unmapped without fabricated stock`() {
         val value=client.recommendationContext(request())
         assertThat(value.available).isTrue();assertThat(value.pharmacyMapped).isTrue();assertThat(value.generatedAt).isNotNull()

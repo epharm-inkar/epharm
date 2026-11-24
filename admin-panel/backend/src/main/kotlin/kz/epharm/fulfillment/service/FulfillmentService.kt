@@ -29,6 +29,7 @@ import kz.epharm.fulfillment.model.FulfillmentDeviceContext
 import kz.epharm.fulfillment.model.FulfillmentOrderRecord
 import kz.epharm.fulfillment.model.FulfillmentStatus
 import kz.epharm.fulfillment.security.FulfillmentCrypto
+import kz.epharm.posm.service.DeviceLastSeen
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
 import org.springframework.beans.factory.annotation.Value
@@ -254,7 +255,10 @@ class FulfillmentService(
     fun authenticateDevice(token: String?): FulfillmentDeviceContext {
         ensureEnabled()
         val context = authenticatedDevice(token)
-        jdbc.update("UPDATE fulfillment_devices SET last_seen_at = now() WHERE id = ?::uuid", context.id)
+        jdbc.update(
+            "UPDATE fulfillment_devices SET last_seen_at = now() WHERE id = ?::uuid AND " + DeviceLastSeen.STALE_CONDITION,
+            context.id,
+        )
         return context
     }
 

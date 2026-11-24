@@ -15,6 +15,67 @@ public partial class MainWindow
     private bool _unpaidGroupProbeBusy;
     private int _unpaidGroupProbeOffset;
     private Task _unpaidGroupProbeTask = Task.CompletedTask;
+    private readonly Dictionary<string, DateTimeOffset> _observedGroupSeenAt = new(StringComparer.Ordinal);
+    private DateTimeOffset? _observedGroupsSeenSince;
+    private DateTimeOffset _nextObservedCapacityCheck;
+
+    private DateTimeOffset ObservedGroupsSeenSince() => _observedGroupsSeenSince ??= _receiptProofClock();
+
+    private void MarkObservedGroupSeen(StandardNReceiptSnapshot snapshot) =>
+        _observedGroupSeenAt[ObservedGroupKey(snapshot)] = _receiptProofClock();
+
+    /// <summary>Only the current receipt and recently seen groups may take a new doc-less print cue.</summary>
+    private bool IsLiveForPrintCue(StandardNObservedReceiptGroup group)
+    {
+        var key = ObservedGroupKey(group.Snapshot);
+        if (_standardNCurrentReceipt != null && ObservedGroupKey(_standardNCurrentReceipt) == key) return true;
+        // Groups loaded from disk count as seen at program start: a print can follow a restart.
+        return ObservedGroupCapacity.IsLive(_observedGroupSeenAt.TryGetValue(key, out var seen) ? seen : ObservedGroupsSeenSince(),
+            _receiptProofClock());
+    }
+
+    /// <summary>
+    /// Keeps the bounded hot journal from filling with groups that can never resolve (INK-122):
+    /// stale or, under pressure, the oldest non-current groups move to a private local archive.
+    /// </summary>
+    private void ReleaseObservedGroupCapacity(StandardNReceiptSnapshot? incoming)
+    {
+        var now = _receiptProofClock();
+        // Probe results re-check that their group is still present, so a release never races them.
+        if (_receiptObserversClosed || _receiptArtifacts == null || !LoadObservedReceiptGroups()) return;
+        var since = ObservedGroupsSeenSince();
+        var pressure = _observedReceiptGroups.Count > ObservedGroupCapacity.HotLimit - ObservedGroupCapacity.FreeSlotsToKeep;
+        if (!pressure && now < _nextObservedCapacityCheck) return;
+        _nextObservedCapacityCheck = now.AddSeconds(15);
+        var protectedKeys = new[] { _standardNCurrentReceipt, incoming }.Where(receipt => receipt != null)
+            .Select(receipt => ObservedGroupKey(receipt!)).ToHashSet(StringComparer.Ordinal);
+        var releases = ObservedGroupCapacity.SelectReleases(_observedReceiptGroups.Values.ToArray(),
+            group => protectedKeys.Contains(ObservedGroupKey(group.Snapshot)),
+            group => _observedGroupSeenAt.TryGetValue(ObservedGroupKey(group.Snapshot), out var seen) ? seen : since, now);
+        if (releases.Count == 0) return;
+        var released = 0;
+        try
+        {
+            foreach (var (group, reason) in releases)
+            {
+                if (!_receiptArtifacts.ReleaseStaleObservedGroup(group, reason)) continue;
+                var key = ObservedGroupKey(group.Snapshot);
+                _observedReceiptGroups.Remove(key);
+                _physicalReceiptRetryAfter.Remove(key);
+                _unpaidGroupAbsence.Remove(key);
+                _observedGroupSeenAt.Remove(key);
+                released++;
+            }
+        }
+        catch (Exception error)
+        {
+            _nextObservedCapacityCheck = now.AddSeconds(60);
+            Log("Место в журнале незавершённых чеков не освобождено; данные сохранены: " + error.GetBaseException().Message);
+        }
+        if (released > 0)
+            Log($"Журнал незавершённых чеков: {released} давних групп перенесено в локальный архив без продажи, " +
+                $"свободно мест {ObservedGroupCapacity.HotLimit - _observedReceiptGroups.Count}.");
+    }
 
     private void ReconcileUnresolvedReceiptGroups()
     {
@@ -89,6 +150,7 @@ public partial class MainWindow
                             _observedReceiptGroups.Remove(key);
                             _physicalReceiptRetryAfter.Remove(key);
                             _unpaidGroupAbsence.Remove(key);
+                            _observedGroupSeenAt.Remove(key);
                             Log("Исчезнувший неоплаченный источник сохранён в неизменяемом архиве без подтверждения продажи; активный слот освобождён.");
                         }
                     }

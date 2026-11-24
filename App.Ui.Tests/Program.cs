@@ -21,7 +21,7 @@ using CustomerDisplay.Models.Posm;
 using CustomerDisplay.Services;
 using Screen = System.Windows.Forms.Screen;
 
-internal static class Program
+internal static partial class Program
 {
     private const string FixtureIin = "000101500011";
     private const string FixturePhone = "+77000000012";
@@ -38,9 +38,11 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        var showcaseOnly = false;
         foreach (var argument in args)
         {
             if (argument == "--allow-noninteractive") _allowNoninteractive = true;
+            else if (argument == "--recommendation-showcase") showcaseOnly = true;
             else if (argument.StartsWith("--output=", StringComparison.Ordinal) && argument.Length > "--output=".Length)
                 Output = Path.GetFullPath(argument["--output=".Length..]);
             else return 2;
@@ -54,6 +56,7 @@ internal static class Program
             return 2;
         }
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        if (showcaseOnly) return RunShowcaseOnly(application);
         var watchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(90) };
         watchdog.Tick += (_, _) => {
             watchdog.Stop();
@@ -125,6 +128,7 @@ internal static class Program
                 await Run("recommendation-stock-refresh-renders-uncertainty-with-immutable-financial-quote", RecommendationStockRefresh);
                 await Run("recommendation-cart-refresh-does-not-extend-ttl-but-fresh-response-does", RecommendationLifetime);
                 await Run("recommendation-native-display-event-sees-new-current-rows", RecommendationDisplayUpdate);
+                await Run("recommendation-showcase-renders-realistic-cashier-scenarios", RecommendationShowcase);
             }
             catch (Exception error)
             {
@@ -135,7 +139,7 @@ internal static class Program
                 watchdog.Stop();
                 foreach (var window in Windows) if (window.IsVisible) window.Dismiss();
                 foreach (var window in RecommendationWindows) if (window.IsVisible) window.Close();
-                var success = Results.Count == 57 && Results.All(result => result.Passed);
+                var success = Results.Count == 58 && Results.All(result => result.Passed);
                 WriteProof(success, null);
                 application.Shutdown(success ? 0 : 1);
             }

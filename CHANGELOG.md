@@ -7,6 +7,22 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Till builds reach every till only after a checked pilot: a `stable` registration in `/api/admin/app-releases`
+  is refused (409) until the same build ran as `pilot` for `POSM_STABLE_AFTER_PILOT_MINUTES` (default 60), a
+  pilot till is online on the version and a pilot till sent a receipt. Going back to a previously stable build
+  stays allowed.
+
+- Admin «Все кассы» tab (`/screens?tab=fleet`, `GET /api/admin/screens/fleet`): every till in one
+  snapshot with online / offline / stale state, POSM version, customer screen, Standard-N status, the
+  playlist the till actually gets, and receipts per till and per pharmacy today and over 7 days. Tiles
+  filter tills without a Standard-N database, pharmacies without receipts today and pharmacies without
+  tills. Tabs scroll sideways on phones instead of being cut off.
+
+- POSM pilot channel: a client release registered with `channel: pilot` reaches only the tills listed in
+  `POSM_UPDATE_PILOT_DEVICES` (`pharmacyId|deviceId` or `pharmacyId|*`); every other till keeps the stable
+  release, and a pilot till always gets the newer of the two. V110 adds `app_releases.channel` and one current
+  release per platform and channel.
+
 - Monitoring alerts reach Telegram: Alertmanager sends firing and resolved alerts through
   `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALERT_CHAT_ID` (the storefront's alert bot); the token
   stays in a 0600 file, not in the rendered config.
@@ -17,8 +33,33 @@ All notable production changes to Epharm are recorded here. The format follows
 - `tools/check-monitoring.sh` (CI): rule unit tests, Alertmanager config with and without
   Telegram, exporter queries against a throwaway PostgreSQL.
 
+### Changed
+
+- V111 adds the partial index `ix_merch_branches_epharm_pharmacy` (built concurrently): every till
+  recommendation request looked up its pharmacy's merchandising branch by reading all 680 branches
+  (29 million full scans on prod by 24.11).
+- Backend gzip-compresses JSON responses over 8 KB when the client accepts gzip (`server.compression`):
+  neither Caddy on .76 nor nginx on .74 compressed JSON, so the 657 KB fleet snapshot now travels as ~50 KB.
+  POSM does not ask for gzip (no `AutomaticDecompression`), so till responses are unchanged.
+- POSM asks for rarely changing data less often (INK-150): heartbeat every 60 s, merchandising
+  tasks every 12–18 min, staff capabilities every 15 min (1 h while off), fulfillment capabilities
+  once an hour while online orders are off. Sales the backend refuses for good (409, or 401/403
+  with a working device key) are retried hourly and archived locally after 5 refusals.
+- Backend writes `fulfillment_devices.last_seen_at` at most once a minute and the pharmacist IIN
+  observation only on change (at most hourly otherwise); presence TTL default is 150 s.
+
 ### Fixed
 
+- POSM opens the Standard-N database on the pharmacy's main computer when options.ini keeps the server inside
+  `base` (`MANAGER:C:\Standart-N\base\ztrade.fdb`, `MANAGER/3050:...`, `MANAGER:alias`, `inet://...`) and has no
+  `Server=` key. The server part used to be dropped, so second cash desks looked for the database locally and
+  reported `database_unavailable`: about a hundred tills in 86 pharmacies sent no receipts since 1.0.74 required
+  the database for receipt capture (3.11). An explicit `Server=` still wins.
+- POSM 1.0.91 restores sales capture on busy tills. Only the current and recently
+  seen receipts take a print cue, old groups are read apart from them, and groups
+  unseen for 6 hours (or the oldest ones while more than 28 of 32 slots are taken)
+  move to a private local archive without creating a sale. Before this, one receipt
+  paid while its cue was missed, or 32 held receipts, stopped capture for good.
 - POSM 1.0.89 separates automatic RPS presentation from grant/session invalidation:
   prompt for a confirmed Standard-N user change, preserve an unfinished same-user
   form through technical context changes, and refresh context only on explicit

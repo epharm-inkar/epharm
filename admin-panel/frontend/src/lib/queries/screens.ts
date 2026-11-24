@@ -15,6 +15,7 @@ import type {
   PlaylistDto,
   PlaylistStatus,
   PosmCoverageDto,
+  ScreenFleetDto,
   SlideDto,
   UpdatePlaylistRequest,
 } from '@/lib/api-types'
@@ -34,6 +35,7 @@ export const screensKeys = {
   slides: () => [...screensKeys.all, 'slides'] as const,
   connected: () => [...screensKeys.all, 'connected'] as const,
   coverage: () => [...screensKeys.all, 'coverage'] as const,
+  fleet: () => [...screensKeys.all, 'fleet'] as const,
   broadcast: () => [...screensKeys.all, 'broadcast'] as const,
   broadcastProfiles: () => [...screensKeys.all, 'broadcast-profiles'] as const,
   broadcastProfile: (id: string) => [...screensKeys.broadcastProfiles(), id] as const,
@@ -209,6 +211,16 @@ export function useSetBroadcastProfilePharmacies() {
  * Подключённые кассы (T4) — heartbeat POSM-плееров. Поллинг каждые 30с, чтобы
  * счётчик «вживую» отражал онлайн-устройства без ручного refetch.
  */
+/** Все кассы сети одним снимком для вкладки «Кассы и экраны». */
+export function useScreenFleet(enabled = true) {
+  return useQuery<ScreenFleetDto>({
+    queryKey: screensKeys.fleet(),
+    queryFn: () => api.get<ScreenFleetDto>('/api/admin/screens/fleet').then((r) => r.data),
+    enabled,
+    refetchInterval: 60_000,
+  })
+}
+
 export function useConnectedScreens() {
   return useQuery<ConnectedScreensDto>({
     queryKey: screensKeys.connected(),

@@ -380,7 +380,7 @@ class LegacyPosmWireContractTest {
     @ValueSource(strings = ["V1057", "V1066"])
     fun `current reply serialization preserves legacy fields and explicit no-update response`(version: String) {
         val update = bind<AppVersionDto>(step(version, "version")["response"])
-        every { releases.currentFor("win-x64") } returns update
+        every { releases.currentFor("win-x64", any(), any(), any()) } returns update
         mvc.perform(wireRequest(step(version, "version"))).andExpect(status().isOk)
             .andExpect(jsonPath("$.manifestSignature").value(update.manifestSignature))
         verify { devices.authenticateForUpdate(any(), DEVICE) }
@@ -412,7 +412,7 @@ class LegacyPosmWireContractTest {
             fleetKey, legacyEnabled = false,
         )
         val protectedMvc = mvc(authentication)
-        every { releases.currentFor("win-x64") } returns AppVersionDto.none()
+        every { releases.currentFor("win-x64", any(), any(), any()) } returns AppVersionDto.none()
         protectedMvc.perform(wireRequest(step("V1057", "version"), key = fleetKey))
             .andExpect(status().isOk).andExpect(jsonPath("$.current").value(false))
         listOf("recommend", "sale", "heartbeat").forEach { name ->

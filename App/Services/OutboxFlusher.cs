@@ -75,13 +75,14 @@ namespace CustomerDisplay.Services
             {
                 foreach (var item in _outbox.DequeueReady())
                 {
-                    var ok = await SendAsync(item).ConfigureAwait(false);
-                    if (ok)
+                    var result = await SendAsync(item).ConfigureAwait(false);
+                    if (result == SaleDeliveryResult.Delivered)
                     {
                         _outbox.Remove(item.Id);
                         try { _onDelivered?.Invoke(item); }
                         catch { /* ACK уже зафиксирован; cleanup не должен ломать flusher */ }
                     }
+                    else if (result == SaleDeliveryResult.Rejected) _outbox.RecordRejection(item.Id);
                     else _outbox.Reschedule(item.Id, item.Attempts);
                 }
             }
@@ -95,20 +96,34 @@ namespace CustomerDisplay.Services
             }
         }
 
-        private async Task<bool> SendAsync(OutboxItem item)
+        private async Task<SaleDeliveryResult> SendAsync(OutboxItem item)
+        {
+            if (item.Kind is "sale" or "fiscal-sale") return await SendSaleAsync(item).ConfigureAwait(false);
+            return await SendOtherAsync(item).ConfigureAwait(false) ? SaleDeliveryResult.Delivered : SaleDeliveryResult.Retry;
+        }
+
+        private async Task<SaleDeliveryResult> SendSaleAsync(OutboxItem item)
+        {
+            try
+            {
+                var sale = JsonSerializer.Deserialize<SaleReport>(item.Payload, EpharmJson.Options);
+                if (sale == null) return SaleDeliveryResult.Retry;
+                if (item.Kind == "sale" && ReceiptFinalizationRules.IsKnownUnconfirmedLegacySource(sale.CaptureSource))
+                    return SaleDeliveryResult.Retry;
+                return await _api.SendSaleAsync(sale).ConfigureAwait(false);
+            }
+            catch
+            {
+                return SaleDeliveryResult.Retry;
+            }
+        }
+
+        private async Task<bool> SendOtherAsync(OutboxItem item)
         {
             try
             {
                 switch (item.Kind)
                 {
-                    case "sale":
-                        var sale = JsonSerializer.Deserialize<SaleReport>(item.Payload, EpharmJson.Options);
-                        return sale != null &&
-                               !ReceiptFinalizationRules.IsKnownUnconfirmedLegacySource(sale.CaptureSource) &&
-                               await _api.PostSaleAsync(sale).ConfigureAwait(false);
-                    case "fiscal-sale":
-                        var fiscalSale = JsonSerializer.Deserialize<SaleReport>(item.Payload, EpharmJson.Options);
-                        return fiscalSale != null && await _api.PostSaleAsync(fiscalSale).ConfigureAwait(false);
                     case "outcome":
                         var o = JsonSerializer.Deserialize<OutboxOutcomePayload>(item.Payload, EpharmJson.Options);
                         return o != null && await _api

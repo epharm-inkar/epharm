@@ -20,6 +20,7 @@ const screenHooks = vi.hoisted(() => ({
   useUploadBroadcastProfileSlot: vi.fn(),
   useRemoveBroadcastProfileSlot: vi.fn(),
   useSetBroadcastProfilePharmacies: vi.fn(),
+  useScreenFleet: vi.fn(),
 }))
 vi.mock('@/lib/queries/screens', () => screenHooks)
 
@@ -146,11 +147,11 @@ beforeEach(() => {
   bannerHooks.useUploadBannerImage.mockReturnValue({ mutate: vi.fn(), isPending: false })
 })
 
-function renderPage() {
+function renderPage(initialEntries: string[] = ['/screens']) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <ToastHost>
           <ScreensPage />
         </ToastHost>
@@ -664,6 +665,26 @@ describe('ScreensPage — эфир (12 слотов)', () => {
 })
 
 describe('ScreensPage — вкладки', () => {
+  it('вкладка «Все кассы» открывается кнопкой и прямой ссылкой ?tab=fleet', async () => {
+    const user = userEvent.setup()
+    screenHooks.useScreenFleet.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetching: true,
+      error: null,
+      refetch: vi.fn(),
+    })
+    const { unmount } = renderPage()
+    await user.click(screen.getByTestId('connected-show-fleet'))
+    expect(screen.getByText('Загружаю кассы…')).toBeInTheDocument()
+    expect(screen.queryByTestId('connected-registers')).not.toBeInTheDocument()
+    unmount()
+
+    renderPage(['/screens?tab=fleet'])
+    expect(screen.getByRole('button', { name: 'Все кассы' })).toBeInTheDocument()
+    expect(screen.getByText('Загружаю кассы…')).toBeInTheDocument()
+  })
+
   it('переключение на «Баннеры приложения» показывает панель + кнопку «Добавить баннер»', async () => {
     const user = userEvent.setup()
     renderPage()

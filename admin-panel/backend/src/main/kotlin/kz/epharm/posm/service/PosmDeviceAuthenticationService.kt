@@ -87,7 +87,8 @@ class PosmDeviceAuthenticationService(
                 if (touchLastSeen) {
                     jdbc.update(
                         "UPDATE fulfillment_devices SET last_seen_at = now() " +
-                            "WHERE device_id = ? AND pharmacy_id = ? AND active = true",
+                            "WHERE device_id = ? AND pharmacy_id = ? AND active = true AND " +
+                            DeviceLastSeen.STALE_CONDITION,
                         identity.deviceId,
                         identity.pharmacyId,
                     )

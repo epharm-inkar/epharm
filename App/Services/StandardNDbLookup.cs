@@ -73,6 +73,7 @@ namespace CustomerDisplay.Services
         private string? _resolvedDbPath;
         private bool _resolvedFromOptionsIni;
         private string? _optionsDbHost;
+        private int? _optionsDbPort;
         private string? _optionsDbUser;
         private string? _optionsDbPassword;
         private string? _successfulConnectionKey;
@@ -1454,17 +1455,18 @@ namespace CustomerDisplay.Services
             var candidates = new List<DbConnectionCandidate>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            void Add(string source, string? host, string? user, string? password)
+            void Add(string source, string? host, string? user, string? password, int? port = null)
             {
                 var normalizedHost = string.IsNullOrWhiteSpace(host) ? "localhost" : host.Trim();
                 var normalizedUser = string.IsNullOrWhiteSpace(user) ? "SYSDBA" : user.Trim();
                 var normalizedPassword = password ?? "";
-                var key = $"{normalizedHost}|{_cfg.StandardNDbPort}|{normalizedUser}|{normalizedPassword}";
+                var normalizedPort = port ?? _cfg.StandardNDbPort;
+                var key = $"{normalizedHost}|{normalizedPort}|{normalizedUser}|{normalizedPassword}";
                 if (!seen.Add(key)) return;
                 candidates.Add(new DbConnectionCandidate(
                     source,
                     normalizedHost,
-                    _cfg.StandardNDbPort,
+                    normalizedPort,
                     normalizedUser,
                     normalizedPassword,
                     key));
@@ -1479,7 +1481,8 @@ namespace CustomerDisplay.Services
                     "running Standard-N options.ini",
                     _optionsDbHost,
                     _optionsDbUser,
-                    _optionsDbPassword);
+                    _optionsDbPassword,
+                    _optionsDbPort);
             }
 
             Add(
@@ -1691,10 +1694,15 @@ namespace CustomerDisplay.Services
                         var databaseRaw = FirstDictionaryValue(
                             connect,
                             "base", "basename", "database", "databasename", "db", "dbpath", "dbname");
-                        var database = NormalizeDatabaseValue(databaseRaw ?? "");
+                        // base=MANAGER:C:\...\ztrade.fdb keeps the server inside the value; an explicit
+                        // Server= key still wins. Without this a second cash desk looked for the database
+                        // on itself instead of the pharmacy's main computer.
+                        var target = StandardNConnectTarget.Parse(databaseRaw);
+                        var database = NormalizeDatabaseValue(target?.Database ?? "");
                         if (string.IsNullOrWhiteSpace(database)) continue;
 
-                        _optionsDbHost = FirstDictionaryValue(connect, "server", "host", "datasource");
+                        _optionsDbHost = FirstDictionaryValue(connect, "server", "host", "datasource") ?? target?.Host;
+                        _optionsDbPort = target?.Port;
                         _optionsDbUser = FirstDictionaryValue(connect, "login", "user", "username");
                         _optionsDbPassword = FirstDictionaryValue(connect, "password", "pass", "pwd");
                         return database;
