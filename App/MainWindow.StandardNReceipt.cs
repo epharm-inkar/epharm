@@ -78,6 +78,7 @@ namespace CustomerDisplay
             }
             if (_receiptObservations.Admit(readRevision, receipt != null))
             {
+                ReleaseObservedGroupCapacity(receipt);
                 ApplyStandardNReceipt(receipt);
                 ReconcileUnresolvedReceiptGroups();
             }

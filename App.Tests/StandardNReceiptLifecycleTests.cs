@@ -1739,6 +1739,93 @@ namespace CustomerDisplay.Core.Tests
                 foreach (var row in rows) window.ObserveLogLine(row);
         }
 
+        [Fact]
+        public void OldGroupPostedWithoutItsOwnCueNoLongerMakesEveryLaterPrintAmbiguous()
+        {
+            // INK-122: a receipt paid while its print cue was missed (POSM restart, lost log line)
+            // used to take every later doc-less cue as a second posted candidate.
+            using var window = new MainWindow();
+            var missed = RewardReceipt(3000, 1);
+            window.Observe(missed); window.Observe(null); window.Observe(null);
+            window.AdvanceReceiptTime(TimeSpan.FromMinutes(11));
+
+            var paid = RewardReceipt(4000, 1);
+            window.Observe(paid);
+            window.PrintWithStates(Posted(missed, 3000), Posted(paid, 4000));
+            Assert.Equal(4000, Assert.Single(window.Reports).SourceDocumentId);
+
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(30));
+            var next = RewardReceipt(5000, 1);
+            window.Observe(next);
+            window.PrintWithStates(Posted(missed, 3000), Posted(next, 5000));
+            Assert.Equal([4000L, 5000L], window.Reports.Select(report => report.SourceDocumentId!.Value).Order());
+        }
+
+        [Fact]
+        public void UnreadableOldPrintedGroupIsReadApartAndCannotHoldBackTheCurrentReceipt()
+        {
+            using var window = new MainWindow();
+            var source = new string('c', 64);
+            var stuck = ObservedReceiptGroupTests.Group(3500) with
+            {
+                SourceNamespace = source, PrintObserved = true, AnchoredPrintCueIds = [Guid.NewGuid().ToString("N")],
+                PrintDocumentTimes = new Dictionary<long, DateTimeOffset> { [3500] = window.ReceiptNow.AddHours(-1) },
+            };
+            Assert.True(window.Artifacts.SaveObservedGroup(stuck)); // its source no longer reads
+            var paid = RewardReceipt(4000, 1) with { ObservedSourceNamespace = source };
+            window.Observe(paid);
+            window.PrintWithStates(Posted(paid, 4000));
+            Assert.Equal(4000, Assert.Single(window.Reports).SourceDocumentId);
+        }
+
+        [Fact]
+        public void RecentlyClosedReceiptStillTakesTheCueThatArrivesAfterItsCartDisappeared()
+        {
+            using var window = new MainWindow();
+            var paid = RewardReceipt(4100, 1);
+            window.Observe(paid); window.Observe(null); window.Observe(null);
+            window.AdvanceReceiptTime(TimeSpan.FromMinutes(2));
+            window.PrintWithStates(Posted(paid, 4100));
+            Assert.Equal(4100, Assert.Single(window.Reports).SourceDocumentId);
+        }
+
+        [Fact]
+        public void ThirtyTwoNeverResolvingCheckoutsNoLongerStopCaptureOfTheNextPaidReceipt()
+        {
+            // INK-122: held receipts and receipts whose print cue was missed kept their hot slot forever.
+            using var window = new MainWindow();
+            for (var id = 3000; id < 3000 + ObservedGroupCapacity.HotLimit; id++)
+            {
+                window.Observe(RewardReceipt(id, 1));
+                window.Observe(null); window.Observe(null);
+            }
+            Assert.Equal(ObservedGroupCapacity.HotLimit, window.Artifacts.ReadObservedGroups().Count);
+
+            window.AdvanceReceiptTime(TimeSpan.FromMinutes(11));
+            var paid = RewardReceipt(4000, 1);
+            window.Observe(paid);
+            window.PrintWithStates(Posted(paid, 4000));
+
+            Assert.Equal(4000, Assert.Single(window.Reports).SourceDocumentId);
+            Assert.True(window.Artifacts.ReadObservedGroups().Count <= ObservedGroupCapacity.HotLimit - ObservedGroupCapacity.FreeSlotsToKeep);
+            Assert.Equal(ObservedGroupCapacity.FreeSlotsToKeep, Directory.GetFiles(
+                Path.Combine(window.StorageRoot, "receipts", "stale-observed-groups"), "*.json").Length);
+        }
+
+        [Fact]
+        public void GroupsUnseenForSixHoursAreReleasedWithoutASaleAndRecentOnesStay()
+        {
+            using var window = new MainWindow();
+            window.Observe(RewardReceipt(5000, 1)); window.Observe(null); window.Observe(null);
+            window.AdvanceReceiptTime(TimeSpan.FromHours(7));
+            window.Observe(RewardReceipt(5001, 1)); window.Observe(null); window.Observe(null);
+            window.AdvanceReceiptTime(TimeSpan.FromSeconds(20));
+            window.Observe(null);
+
+            Assert.Equal(5001, Assert.Single(window.Artifacts.ReadObservedGroups()).Snapshot.DocumentId);
+            Assert.Empty(window.Reports);
+        }
+
         private static StandardNReceiptSnapshot Receipt(long document, params int[] partIds)
         {
             var lines = partIds.Select(part => new StandardNReceiptLine(part, part, "4601164003157", "Item", 100m, 1m, 0m)

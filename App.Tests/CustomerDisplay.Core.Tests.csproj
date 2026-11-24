@@ -44,6 +44,8 @@
     <Compile Include="..\App\Services\BackendFailoverHandler.cs" Link="Services\BackendFailoverHandler.cs" />
     <Compile Include="..\App\Services\FiscalReceiptInboxSource.cs" Link="Services\FiscalReceiptInboxSource.cs" />
     <Compile Include="..\App\Services\ReceiptArtifactStore.cs" Link="Services\ReceiptArtifactStore.cs" />
+    <Compile Include="..\App\Services\ReceiptArtifactStore.StaleGroups.cs" Link="Services\ReceiptArtifactStore.StaleGroups.cs" />
+    <Compile Include="..\App\Services\ObservedGroupCapacity.cs" Link="Services\ObservedGroupCapacity.cs" />
     <Compile Include="..\App\Services\ReceiptSaleId.cs" Link="Services\ReceiptSaleId.cs" />
     <Compile Include="..\App\Services\RecommendationRewardJournal.cs" Link="Services\RecommendationRewardJournal.cs" />
     <Compile Include="..\App\MainWindow.Rewards.cs" Link="ReceiptLifecycle\MainWindow.Rewards.cs" />
