@@ -7,6 +7,9 @@ import kz.epharm.screens.dto.BroadcastProfileDto
 import kz.epharm.screens.dto.BroadcastProfileSummaryDto
 import kz.epharm.screens.dto.CreatePlaylistRequest
 import kz.epharm.screens.dto.PlaylistDto
+import kz.epharm.screens.dto.ResolvedScreenPlaylist
+import kz.epharm.screens.dto.ScreenPlaylistResolution
+import kz.epharm.screens.dto.ScreenPlaylistSource
 import kz.epharm.screens.dto.SlideDto
 import kz.epharm.screens.dto.UpdatePlaylistRequest
 import kz.epharm.screens.entity.PlaylistEntity
@@ -98,6 +101,53 @@ class ScreenService(
             name = playlist.name,
             slides = effectiveSlides(playlist),
         )
+    }
+
+    /**
+     * Тот же выбор эфира, что [activePlaylistForScreen], сразу для многих аптек: три запроса
+     * вместо нескольких на каждую аптеку. Нужен странице «Кассы и экраны»: что назначено
+     * на экран каждой кассы и из каких роликов он собран.
+     */
+    @Transactional(readOnly = true)
+    fun resolveScreenPlaylists(pharmacyIds: Collection<String?>): ScreenPlaylistResolution {
+        val active = PlaylistStatus.active.name
+        val playlists = playlistRepository.findAllByOrderByUpdatedAtDesc()
+        val byId = playlists.associateBy { it.id }
+        val activePlaylists = playlists.filter { it.statusRaw == active }
+        val legacyDirect = HashMap<String, PlaylistEntity>()
+        activePlaylists.forEach { playlist -> playlist.pharmacyId?.let { legacyDirect.putIfAbsent(it, playlist) } }
+        val assignedIds = playlistAssignmentRepository.findAll().associate { it.pharmacyId to it.playlistId }
+        val default = byId[BROADCAST_PLAYLIST_ID]?.takeIf { it.statusRaw == active }
+        val legacyGlobal = activePlaylists.firstOrNull { it.pharmacyId == null && it.parentPlaylistId == null }
+        val slidesByPlaylist = slideRepository.findAll()
+            .filter { it.playlistId != null }
+            .groupBy { it.playlistId!! }
+            .mapValues { (_, slides) -> slides.sortedBy { it.position } }
+
+        val chosen = LinkedHashMap<String?, ResolvedScreenPlaylist>()
+        pharmacyIds.forEach { raw ->
+            val pharmacyId = raw?.trim()?.takeIf { it.isNotBlank() }
+            val pick = pharmacyId?.let(legacyDirect::get)?.let { it to ScreenPlaylistSource.pharmacy }
+                ?: pharmacyId?.let(assignedIds::get)?.let(byId::get)
+                    ?.takeIf { it.statusRaw == active }
+                    ?.let { it to ScreenPlaylistSource.profile }
+                ?: default?.let { it to ScreenPlaylistSource.broadcast }
+                ?: legacyGlobal?.let { it to ScreenPlaylistSource.legacy_global }
+            chosen[raw] = ResolvedScreenPlaylist(pick?.first?.id, pick?.second ?: ScreenPlaylistSource.none)
+        }
+        val effective = chosen.values.mapNotNull { it.playlistId }.distinct().associateWith { id ->
+            val playlist = byId.getValue(id)
+            ActivePlaylistDto(
+                playlistId = playlist.id,
+                name = playlist.name,
+                slides = effectiveSlides(
+                    playlist,
+                    findPlaylist = byId::get,
+                    slidesOf = { slidesByPlaylist[it].orEmpty() },
+                ),
+            )
+        }
+        return ScreenPlaylistResolution(byPharmacy = chosen, playlists = effective)
     }
 
     @Transactional(readOnly = true)
@@ -421,18 +471,24 @@ class ScreenService(
         }
     }
 
-    /** Собирает профиль рекурсивно; собственный слайд всегда перекрывает родителя. */
+    /**
+     * Собирает профиль рекурсивно; собственный слайд всегда перекрывает родителя.
+     * Поиск плейлиста и слайдов можно подменить готовыми словарями (сводка касс собирает
+     * эфир сотен аптек без запросов на каждую), правило сборки при этом одно.
+     */
     private fun effectiveSlides(
         playlist: PlaylistEntity,
         visited: Set<String> = emptySet(),
+        findPlaylist: (String) -> PlaylistEntity? = { playlistRepository.findById(it).orElse(null) },
+        slidesOf: (String) -> List<SlideEntity> = slideRepository::findAllByPlaylistIdOrderByPositionAsc,
     ): List<ActiveSlideDto> {
         if (playlist.id in visited) return emptyList()
         val nextVisited = visited + playlist.id
         val merged = linkedMapOf<Int, ActiveSlideDto>()
         playlist.parentPlaylistId
-            ?.let { playlistRepository.findById(it).orElse(null) }
+            ?.let(findPlaylist)
             ?.let { parent ->
-                effectiveSlides(parent, nextVisited).forEach { slide ->
+                effectiveSlides(parent, nextVisited, findPlaylist, slidesOf).forEach { slide ->
                     if (slide.position in 0 until BROADCAST_SLOT_COUNT) {
                         merged[slide.position] = slide.copy(inherited = true)
                     }
@@ -440,7 +496,7 @@ class ScreenService(
             }
 
         val ownPositions = mutableSetOf<Int>()
-        slideRepository.findAllByPlaylistIdOrderByPositionAsc(playlist.id).forEach { slide ->
+        slidesOf(playlist.id).forEach { slide ->
             if (slide.position in 0 until BROADCAST_SLOT_COUNT && ownPositions.add(slide.position)) {
                 // Собственный слайд перекрывает унаследованный. Повторные legacy-записи
                 // той же позиции игнорируются, чтобы POSM получил ровно один ролик.

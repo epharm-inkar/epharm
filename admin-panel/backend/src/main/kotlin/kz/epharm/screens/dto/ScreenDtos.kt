@@ -185,3 +185,85 @@ data class SlideDto(
         )
     }
 }
+
+/** Откуда касса берёт эфир экрана покупателя, в порядке приоритета выбора. */
+enum class ScreenPlaylistSource { pharmacy, profile, broadcast, legacy_global, none }
+
+data class ResolvedScreenPlaylist(val playlistId: String?, val source: ScreenPlaylistSource)
+
+/** Выбранный эфир каждой аптеки и собранные слоты этих эфиров (свои и унаследованные). */
+data class ScreenPlaylistResolution(
+    val byPharmacy: Map<String?, ResolvedScreenPlaylist>,
+    val playlists: Map<String, ActivePlaylistDto>,
+)
+
+/** online: пульс не старше TTL; offline: была на связи за последние дни; stale: давно не выходила. */
+enum class FleetRegisterState { online, offline, stale }
+
+/** Страница «Кассы и экраны»: все кассы сети одним снимком. */
+data class ScreenFleetDto(
+    val observedAt: Instant,
+    /** Через сколько дней без связи касса считается давно не выходившей (stale). */
+    val staleAfterDays: Int,
+    /** false: продажи прочитать не удалось, нули в строках тогда не значат «продаж нет». */
+    val salesAvailable: Boolean,
+    val summary: ScreenFleetSummaryDto,
+    val registers: List<ScreenFleetRegisterDto>,
+    val playlists: List<ScreenFleetPlaylistDto>,
+    val pharmaciesWithoutRegisters: List<PosmCoverageGapDto>,
+)
+
+data class ScreenFleetSummaryDto(
+    val activePharmacies: Int,
+    val pharmaciesWithRegisters: Int,
+    val registers: Int,
+    val online: Int,
+    val offline: Int,
+    val stale: Int,
+    /** Кассы на связи со вторым монитором: там открыт экран покупателя и идут ролики. */
+    val clientScreens: Int,
+    /** Кассы на связи, которые не открывают базу Стандарт-Н: продажи с них не приходят. */
+    val standardNUnavailable: Int,
+    /** Аптеки, где касса на связи, а чеков за сегодня (Алматы) нет. */
+    val onlinePharmaciesWithoutSalesToday: Int,
+)
+
+data class ScreenFleetRegisterDto(
+    val deviceId: String,
+    val pharmacyId: String?,
+    val pharmacyName: String?,
+    val chainName: String?,
+    val city: String?,
+    val address: String?,
+    /** false: аптека закрыта в справочнике, а ключ кассы ещё действует. */
+    val pharmacyActive: Boolean?,
+    /** false: касса на связи без своего ключа в базе (старый общий ключ). */
+    val registered: Boolean,
+    val registeredAt: Instant?,
+    val state: FleetRegisterState,
+    val lastSeen: Instant?,
+    /** Версия, мониторы и статусы известны только у касс на связи. */
+    val appVersion: String?,
+    val monitorCount: Int?,
+    val hasClientScreen: Boolean?,
+    val staffAuthStatus: String?,
+    val staffSourceStatus: String?,
+    val playlistId: String?,
+    val playlistSource: ScreenPlaylistSource,
+    /** Чеки этой кассы за сегодня (Алматы) и за 7 дней: касса пишет свой номер в каждый чек. */
+    val salesToday: Int,
+    val sales7d: Int,
+    /** Последний чек этой кассы за 7 дней; null: за неделю чеков с неё не было. */
+    val lastSaleAt: Instant?,
+    /** Чеки аптеки целиком, со всех её касс: видно, продаёт ли аптека через другую кассу. */
+    val pharmacyLastSaleAt: Instant?,
+    val pharmacySalesToday: Int,
+    val pharmacySales7d: Int,
+)
+
+data class ScreenFleetPlaylistDto(
+    val id: String,
+    val name: String,
+    val durationSec: Int,
+    val slides: List<ActiveSlideDto>,
+)

@@ -31,6 +31,13 @@ spring:
 
 server:
   port: 8080
+  # JSON больше 8 КБ уходит сжатым, если клиент просит gzip (браузер просит всегда): снимок всех
+  # касс 657 КБ сжимается примерно до 50 КБ. Прокси перед backend (Caddy на .76, nginx на .74)
+  # JSON сами не сжимают. Касса gzip не просит (в POSM нет AutomaticDecompression): её ответы прежние.
+  compression:
+    enabled: true
+    mime-types: application/json
+    min-response-size: 8KB
   error:
     include-message: always
     include-binding-errors: always

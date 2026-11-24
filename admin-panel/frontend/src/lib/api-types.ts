@@ -1091,6 +1091,75 @@ export interface PosmCoverageDto {
   observedAt: string
 }
 
+// ─── «Кассы и экраны»: все кассы сети одним снимком ──────────────────────────
+/** online: пульс не старше TTL; offline: была на связи за последние дни; stale: давно не выходила. */
+export type FleetRegisterState = 'online' | 'offline' | 'stale'
+/** Откуда касса берёт эфир экрана покупателя, по приоритету выбора. */
+export type ScreenPlaylistSource = 'pharmacy' | 'profile' | 'broadcast' | 'legacy_global' | 'none'
+
+export interface ScreenFleetRegisterDto {
+  deviceId: string
+  pharmacyId: string | null
+  pharmacyName: string | null
+  chainName: string | null
+  city: string | null
+  address: string | null
+  /** false: аптека закрыта в справочнике, а ключ кассы ещё действует. */
+  pharmacyActive: boolean | null
+  /** false: касса на связи без своего ключа (старый общий ключ). */
+  registered: boolean
+  registeredAt: string | null
+  state: FleetRegisterState
+  lastSeen: string | null
+  /** Версия, мониторы и статусы известны только у касс на связи. */
+  appVersion: string | null
+  monitorCount: number | null
+  hasClientScreen: boolean | null
+  staffAuthStatus: string | null
+  staffSourceStatus: string | null
+  playlistId: string | null
+  playlistSource: ScreenPlaylistSource
+  /** Чеки этой кассы за сегодня (Алматы) и за 7 дней: касса пишет свой номер в каждый чек. */
+  salesToday: number
+  sales7d: number
+  /** Последний чек этой кассы за 7 дней; null: за неделю чеков с неё не было. */
+  lastSaleAt: string | null
+  /** Чеки аптеки целиком, со всех её касс. */
+  pharmacyLastSaleAt: string | null
+  pharmacySalesToday: number
+  pharmacySales7d: number
+}
+
+export interface ScreenFleetPlaylistDto {
+  id: string
+  name: string
+  durationSec: number
+  slides: ActiveSlideDto[]
+}
+
+export interface ScreenFleetSummaryDto {
+  activePharmacies: number
+  pharmaciesWithRegisters: number
+  registers: number
+  online: number
+  offline: number
+  stale: number
+  clientScreens: number
+  standardNUnavailable: number
+  onlinePharmaciesWithoutSalesToday: number
+}
+
+export interface ScreenFleetDto {
+  observedAt: string
+  staleAfterDays: number
+  /** false: продажи прочитать не удалось, нули не значат «продаж нет». */
+  salesAvailable: boolean
+  summary: ScreenFleetSummaryDto
+  registers: ScreenFleetRegisterDto[]
+  playlists: ScreenFleetPlaylistDto[]
+  pharmaciesWithoutRegisters: PosmCoverageGapDto[]
+}
+
 // ─── AI-Exam (Этап 3.6) — банк вопросов (результаты/сертификаты в Этапе 4) ───
 export type ExamQuestionKind = 'factual' | 'comparative' | 'scenario'
 

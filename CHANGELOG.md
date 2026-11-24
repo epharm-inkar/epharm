@@ -7,6 +7,12 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Admin «Все кассы» tab (`/screens?tab=fleet`, `GET /api/admin/screens/fleet`): every till in one
+  snapshot with online / offline / stale state, POSM version, customer screen, Standard-N status, the
+  playlist the till actually gets, and receipts per till and per pharmacy today and over 7 days. Tiles
+  filter tills without a Standard-N database, pharmacies without receipts today and pharmacies without
+  tills. Tabs scroll sideways on phones instead of being cut off.
+
 - POSM pilot channel: a client release registered with `channel: pilot` reaches only the tills listed in
   `POSM_UPDATE_PILOT_DEVICES` (`pharmacyId|deviceId` or `pharmacyId|*`); every other till keeps the stable
   release, and a pilot till always gets the newer of the two. V110 adds `app_releases.channel` and one current
@@ -24,6 +30,9 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Changed
 
+- Backend gzip-compresses JSON responses over 8 KB when the client accepts gzip (`server.compression`):
+  neither Caddy on .76 nor nginx on .74 compressed JSON, so the 657 KB fleet snapshot now travels as ~50 KB.
+  POSM does not ask for gzip (no `AutomaticDecompression`), so till responses are unchanged.
 - POSM asks for rarely changing data less often (INK-150): heartbeat every 60 s, merchandising
   tasks every 12–18 min, staff capabilities every 15 min (1 h while off), fulfillment capabilities
   once an hour while online orders are off. Sales the backend refuses for good (409, or 401/403

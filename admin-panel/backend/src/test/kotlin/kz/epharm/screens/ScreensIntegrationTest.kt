@@ -11,6 +11,8 @@ import kz.epharm.pharmacies.entity.ChainEntity
 import kz.epharm.pharmacies.entity.PharmacyEntity
 import kz.epharm.pharmacies.repository.ChainRepository
 import kz.epharm.pharmacies.repository.PharmacyRepository
+import kz.epharm.posm.entity.PosSaleEntity
+import kz.epharm.posm.repository.PosSaleRepository
 import kz.epharm.posm.service.DevicePresenceService
 import kz.epharm.screens.entity.PlaylistEntity
 import kz.epharm.screens.entity.PlaylistPharmacyAssignmentEntity
@@ -48,6 +50,9 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.ByteArrayInputStream
+import java.sql.Timestamp
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 
 @SpringBootTest
@@ -86,6 +91,7 @@ class ScreensIntegrationTest {
     @Autowired private lateinit var devicePresenceService: DevicePresenceService
     @Autowired private lateinit var passwordEncoder: PasswordEncoder
     @Autowired private lateinit var jdbc: JdbcTemplate
+    @Autowired private lateinit var posSaleRepository: PosSaleRepository
 
     private lateinit var bearer: String
 
@@ -518,6 +524,73 @@ class ScreensIntegrationTest {
             .andExpect(jsonPath("$.unprovisionedPharmacies.length()").value(1))
             .andExpect(jsonPath("$.unprovisionedPharmacies[0].pharmacyId").value("ph_gap"))
             .andExpect(jsonPath("$.unprovisionedPharmacies[0].address").value("Жумабаева 30/1"))
+    }
+
+    @Test
+    fun `GET fleet → все кассы, их эфир и чеки одним снимком`() {
+        chainRepository.save(ChainEntity(id = "ch_fleet", name = "Сеть fleet", color = "#000"))
+        pharmacyRepository.save(
+            PharmacyEntity(
+                id = "ph_fleet", name = "Аптека fleet", chainId = "ch_fleet",
+                chainName = "Сеть fleet", city = "Алматы", addr = "Абая 10",
+            ),
+        )
+        pharmacyRepository.save(
+            PharmacyEntity(
+                id = "ph_fleet_gap", name = "Аптека без кассы fleet", chainId = "ch_fleet",
+                chainName = "Сеть fleet", city = "Алматы", addr = "Абая 11",
+            ),
+        )
+        pharmacyRepository.flush()
+        val now = Instant.now()
+        listOf("fleet-live" to now, "fleet-old" to now.minus(Duration.ofDays(30))).forEachIndexed { index, (device, seen) ->
+            jdbc.update(
+                """
+                INSERT INTO fulfillment_devices
+                    (id, device_id, pharmacy_id, secret_sha256, secret_hint, active, last_seen_at)
+                VALUES (?, ?, ?, ?, ?, true, ?)
+                """.trimIndent(),
+                UUID.randomUUID(), device, "ph_fleet", "${index + 7}".repeat(64), "test-key", Timestamp.from(seen),
+            )
+        }
+        devicePresenceService.heartbeat("fleet-live", "ph_fleet", monitorCount = 2, appVersion = "1.0.91")
+        posSaleRepository.save(
+            PosSaleEntity(id = "sale-fleet-today", pharmacyId = "ph_fleet", pharmacistId = "cashier",
+                printedAt = now, totalAmount = 1_000).also { it.deviceId = "fleet-live" },
+        )
+        posSaleRepository.save(
+            PosSaleEntity(id = "sale-fleet-earlier", pharmacyId = "ph_fleet", pharmacistId = "cashier",
+                printedAt = now.minus(Duration.ofDays(2)), totalAmount = 2_000).also { it.deviceId = "fleet-old" },
+        )
+        posSaleRepository.flush()
+
+        fun device(id: String, field: String) = jsonPath("$.registers[?(@.deviceId=='$id')].$field")
+        mockMvc.perform(get("/api/admin/screens/fleet").header("Authorization", bearer))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.staleAfterDays").value(7))
+            .andExpect(jsonPath("$.salesAvailable").value(true))
+            .andExpect(device("fleet-live", "state").value(org.hamcrest.Matchers.hasItem("online")))
+            .andExpect(device("fleet-live", "appVersion").value(org.hamcrest.Matchers.hasItem("1.0.91")))
+            .andExpect(device("fleet-live", "hasClientScreen").value(org.hamcrest.Matchers.hasItem(true)))
+            .andExpect(device("fleet-live", "registered").value(org.hamcrest.Matchers.hasItem(true)))
+            .andExpect(device("fleet-live", "salesToday").value(org.hamcrest.Matchers.hasItem(1)))
+            .andExpect(device("fleet-live", "pharmacySales7d").value(org.hamcrest.Matchers.hasItem(2)))
+            .andExpect(device("fleet-live", "address").value(org.hamcrest.Matchers.hasItem("Абая 10")))
+            .andExpect(device("fleet-old", "state").value(org.hamcrest.Matchers.hasItem("stale")))
+            .andExpect(device("fleet-old", "sales7d").value(org.hamcrest.Matchers.hasItem(1)))
+            .andExpect(device("fleet-old", "salesToday").value(org.hamcrest.Matchers.hasItem(0)))
+            // В сиде нет pl_broadcast: все кассы получают старый общий плейлист, как и сама касса.
+            .andExpect(device("fleet-old", "playlistId").value(org.hamcrest.Matchers.hasItem("pl_act")))
+            .andExpect(device("fleet-old", "playlistSource").value(org.hamcrest.Matchers.hasItem("legacy_global")))
+            .andExpect(jsonPath("$.playlists[?(@.id=='pl_act')].slides[0].id").value(org.hamcrest.Matchers.hasItem("sl_v")))
+            .andExpect(
+                jsonPath("$.pharmaciesWithoutRegisters[*].pharmacyId")
+                    .value(org.hamcrest.Matchers.hasItem("ph_fleet_gap")),
+            )
+            .andExpect(
+                jsonPath("$.pharmaciesWithoutRegisters[*].pharmacyId")
+                    .value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("ph_fleet"))),
+            )
     }
 
     @Test
