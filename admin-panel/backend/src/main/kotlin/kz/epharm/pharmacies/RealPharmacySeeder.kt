@@ -16,7 +16,8 @@ import org.slf4j.LoggerFactory
  *
  * Идемпотентно: если в таблице уже есть аптеки — пропуск. Medusa не различает «сети»
  * (адрес и название втиснуты в `name`), поэтому все аптеки под зонтичной сетью `inkar`,
- * а распарсенное реальное название сети кладём в `chainName` (видно в админке/мобилке).
+ * а название сети кладём в `chainName` (видно в админке/мобилке) в одном написании ([ChainNames]).
+ * Закрытые аптеки помечены в файле `"active": false`.
  *
  * Единый источник для dev-сидера, prod-импортёра ([PharmacyImporter]) и dev-reset.
  */
@@ -30,6 +31,7 @@ object RealPharmacySeeder {
         val chain: String = "",
         val city: String = "",
         val addr: String = "",
+        val active: Boolean = true,
     )
 
     fun seed(chainRepository: ChainRepository, pharmacyRepository: PharmacyRepository) {
@@ -55,11 +57,11 @@ object RealPharmacySeeder {
                     id = r.id,
                     name = r.name.ifBlank { "Аптека" }.take(255),
                     chainId = UMBRELLA_CHAIN_ID,
-                    chainName = r.chain.ifBlank { "Inkar" }.take(255),
+                    chainName = (ChainNames.fromPharmacyName(r.name) ?: r.chain.ifBlank { "Inkar" }).take(255),
                     city = r.city.ifBlank { "—" }.take(128),
                     district = "",
                     addr = r.addr.ifBlank { r.name }.take(255),
-                ).also { it.group = PharmacyGroup.rolled; it.active = true }
+                ).also { it.group = PharmacyGroup.rolled; it.active = r.active }
             }
         pharmacyRepository.saveAll(entities)
         log.info("Импортировано {} реальных аптек (витрина inkar.kz)", entities.size)
