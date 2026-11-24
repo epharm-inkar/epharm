@@ -193,6 +193,11 @@ services:
       POSM_STAFF_AUTH_ENABLED: ${POSM_STAFF_AUTH_ENABLED:-false}
       # Temporary RPS registration policy; login/recovery keep their own authentication.
       POSM_STAFF_REGISTRATION_SMS_REQUIRED: ${POSM_STAFF_REGISTRATION_SMS_REQUIRED:-true}
+      # HQ notice in the till status window (POSM 1.0.92+); shown once per id, empty = none.
+      POSM_TILL_NOTICE_ID: ${POSM_TILL_NOTICE_ID:-}
+      POSM_TILL_NOTICE_RU: ${POSM_TILL_NOTICE_RU:-}
+      POSM_TILL_NOTICE_KK: ${POSM_TILL_NOTICE_KK:-}
+      POSM_TILL_NOTICE_LEVEL: ${POSM_TILL_NOTICE_LEVEL:-info}
       UNIFIED_ADMIN_PRIMARY_OWNER_ID: ${UNIFIED_ADMIN_PRIMARY_OWNER_ID:-}
       LEARNER_CREDENTIALS_ENABLED: ${LEARNER_CREDENTIALS_ENABLED:-false}
       LEARNER_CREDENTIALS_KEY_FILE: /run/epharm-learner-credentials/keys.json

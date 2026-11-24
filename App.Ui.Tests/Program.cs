@@ -39,10 +39,12 @@ internal static partial class Program
     public static int Main(string[] args)
     {
         var showcaseOnly = false;
+        var tillStatusShowcase = false;
         foreach (var argument in args)
         {
             if (argument == "--allow-noninteractive") _allowNoninteractive = true;
             else if (argument == "--recommendation-showcase") showcaseOnly = true;
+            else if (argument == "--till-status-showcase") tillStatusShowcase = true;
             else if (argument.StartsWith("--output=", StringComparison.Ordinal) && argument.Length > "--output=".Length)
                 Output = Path.GetFullPath(argument["--output=".Length..]);
             else return 2;
@@ -57,6 +59,7 @@ internal static partial class Program
         }
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         if (showcaseOnly) return RunShowcaseOnly(application);
+        if (tillStatusShowcase) return RunTillStatusShowcaseOnly(application);
         var watchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(90) };
         watchdog.Tick += (_, _) => {
             watchdog.Stop();

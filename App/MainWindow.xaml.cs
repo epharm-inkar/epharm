@@ -221,6 +221,7 @@ StartLogReader();
             StartFulfillment();
             StartTaskKiosk();
             StartStaffAuthentication();
+            StartTillStatus();
             UpdateStartup.MarkInitializationComplete();
 
         }
@@ -663,6 +664,7 @@ private void RefreshCurrentPharmacistFromStandardNDb()
     // Различаем исходы: ошибка БД (ok=false) — прежнее значение НЕ трогаем (временный сбой
     // Firebird не значит «кассир вышел»; ошибка уже залогирована rate-limited внутри lookup).
     var ok = _standardNDb.TryGetActivePharmacist(out var active);
+    NoteStandardNRead(ok);
     if (!ok) return;
 
     if (active == null)
@@ -839,6 +841,7 @@ percent = Math.Round(percent, 2, MidpointRounding.AwayFromZero); // наприм
             {
                 StopTaskKiosk();
                 StopStaffAuthentication();
+                StopTillStatus();
                 _logCts?.Cancel();
                 _standardNReceiptCts?.Cancel();
                 _playlistPollCts?.Cancel();

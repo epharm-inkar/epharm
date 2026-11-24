@@ -61,6 +61,7 @@ class PosmController(
     private val deviceAuthentication: PosmDeviceAuthenticationService,
     private val merchTaskDelivery: MerchTaskDelivery,
     private val rewards: RecommendationRewardService,
+    private val tillNotice: kz.epharm.posm.service.TillNoticeService? = null,
 ) {
     private val log = LoggerFactory.getLogger(PosmController::class.java)
 
@@ -201,7 +202,13 @@ class PosmController(
             staffAuthStatus = staffAuthStatus,
             staffSourceStatus = staffSourceStatus,
         )
-        return HeartbeatResponse(ok = true, deviceId = id, rewardEvidenceProtocol = rewards.protocol(device))
+        return HeartbeatResponse(
+            ok = true,
+            deviceId = id,
+            rewardEvidenceProtocol = rewards.protocol(device),
+            pharmacyName = tillNotice?.pharmacyName(device.pharmacyId ?: effectivePharmacyId),
+            notice = tillNotice?.notice,
+        )
     }
 
     /** Active merchandising task for the authenticated device's pharmacy. */

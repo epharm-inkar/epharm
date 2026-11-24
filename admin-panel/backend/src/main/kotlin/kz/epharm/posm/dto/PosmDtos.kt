@@ -1,5 +1,6 @@
 package kz.epharm.posm.dto
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
@@ -224,5 +225,17 @@ data class PosSaleRequest(
 
 data class PosSaleResponse(val saleId: String, val accepted: Boolean)
 
-/** Пульс кассы (T4): подтверждение, что устройство учтено как онлайн. */
-data class HeartbeatResponse(val ok: Boolean, val deviceId: String, val rewardEvidenceProtocol: Int? = null)
+/**
+ * Пульс кассы (T4): подтверждение, что устройство учтено как онлайн. С v0.2.26 в ответе название аптеки ключа и
+ * сообщение HQ для окна «Состояние ePharm» (касса 1.0.92); пустые поля не отправляются, старые кассы их не читают.
+ */
+data class HeartbeatResponse(
+    val ok: Boolean,
+    val deviceId: String,
+    val rewardEvidenceProtocol: Int? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val pharmacyName: String? = null,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val notice: TillNoticeDto? = null,
+)
+
+/** Сообщение HQ на всех кассах (например, «идут технические работы»); касса показывает его один раз на каждый id. */
+data class TillNoticeDto(val id: String, val ru: String, val kk: String, val level: String)
