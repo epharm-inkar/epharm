@@ -56,6 +56,9 @@ class AppReleaseIntegrationTest {
             reg.add("spring.datasource.password") { postgres.password }
             reg.add("app.posm.legacy-device-key-enabled") { "false" }
             reg.add("app.posm.update-pilot-devices") { "ph_pilot|KASSA9,ph_whole|*" }
+            // These tests publish stable builds directly; the pilot-before-stable rule is covered by
+            // StableReleaseGateTest and StableReleaseGateIntegrationTest.
+            reg.add("app.posm.require-pilot-before-stable") { "false" }
         }
     }
 

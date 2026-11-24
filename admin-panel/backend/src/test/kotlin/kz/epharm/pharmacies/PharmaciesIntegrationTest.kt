@@ -195,7 +195,8 @@ class PharmaciesIntegrationTest {
             .andExpect(jsonPath("$[0].registeredDeviceCount").value(3))
             .andExpect(jsonPath("$[0].onlineDeviceCount").value(1))
             .andExpect(jsonPath("$[0].deviceCountsObservedAt").isNotEmpty)
-            .andExpect(jsonPath("$[0].deviceOnlineWindowSeconds").value(90))
+            // app.posm.heartbeat-ttl-seconds: 150 since tills beat every 60 s (INK-150).
+            .andExpect(jsonPath("$[0].deviceOnlineWindowSeconds").value(150))
         mockMvc.perform(get("/api/admin/pharmacies/ph_other").header("Authorization", bearer))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.registeredDeviceCount").value(1))

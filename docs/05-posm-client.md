@@ -843,6 +843,13 @@ qualifies) the newer of the current pilot and stable releases; every other till 
 4. Register the same signed package with `"channel": "stable"`: the fleet updates on its next check. A stale pilot
    release never holds a pilot till below the stable one, so the pilot needs no cleanup.
 
+**The backend enforces the pilot** (owner's rule 24.11.2026: till releases are checked thoroughly before they go out,
+whoever publishes them). `POST /api/admin/app-releases` with `"channel": "stable"` returns 409 unless the same build
+(platform, version, sha256) was registered as pilot at least `POSM_STABLE_AFTER_PILOT_MINUTES` (default 60) minutes
+ago, a pilot till is online with that version now (heartbeat `appVersion`) and a pilot till sent a receipt since the
+pilot started (`pos_sales.device_id`, last day at most). Going back to a build that was stable before needs no pilot.
+The refusal says which condition is missing.
+
 ## Deployment
 
 For long-running cash desk installation:

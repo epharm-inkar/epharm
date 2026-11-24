@@ -212,6 +212,11 @@ app:
     update-manifest-public-key-spki: ${POSM_UPDATE_PUBLIC_KEY_SPKI:}
     # Tills that get pilot client releases first: pharmacyId|deviceId or pharmacyId|* , comma-separated.
     update-pilot-devices: ${POSM_UPDATE_PILOT_DEVICES:}
+    # A build reaches every till only after a checked pilot of the same build (owner's rule 24.11.2026):
+    # stable registration needs the pilot to run this long, a pilot till online on the version and a
+    # pilot receipt since the pilot started. Going back to a build that was stable before is allowed.
+    require-pilot-before-stable: true
+    stable-after-pilot-minutes: ${POSM_STABLE_AFTER_PILOT_MINUTES:60}
     # Accepted producers of exact fiscal PDF/PNG metadata. Must match the POSM-side allowlist.
     fiscal-artifact-trusted-sources: ${POSM_FISCAL_ARTIFACT_TRUSTED_SOURCES:standardn-kkm-sdk,ofd-api}
     # Сколько секунд пульс кассы считается «живым» (T4, GET /screens/connected).

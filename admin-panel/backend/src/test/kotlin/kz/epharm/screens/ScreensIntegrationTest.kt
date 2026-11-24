@@ -554,6 +554,16 @@ class ScreensIntegrationTest {
             )
         }
         devicePresenceService.heartbeat("fleet-live", "ph_fleet", monitorCount = 2, appVersion = "1.0.91")
+        try {
+            assertFleetSnapshot(now)
+        } finally {
+            // Presence lives outside the test transaction: expire this pulse so tests that count
+            // online tills exactly (GET connected) never see it.
+            devicePresenceService.heartbeat("fleet-live", "ph_fleet", now = Instant.now().minusSeconds(3600))
+        }
+    }
+
+    private fun assertFleetSnapshot(now: Instant) {
         posSaleRepository.save(
             PosSaleEntity(id = "sale-fleet-today", pharmacyId = "ph_fleet", pharmacistId = "cashier",
                 printedAt = now, totalAmount = 1_000).also { it.deviceId = "fleet-live" },

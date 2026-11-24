@@ -7,6 +7,11 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Till builds reach every till only after a checked pilot: a `stable` registration in `/api/admin/app-releases`
+  is refused (409) until the same build ran as `pilot` for `POSM_STABLE_AFTER_PILOT_MINUTES` (default 60), a
+  pilot till is online on the version and a pilot till sent a receipt. Going back to a previously stable build
+  stays allowed.
+
 - Admin «Все кассы» tab (`/screens?tab=fleet`, `GET /api/admin/screens/fleet`): every till in one
   snapshot with online / offline / stale state, POSM version, customer screen, Standard-N status, the
   playlist the till actually gets, and receipts per till and per pharmacy today and over 7 days. Tiles

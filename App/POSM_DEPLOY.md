@@ -164,7 +164,10 @@ Release flow:
    ```
 
 5. Register `platform`, `version`, `url`, `sha256`, `mandatory` and `manifestSignature` via
-   `/api/admin/app-releases`. The public SPKI printed by the tool must independently match both
+   `/api/admin/app-releases`, first with `"channel": "pilot"` for the tills in `POSM_UPDATE_PILOT_DEVICES`, then,
+   after the pilot is checked, with `"channel": "stable"`. Backend v0.2.25+ refuses a stable build without a pilot
+   of the same build that ran at least an hour, is online on a pilot till and sent a pilot receipt
+   (`docs/05-posm-client.md`, «Pilot rollout»). The public SPKI printed by the tool must independently match both
    `POSM_UPDATE_PUBLIC_KEY_SPKI` on backend and `UpdateManifestPublicKeySpki` on every cash desk.
 
 The private key stays offline and must never enter the repository, server or cash desk. The client
