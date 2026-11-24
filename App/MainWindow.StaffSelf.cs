@@ -63,6 +63,10 @@ public partial class MainWindow
         _selfIconAlert?.Dispose();
     }
 
+    /// <summary>A new cashier signed in at this till: refresh the red dot for them.</summary>
+    partial void OnCashierChanged() =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _ = RefreshSelfStatusAsync()));
+
     /// <summary>Standard-N user id of the cashier currently signed in at this till (from the receipt reader).</summary>
     private string CurrentSelfUserId() => (_currentPharmacistId ?? "").Trim();
 

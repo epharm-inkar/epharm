@@ -31,6 +31,7 @@
     <Compile Include="..\Models\Posm\Fulfillment.cs" Link="Models\Fulfillment.cs" />
     <Compile Include="..\Models\Posm\AppVersion.cs" Link="Models\AppVersion.cs" />
     <Compile Include="..\Models\Posm\PosmDtos.cs" Link="Models\PosmDtos.cs" />
+    <Compile Include="..\Models\Posm\PosmSelfDtos.cs" Link="Models\PosmSelfDtos.cs" />
     <Compile Include="..\Models\Posm\Playlist.cs" Link="Models\Playlist.cs" />
     <Compile Include="..\Models\Posm\Cdp.cs" Link="Models\Cdp.cs" />
     <Compile Include="..\Models\Posm\RecommendationPopupModel.cs" Link="Models\RecommendationPopupModel.cs" />
