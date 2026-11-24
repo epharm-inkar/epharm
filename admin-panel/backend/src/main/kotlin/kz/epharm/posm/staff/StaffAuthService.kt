@@ -154,8 +154,10 @@ class StaffAuthService(
     private fun registerAccount(device:PosmDeviceIdentity,iin:String,phone:String,value:String,rawName:String?,phoneVerification:String):Person {
         val name=rawName?.trim()?.takeIf { it.length in 3..255 } ?: invalid()
         // The caller holds the shared phone lock; unique indexes also arbitrate concurrent IIN claims.
-        if(person(iin)!=null || jdbc.queryForObject("SELECT count(*) FROM pharmacists WHERE phone=?",Long::class.java,phone)!=0L) registrationConflict(phoneVerification)
+        if(jdbc.queryForObject("SELECT count(*) FROM pharmacists WHERE phone=?",Long::class.java,phone)!=0L) registrationConflict(phoneVerification)
         val pharmacy=jdbc.query("SELECT name,city FROM pharmacies WHERE id=? AND active=true",{rs,_->rs.getString(1) to rs.getString(2)},device.pharmacyId).singleOrNull() ?: unauthorized()
+        claimStandardNCard(device,iin,phone,value,phoneVerification,pharmacy)?.let { return it }
+        if(person(iin)!=null) registrationConflict(phoneVerification)
         val id="ph_${UUID.randomUUID()}";val encoded=encoder.encode(value)
         val inserted=jdbc.update("""INSERT INTO pharmacists(id,name,iin,phone,password_hash,tier,status,pharmacy_id,pharmacy_name,city,phone_verification_status)
             VALUES (?,?,?,?,?,'Silver','active',?,?,?,?) ON CONFLICT DO NOTHING""",
@@ -164,6 +166,24 @@ class StaffAuthService(
         if(inserted!=1) registrationConflict(phoneVerification)
         credentialVault.capture(id,encoded,value)
         return Person(id,name,phone,"active",device.pharmacyId,encoded,iin)
+    }
+
+    /**
+     * No registration (24.11.2026): the server makes the card from the Standard-N directory when it first sees the
+     * person at a till. The old registration form then only fills it: phone, password and the pharmacy of this till.
+     * Only an untouched card qualifies (no phone, no password, active); anything else stays a conflict as before.
+     */
+    private fun claimStandardNCard(device:PosmDeviceIdentity,iin:String,phone:String,value:String,phoneVerification:String,pharmacy:Pair<String,String?>):Person? {
+        val untouched=jdbc.queryForObject("""SELECT count(*) FROM pharmacists
+            WHERE iin=? AND account_source='standardn' AND phone='' AND password_hash IS NULL AND status='active'""",Long::class.java,iin)
+        if(untouched!=1L) return null
+        val encoded=encoder.encode(value)
+        val claimed=jdbc.query("""UPDATE pharmacists SET phone=?,password_hash=?,phone_verification_status=?,pharmacy_id=?,pharmacy_name=?,city=?,updated_at=now()
+            WHERE iin=? AND account_source='standardn' AND phone='' AND password_hash IS NULL AND status='active'
+            RETURNING id,name""",{rs,_->rs.getString(1) to rs.getString(2)},
+            phone,encoded,phoneVerification,device.pharmacyId,pharmacy.first,pharmacy.second ?: "",iin).singleOrNull() ?: return null
+        credentialVault.capture(claimed.first,encoded,value)
+        return Person(claimed.first,claimed.second,phone,"active",device.pharmacyId,encoded,iin)
     }
 
     private fun registrationConflict(phoneVerification:String):Nothing = if(phoneVerification=="sms_verified") invalidOtp() else invalid()

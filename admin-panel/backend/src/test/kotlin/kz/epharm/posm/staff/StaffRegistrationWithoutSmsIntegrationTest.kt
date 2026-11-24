@@ -142,6 +142,24 @@ class StaffRegistrationWithoutSmsIntegrationTest {
         assertEquals(before,financialCounts());noSmsCalls()
     }
 
+    @Test fun `the old registration form fills a card the server made from Standard-N instead of failing`() {
+        // No registration (24.11.2026): the card exists from the directory, without phone or password, elsewhere.
+        jdbc.update("""INSERT INTO pharmacists(id,name,iin,phone,password_hash,pharmacy_id,pharmacy_name,tier,status,account_source)
+            VALUES ('no-sms-auto','Synthetic Directory Name',?,'',NULL,'no-sms-other','no-sms-other','Silver','active','standardn')""",newIin)
+        val result=register()
+        assertEquals("authenticated",result["status"].asText())
+        assertEquals("no-sms-auto",result["pharmacist"]["id"].asText())
+        val row=jdbc.queryForMap("SELECT phone,password_hash,phone_verification_status,pharmacy_id,name FROM pharmacists WHERE id='no-sms-auto'")
+        assertEquals(phone,row["phone"]);assertEquals("self_declared",row["phone_verification_status"])
+        assertEquals("no-sms-pharmacy",row["pharmacy_id"]);assertEquals("Synthetic Directory Name",row["name"])
+        assertTrue(encoder.matches("A1!b",row["password_hash"].toString()))
+        assertEquals(1L,jdbc.queryForObject("SELECT count(*) FROM pharmacists WHERE iin=?",Long::class.java,newIin))
+        // A filled card is never taken over by a second registration.
+        register(request.copy(phone="+77000000119",deviceContext=StaffDeviceContext("456:789")),expected=400)
+        assertEquals(phone,jdbc.queryForObject("SELECT phone FROM pharmacists WHERE id='no-sms-auto'",String::class.java))
+        noSmsCalls()
+    }
+
     @Test fun `non demographic IIN supports registration device login and learner web login without SMS`() {
         // Synthetic checksum-valid identifier; its prefix is deliberately not a birth date.
         val iin="123456012344"

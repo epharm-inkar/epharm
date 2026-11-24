@@ -126,6 +126,17 @@ class NoRegistrationSelfIntegrationTest {
         assertEquals(hash, row["password_hash"])
     }
 
+    @Test fun `the cabinet activation by SMS binds phone and password to a card made from Standard-N`() {
+        accounts.ensure(StandardNDirectoryPerson(iin, "Синтетикова Айгерим Нурлановна", 0), pharmacy)
+        val phone = "+77015550077"
+        val sent = auth.requestActivationSms(iin, phone)
+        auth.verifyActivationSms(iin, phone, sent.devCode ?: "5445")
+        val session = auth.setInitialPassword(iin, phone, "Synthetic-pass-9")
+        assertEquals(phone, session.pharmacist.phone)
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM pharmacists WHERE iin = ?", Int::class.java, iin))
+        assertEquals("standardn", jdbc.queryForObject("SELECT account_source FROM pharmacists WHERE iin = ?", String::class.java, iin))
+    }
+
     @Test fun `a phone that belongs to another card is refused`() {
         jdbc.update(
             """INSERT INTO pharmacists(id,name,iin,phone,tier,status,pharmacy_id,city) VALUES ('nr-other','Other','000101500066','+77015559999','Silver','active',?,'')""",

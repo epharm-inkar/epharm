@@ -144,6 +144,7 @@ class MobileAuthService(
             it.tier = PharmacistTier.Silver
             it.status = PharmacistStatus.pending
         }
+        if (pharmacist.phone.isBlank()) pharmacist.phone = phone
         pharmacist.passwordHash = passwordEncoder.encode(password)
         val saved = pharmacistRepository.saveAndFlush(pharmacist)
         credentialVault.capture(saved.id,saved.passwordHash!!,password)
@@ -291,9 +292,10 @@ class MobileAuthService(
     }
 
     private fun resolveActivationPhone(identity: ActivationIdentity, rawPhone: String): String {
-        identity.pharmacist?.let { return requireBoundPhone(it, rawPhone) }
+        // A card made from Standard-N (no registration, 24.11.2026) has no phone yet: the person binds one here.
+        identity.pharmacist?.takeIf { it.phone.isNotBlank() }?.let { return requireBoundPhone(it, rawPhone) }
         val phone = PhoneUtil.normalize(rawPhone)
-        pharmacistRepository.findByPhone(phone)?.let {
+        pharmacistRepository.findByPhone(phone)?.takeIf { it.id != identity.pharmacist?.id }?.let {
             throw AppException(
                 ErrorCode.CONFLICT,
                 "Этот номер уже закреплён за другим ИИН",
