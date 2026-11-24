@@ -1772,6 +1772,8 @@ namespace CustomerDisplay.Core.Tests
                 PrintDocumentTimes = new Dictionary<long, DateTimeOffset> { [3500] = window.ReceiptNow.AddHours(-1) },
             };
             Assert.True(window.Artifacts.SaveObservedGroup(stuck)); // its source no longer reads
+            window.Observe(null); // program start: groups from disk may still take a print for 10 minutes
+            window.AdvanceReceiptTime(TimeSpan.FromMinutes(11));
             var paid = RewardReceipt(4000, 1) with { ObservedSourceNamespace = source };
             window.Observe(paid);
             window.PrintWithStates(Posted(paid, 4000));

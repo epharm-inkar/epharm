@@ -704,8 +704,9 @@ an unused future checkout incomplete; a gap in an already observed checkout rema
 POSM 1.0.91 keeps old groups from stopping capture (November 2026: tills stopped confirming
 sales once one old group competed with every new print or 32 groups never resolved). A doc-less
 print cue is offered only to the current receipt and to groups seen as the active receipt within
-the last 10 minutes; old groups are probed in a separate read, so an unreadable one cannot hold
-back the receipt being printed. A group not seen for 6 hours (by the till's clock or by its
+the last 10 minutes (groups loaded from disk count as seen at program start, so a print right
+after a restart still finds its receipt); old groups are probed in a separate read, so an
+unreadable one cannot hold back the receipt being printed. A group not seen for 6 hours (by the till's clock or by its
 Standard-N open/post/print times), or the oldest non-live groups while more than 28 slots are
 taken, is copied verbatim to the private `stale-observed-groups` folder and leaves the hot journal.
 That move creates no sale, ACK or reward and touches no draft or outbox entry. If the same

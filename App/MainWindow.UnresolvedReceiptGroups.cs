@@ -19,6 +19,8 @@ public partial class MainWindow
     private DateTimeOffset? _observedGroupsSeenSince;
     private DateTimeOffset _nextObservedCapacityCheck;
 
+    private DateTimeOffset ObservedGroupsSeenSince() => _observedGroupsSeenSince ??= _receiptProofClock();
+
     private void MarkObservedGroupSeen(StandardNReceiptSnapshot snapshot) =>
         _observedGroupSeenAt[ObservedGroupKey(snapshot)] = _receiptProofClock();
 
@@ -27,7 +29,9 @@ public partial class MainWindow
     {
         var key = ObservedGroupKey(group.Snapshot);
         if (_standardNCurrentReceipt != null && ObservedGroupKey(_standardNCurrentReceipt) == key) return true;
-        return ObservedGroupCapacity.IsLive(_observedGroupSeenAt.TryGetValue(key, out var seen) ? seen : null, _receiptProofClock());
+        // Groups loaded from disk count as seen at program start: a print can follow a restart.
+        return ObservedGroupCapacity.IsLive(_observedGroupSeenAt.TryGetValue(key, out var seen) ? seen : ObservedGroupsSeenSince(),
+            _receiptProofClock());
     }
 
     /// <summary>
@@ -37,15 +41,14 @@ public partial class MainWindow
     private void ReleaseObservedGroupCapacity(StandardNReceiptSnapshot? incoming)
     {
         var now = _receiptProofClock();
-        if (_receiptObserversClosed || _physicalReceiptProbeBusy || _unpaidGroupProbeBusy || _receiptArtifacts == null ||
-            !LoadObservedReceiptGroups()) return;
-        _observedGroupsSeenSince ??= now;
+        // Probe results re-check that their group is still present, so a release never races them.
+        if (_receiptObserversClosed || _receiptArtifacts == null || !LoadObservedReceiptGroups()) return;
+        var since = ObservedGroupsSeenSince();
         var pressure = _observedReceiptGroups.Count > ObservedGroupCapacity.HotLimit - ObservedGroupCapacity.FreeSlotsToKeep;
         if (!pressure && now < _nextObservedCapacityCheck) return;
         _nextObservedCapacityCheck = now.AddSeconds(15);
         var protectedKeys = new[] { _standardNCurrentReceipt, incoming }.Where(receipt => receipt != null)
             .Select(receipt => ObservedGroupKey(receipt!)).ToHashSet(StringComparer.Ordinal);
-        var since = _observedGroupsSeenSince.Value;
         var releases = ObservedGroupCapacity.SelectReleases(_observedReceiptGroups.Values.ToArray(),
             group => protectedKeys.Contains(ObservedGroupKey(group.Snapshot)),
             group => _observedGroupSeenAt.TryGetValue(ObservedGroupKey(group.Snapshot), out var seen) ? seen : since, now);
