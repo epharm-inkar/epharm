@@ -234,7 +234,7 @@ describe('PharmacistsPage — рендер', () => {
   it('H1 + 4 metrics: всего, работали за 7 дней, покрытие, продажи; без Pending', () => {
     renderPage()
     expect(screen.getByRole('heading', { level: 1, name: /Фармацевты/i })).toBeInTheDocument()
-    expect(screen.getByText('Всего фармацевтов')).toBeInTheDocument()
+    expect(screen.getByText('Фармацевтов в системе')).toBeInTheDocument()
     expect(screen.getByText('Работали с ePharm за 7 дней')).toBeInTheDocument()
     expect(screen.getByText('Покрытие за 7 дней')).toBeInTheDocument()
     expect(screen.queryByText('Pending')).not.toBeInTheDocument()

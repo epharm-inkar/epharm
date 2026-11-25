@@ -70,6 +70,9 @@ const lmsHooks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/queries/lms', () => lmsHooks)
+// Training roles get 403 on the HQ network list: the page must never ask for it (26.11.2026).
+const pharmacyHooks = vi.hoisted(() => ({ usePharmacies: vi.fn(() => ({ data: [] })) }))
+vi.mock('@/lib/queries/pharmacies', () => pharmacyHooks)
 vi.mock('qrcode', () => ({
   default: {
     toCanvas: vi.fn().mockResolvedValue(undefined),
@@ -918,6 +921,41 @@ describe('Обучение — операционный раздел', () => {
     renderPage('/lms?tab=certificates')
 
     expect(screen.getByText('Без оценки')).toBeInTheDocument()
+  })
+
+  it('показывает срок действия и статус сертификата, как обещает подзаголовок', () => {
+    lmsHooks.useTrainingCertificates.mockReturnValue(
+      queryResult([
+        {
+          id: 'certificate-2',
+          number: 'EPH-2026-0002',
+          assignmentId: assignment.id,
+          pharmacistId: pharmacist.id,
+          pharmacistName: pharmacist.name,
+          programName: program.name,
+          format: 'online',
+          issuedAt: '2024-11-04T08:00:00Z',
+          expiresAt: '2025-11-04T08:00:00Z',
+          score: 90,
+          signerName: 'Руководитель учебного центра',
+          status: 'expired',
+          verificationToken: 'certificate-token-2',
+          pdfUrl: null,
+        },
+      ]),
+    )
+    renderPage('/lms?tab=certificates')
+    const table = screen.getByTestId('training-certificates-table')
+    expect(within(table).getByRole('columnheader', { name: 'Действителен до' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Статус' })).toBeInTheDocument()
+    expect(within(table).getByText('04.11.2025')).toBeInTheDocument()
+    expect(within(table).getByText('Срок истёк')).toBeInTheDocument()
+  })
+
+  it('учебная роль не запрашивает реестр аптек HQ', () => {
+    useUiStore.setState({ authedUser: USERS.lms })
+    renderPage()
+    expect(pharmacyHooks.usePharmacies).not.toHaveBeenCalled()
   })
 
   it('не показывает редактор сертификата роли только для чтения', () => {

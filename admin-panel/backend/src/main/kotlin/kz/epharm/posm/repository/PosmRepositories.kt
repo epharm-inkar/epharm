@@ -30,6 +30,10 @@ interface RuleAggRow {
     val ruleId: String
     val impressions: Long
     val accepts: Long
+    /** Sum of offer prices of accepted tips (as the dashboard's product revenue), ₸. */
+    val revenue: Long
+    /** Pharmacies where the rule's tip was shown in the period. */
+    val pharmacies: Long
 }
 
 /** Агрегат по рекомендованному товару: принятия и атрибутированная выручка. */
@@ -340,7 +344,9 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
         value = """
             SELECT rule_id AS "ruleId",
                    COUNT(*) AS "impressions",
-                   COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts"
+                   COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts",
+                   COALESCE(SUM(expected_amount) FILTER (WHERE $ACCEPTED_SQL), 0) AS "revenue",
+                   COUNT(DISTINCT pharmacy_id) AS "pharmacies"
             FROM recommendation_events
             WHERE shown_at >= :since
             GROUP BY rule_id

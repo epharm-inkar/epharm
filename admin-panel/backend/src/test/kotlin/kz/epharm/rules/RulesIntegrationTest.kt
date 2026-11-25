@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -38,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.util.UUID
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,6 +72,7 @@ class RulesIntegrationTest {
     @Autowired private lateinit var productRepository: ProductRepository
     @Autowired private lateinit var adminUserRepository: AdminUserRepository
     @Autowired private lateinit var passwordEncoder: PasswordEncoder
+    @Autowired private lateinit var jdbc: JdbcTemplate
 
     private lateinit var bearer: String
 
@@ -150,6 +153,42 @@ class RulesIntegrationTest {
             .andExpect(jsonPath("$.trigger.kind").value("product"))
             .andExpect(jsonPath("$.trigger.value").value("p_aql_norm_s"))
             .andExpect(jsonPath("$.advantages.length()").value(2))
+    }
+
+    /**
+     * The Rules page and the Dashboard showed different numbers for the same tips (26.11.2026): the page summed the
+     * stored rules.impressions/accepts, which nothing writes (0 in production). Now both read the tip events of the
+     * analytics window, and «Принято» means the product was sold in the receipt, as on the Dashboard.
+     */
+    @Test
+    fun `rule metrics come from the tip events of the analytics window, not from stored counters`() {
+        jdbc.update("delete from recommendation_events where rule_id in ('r_seed_1', 'r_seed_2')")
+        fun event(sold: Boolean, daysAgo: Int, pharmacy: String = "pharmacy") = jdbc.update(
+            """insert into recommendation_events
+                   (id, session_id, pharmacist_id, pharmacy_id, rule_id, kind, recommend_sku, expected_amount, shown_at, sold_at)
+               values (?, 's', 'ph', ?, 'r_seed_1', 'substitution', 'p_aqm_norm_s', 1000, now() - make_interval(days => ?),
+                       case when ? then now() - make_interval(days => ?) end)""",
+            "ev_${UUID.randomUUID()}", pharmacy, daysAgo, sold, daysAgo,
+        )
+        repeat(2) { event(sold = false, daysAgo = 2) }
+        event(sold = false, daysAgo = 3, pharmacy = "pharmacy-2")
+        event(sold = true, daysAgo = 1)
+        event(sold = true, daysAgo = 200, pharmacy = "pharmacy-3") // older than the 90-day window
+        ruleRepository.findById("r_seed_1").orElseThrow().also { it.impressions = 9_999; it.accepts = 9_999; ruleRepository.save(it) }
+
+        mockMvc.perform(get("/api/admin/rules/r_seed_1").header("Authorization", bearer))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.impressions").value(4))
+            .andExpect(jsonPath("$.accepts").value(1))
+            .andExpect(jsonPath("$.convRate").value(25.0))
+            // Offer prices of the accepted tips and the pharmacies that saw the tip, from the same window.
+            .andExpect(jsonPath("$.revenue").value(1000))
+            .andExpect(jsonPath("$.pharmacies").value(2))
+        mockMvc.perform(get("/api/admin/rules/r_seed_2").header("Authorization", bearer))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.impressions").value(0))
+            .andExpect(jsonPath("$.convRate").value(0.0))
+        jdbc.update("delete from recommendation_events where rule_id in ('r_seed_1', 'r_seed_2')")
     }
 
     @Test

@@ -433,6 +433,8 @@ describe('real learner training navigation and payment placeholder', () => {
 
   it('explains the card placeholder without accepting, sending or persisting payment details', async () => {
     renderRouter('/learn/profile')
+    // Courses counted from the assignments like the course pages (cancelled left out), not stored counters.
+    expect(await screen.findByText('1 из 4 завершено')).toBeInTheDocument()
     const card = await screen.findByRole('region', { name: 'Банковская карта', exact: true })
     expect(within(card).getByText('Не подключена', { exact: true })).toBeInTheDocument()
     await screen.findByText('750 ₸')

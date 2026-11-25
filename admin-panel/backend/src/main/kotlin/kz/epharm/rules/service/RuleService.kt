@@ -5,6 +5,8 @@ import kz.epharm.promo.service.MotivationPermissions
 import kz.epharm.catalog.repository.ProductRepository
 import kz.epharm.catalog.service.AccCatalogTaxonomy
 import kz.epharm.catalog.service.AccScopeKind
+import kz.epharm.posm.repository.RecommendationEventRepository
+import kz.epharm.posm.repository.RuleAggRow
 import kz.epharm.rules.dto.CreateRuleRequest
 import kz.epharm.rules.dto.RuleDto
 import kz.epharm.rules.dto.TriggerDto
@@ -17,9 +19,12 @@ import kz.epharm.rules.entity.RuleTriggerCondition
 import kz.epharm.rules.repository.RuleRepository
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 @Service
@@ -28,7 +33,25 @@ class RuleService(
     private val productRepository: ProductRepository,
     private val accCatalogTaxonomy: AccCatalogTaxonomy,
     private val administrativeScope: AdministrativeScope,
+    private val recommendationEventRepository: RecommendationEventRepository,
+    @Value("\${app.analytics.window-days:90}") private val windowDays: Long,
 ) {
+
+    /** Показы и «Принято» по правилам: то же окно, тот же источник и то же «Принято» (ACCEPTED_SQL), что на Dashboard. */
+    private fun eventTotals(): Map<String, RuleAggRow> =
+        recommendationEventRepository.aggregateByRuleSince(Instant.now().minus(windowDays, ChronoUnit.DAYS))
+            .associateBy { it.ruleId }
+
+    private fun toDto(e: RuleEntity, events: Map<String, RuleAggRow> = eventTotals()): RuleDto {
+        val row = events[e.id]
+        return RuleDto.of(
+            e,
+            impressions = row?.impressions?.toInt() ?: 0,
+            accepts = row?.accepts?.toInt() ?: 0,
+            revenue = row?.revenue ?: 0,
+            pharmacies = row?.pharmacies?.toInt() ?: 0,
+        )
+    }
 
     @Transactional(readOnly = true)
     fun list(type: RuleType? = null, status: RuleStatus? = null): List<RuleDto> {
@@ -39,11 +62,12 @@ class RuleService(
             status != null -> ruleRepository.findAllByStatusRawOrderByUpdatedAtDesc(status.name)
             else -> ruleRepository.findAllByOrderByUpdatedAtDesc()
         }
-        return all.map(RuleDto::of)
+        val events = eventTotals()
+        return all.map { toDto(it, events) }
     }
 
     @Transactional(readOnly = true)
-    fun get(id: String): RuleDto = RuleDto.of(loadOrThrow(id))
+    fun get(id: String): RuleDto = toDto(loadOrThrow(id))
 
     @Transactional
     fun create(req: CreateRuleRequest, createdBy: String): RuleDto {
@@ -71,7 +95,7 @@ class RuleService(
             it.type = req.type
             it.status = req.status ?: RuleStatus.draft
         }
-        return RuleDto.of(ruleRepository.save(entity))
+        return toDto(ruleRepository.save(entity))
     }
 
     @Transactional
@@ -163,17 +187,17 @@ class RuleService(
         if (bonusChanged && entity.promoId != null) {
             entity.card = (entity.card ?: RuleCard()).copy(bonusInherited = false)
         }
-        return RuleDto.of(ruleRepository.save(entity))
+        return toDto(ruleRepository.save(entity))
     }
 
     @Transactional
     fun archive(id: String): RuleDto {
         val entity = loadOrThrow(id, forUpdate = true)
-        if (entity.status == RuleStatus.archived) return RuleDto.of(entity)
+        if (entity.status == RuleStatus.archived) return toDto(entity)
         administrativeScope.requireAllPermission(MotivationPermissions.recommendationPublish)
         entity.status = RuleStatus.archived
         entity.retiredAt = java.time.Instant.now()
-        return RuleDto.of(ruleRepository.save(entity))
+        return toDto(ruleRepository.save(entity))
     }
 
     @Transactional
@@ -197,7 +221,7 @@ class RuleService(
             // Дубликаты всегда draft — чтобы кто-то осознанно включил.
             it.status = RuleStatus.draft
         }
-        return RuleDto.of(ruleRepository.save(copy))
+        return toDto(ruleRepository.save(copy))
     }
 
     // ── Internals ─────────────────────────────────────────────────────────

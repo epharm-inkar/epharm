@@ -1,4 +1,5 @@
 import type {
+  CertificateStatus,
   EventParticipantStatus,
   OfflineEventStatus,
   TrainingAssignmentStatus,
@@ -7,6 +8,13 @@ import type {
   TrainingStageStatus,
   TrainingStageType,
 } from '@/lib/api-types'
+
+export const CERTIFICATE_STATUS_LABEL: Record<CertificateStatus, string> = {
+  valid: 'Действителен',
+  expired: 'Срок истёк',
+  revoked: 'Отозван',
+  replaced: 'Заменён',
+}
 
 export const FORMAT_LABEL: Record<TrainingFormat, string> = {
   online: 'Онлайн',
@@ -106,13 +114,16 @@ export function chipClass(status: string): string {
   if (['published', 'completed', 'attended', 'late', 'valid', 'registration'].includes(status)) {
     return 'chip-green'
   }
-  if (['overdue', 'failed', 'cancelled', 'no_show', 'retake_required'].includes(status)) {
+  if (
+    ['overdue', 'failed', 'cancelled', 'no_show', 'retake_required', 'revoked'].includes(status)
+  ) {
     return 'chip-red'
   }
   if (['scheduled', 'waiting_review', 'confirmed', 'in_progress'].includes(status)) {
     return 'chip-blue'
   }
-  if (['paused', 'waitlisted', 'review'].includes(status)) return 'chip-amber'
+  if (['paused', 'waitlisted', 'review', 'expired', 'replaced'].includes(status))
+    return 'chip-amber'
   return 'chip-ink'
 }
 

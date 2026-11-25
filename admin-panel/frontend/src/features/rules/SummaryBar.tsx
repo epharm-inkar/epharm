@@ -61,12 +61,12 @@ export function SummaryBar({ metrics }: { metrics: RulesMetrics }) {
       value: formatNum(metrics.accepts),
       sub: t('rules.convSub', { c: metrics.conv.toFixed(1) }),
       dot: '#BE5A38', // глубокий коралл
-      delta: +4.8,
     },
     {
       label: t('rules.mPaid'),
       value: formatKzt(metrics.payout),
-      sub: t('rules.budgetMay'),
+      // No caption: «62% бюджета мая» was a fixed string, not a figure (26.11.2026).
+      sub: '',
       dot: '#F4B73A',
     },
   ]
