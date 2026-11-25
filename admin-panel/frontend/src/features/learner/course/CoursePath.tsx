@@ -9,6 +9,7 @@ import {
   Radio,
 } from 'lucide-react'
 import { useLearnerT } from '../learner-i18n'
+import { lessonMinutes } from './lessonContent'
 
 export type PathLesson = {
   id: string
@@ -16,6 +17,7 @@ export type PathLesson = {
   kind?: string
   videoUrl?: string | null
   durationMin?: number
+  content?: string | null
   quizQuestions?: Array<{ id: string }>
   required?: boolean
   done: boolean
@@ -52,7 +54,9 @@ export function CoursePath({
     if (lesson.kind === 'video' || lesson.videoUrl)
       return {
         Icon: PlayCircle,
-        label: t('Видео · {minutes} мин', { minutes: lesson.durationMin ?? 0 }),
+        label: lesson.content?.trim()
+          ? t('Видео и текст · {minutes} мин', { minutes: lessonMinutes(lesson) })
+          : t('Видео · {minutes} мин', { minutes: lesson.durationMin ?? 0 }),
       }
     return {
       Icon: BookOpen,
