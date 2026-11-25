@@ -36,15 +36,31 @@ internal static partial class Program
                 Console.WriteLine(Path.Combine(Output, "notice-2-live-toast.png"));
                 toast.Close();
 
-                var welcome = new EpharmToastWindow(MainWindow.Greeting(new DateTime(2026, 11, 26, 8, 5, 0)) + ", Нұрсая Әбдіқалық!",
-                    "Вход в ePharm выполнен. Подсказки по заменам будут появляться здесь. Нажмите, чтобы открыть свой кабинет. Хорошего дня!",
-                    _screen, TimeSpan.FromMinutes(5));
+                // 1.0.99: the greeting card with the owner's wording and «Что такое ePharm».
+                var morning = new DateTime(2026, 11, 26, 8, 5, 0);
+                var welcome = new EpharmGreetingWindow(
+                    CustomerDisplay.Services.PharmacistGreeting.Title(morning, "Әбдіқалықова Нұрсая Серікқызы"),
+                    CustomerDisplay.Services.PharmacistGreeting.Words(morning).Wish,
+                    CustomerDisplay.Services.PharmacistGreeting.HelpLines, _screen, TimeSpan.FromMinutes(5));
                 welcome.Show();
                 await System.Threading.Tasks.Task.Delay(400);
                 await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                 SaveOwnWindow(welcome, "notice-4-welcome");
                 Console.WriteLine(Path.Combine(Output, "notice-4-welcome.png"));
                 welcome.Close();
+
+                // 1.0.99: a notice from HQ, staying until the person closes it.
+                var now = DateTimeOffset.Now;
+                var hq = new EpharmMessageWindow(
+                    new CustomerDisplay.Services.TillMessage("showcase-1", "Инвентаризация в субботу",
+                        "Коллеги, в субботу инвентаризация во всех аптеках сети. Просьба прийти к 8:30.", now.AddMinutes(-40), null, true),
+                    1, 2, now, _screen);
+                hq.Show();
+                await System.Threading.Tasks.Task.Delay(400);
+                await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                SaveOwnWindow(hq, "notice-5-hq-message");
+                Console.WriteLine(Path.Combine(Output, "notice-5-hq-message.png"));
+                hq.Close();
 
                 SaveIcons(Path.Combine(Output, "notice-3-icons.png"));
                 Console.WriteLine(Path.Combine(Output, "notice-3-icons.png"));

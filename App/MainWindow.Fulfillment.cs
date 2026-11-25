@@ -405,12 +405,15 @@ namespace CustomerDisplay
             _pharmacistNotices.RecommendationStarting();
             _fulfillmentNotice?.Close();
             _fulfillmentNotice = null;
+            PauseHqMessageForRecommendation();
         }
 
         private void EndRecommendationNotice()
         {
             var pending = _pharmacistNotices.RecommendationClosed();
             if (pending > 0) ShowFulfillmentNotice(pending);
+            // A notice from HQ or a greeting waited for the popup to close (1.0.99).
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(ResumeHqMessageAfterRecommendation));
         }
 
         private void ShowFulfillmentQueue()

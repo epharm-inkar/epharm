@@ -2,6 +2,43 @@
 
 Path: `App/` and `Models/`.
 
+## Greeting, «Что такое ePharm», notices from HQ and the course dot: 1.0.99 (25.11.2026)
+
+The owner's requests of 25.11.2026, built for the pilot (not released):
+
+- **Greeting** (`MainWindow.Welcome.cs`, `EpharmGreetingWindow`, rules in `Services/PharmacistGreeting.cs`). The first
+  time the server names the person signed in to Standard-N on a greeting day (05:00 to 05:00, so a night shift is
+  greeted once), a card in the lower right corner says «Доброе утро, Имя Отчество! Желаем хорошего дня» (утро 05-12,
+  день 12-18, вечер 18-23 with «Желаем хорошего вечера», night «Здравствуйте» with «Желаем спокойной смены»), two
+  lines on how ePharm helps (no numbers, no money) and the buttons «Что такое ePharm» and «Закрыть». It never takes
+  the focus (`WS_EX_NOACTIVATE`), closes by itself after 45 seconds (the countdown waits under the mouse), waits while
+  a recommendation popup is open and stays silent during the works. Once per person per day, also across restarts
+  (`%LOCALAPPDATA%\Epharm\greeting-state.json`; the 1.0.96 `welcome-state.json` still counts for its day). «Имя
+  Отчество» is everything after the surname of the Standard-N «Фамилия Имя Отчество»; ALL-CAPS names get capitals.
+- **«Что такое ePharm»** (`EpharmPageWindow`, texts in `Services/EpharmHelpContent.cs`) replaces the small «?»: a
+  clear entry under the header of the personal window, an item in the icon menu and the greeting's button open a
+  page with five short sections in big type: what ePharm is, how to use it at the till, «Мой кабинет» and courses,
+  how a pharmacist earns (only what the product does: the amount in the tip, sales by the tip in the same receipt,
+  course bonuses named in the task, monthly payout by statement) and where to ask (the pharmacy network manager).
+- **Notices from HQ** (`MainWindow.Messages.cs`, `EpharmMessageWindow`, state in `Services/PharmacistMessageInbox.cs`).
+  The till asks `POST /api/posm/self/messages` for the person at the till with the 15-minute status check, on a
+  cashier change, when the personal window opens, and at once when the minute check of `GET /api/posm/notice` brings
+  a newer `messagesAt` (HQ sent or withdrew a notice). An open notice stays in the lower right corner until the
+  person closes it with × or «Понятно, закрыть»; several come one after another («1 из 3»). It never takes the
+  focus, waits for the greeting, hides while a recommendation popup is open and during the works. The close is kept
+  on disk at once (`messages-state.json`, at most 500 entries, 45 days), so a lost report or a restart never brings a
+  closed notice back; `.../{id}/shown` and `.../{id}/closed` are resent until the server answers (400, 403, 404 and
+  409 end the retries). The personal window has a «Уведомления» row (new ones in red) and the icon menu an item;
+  both open the history page (last 30 days, newest first, open ones marked «Новое»).
+- **Red dot for training.** `POST /api/posm/self/tasks` now carries `requiredOpenCount` (required courses not
+  finished; paused by HQ not counted). The icon keeps its red dot while it is above zero, as well as for an unclosed
+  notice; the dot goes with the next check after the course is completed (15 minutes at most, at once when the
+  personal window opens). A server without the count falls back to the list. The «МОИ ЗАДАНИЯ» heading gets the same
+  dot, the tooltip says «курсов: N» and «уведомлений: N» (`Services/EpharmAttention.cs`).
+
+Tests: `PharmacistGreetingTests`, `PharmacistMessageInboxTests`, `EpharmAttentionTests`, `EpharmHelpContentTests`
+(App.Tests, no window). Offscreen renders of the new windows for the owner: `e2e-out/posm-1099` on the laptop.
+
 ## The till has no sign-in window — 1.0.97 (25.11.2026)
 
 The owner's decision of 25.11.2026: a pharmacist never signs in at the till. POSM 1.0.97 removes the old
@@ -448,6 +485,12 @@ for a new poll. Such a task cannot reopen through snooze or produce a new displa
 | `App/MainWindow.Screen.cs`                      | Customer screen/video playlist logic.                              |
 | `App/MainWindow.Update.cs`                      | App auto-update logic.                                             |
 | `App/MainWindow.Staff.cs`                       | Standard-N source diagnostic and cashier start time (no sign-in).  |
+| `App/MainWindow.Welcome.cs`                     | Greeting at the first Standard-N sign-in of the day (1.0.99).      |
+| `App/MainWindow.Messages.cs`                    | Notices from HQ, «Что такое ePharm» and history pages (1.0.99).    |
+| `App/EpharmGreetingWindow.cs`                   | Greeting card; `NoActivate` helper for windows without focus.      |
+| `App/EpharmMessageWindow.cs`                    | One notice from HQ, stays until closed with ×.                     |
+| `App/EpharmPageWindow.cs`                       | Readable page: «Что такое ePharm», history of notices.             |
+| `App/Services/PharmacistMessageInbox.cs`        | Notice state per person, owed reports, date labels.                |
 | `App/Services/StaffSessionObservation.cs`       | Exact-workstation source observation; strict legacy session guard. |
 | `App/Services/StaffProcessPresence.cs`          | Running cashier process instances (one, none or several).          |
 | `App/RecommendationWindow.xaml[.cs]`            | Pharmacist recommendation popup.                                   |

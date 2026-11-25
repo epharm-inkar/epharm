@@ -56,6 +56,8 @@ public partial class MainWindow
         {
             _maintenanceWindow?.Update(notice.Title, notice.Message);
             _selfWindow?.Close();
+            // Notices from HQ wait for the end of the works (they stay open on the server).
+            CloseHqMessageQuietly();
         }
         else
         {
@@ -69,6 +71,11 @@ public partial class MainWindow
         }
         if (announce) ShowEpharmLiveToast();
         else FlushPendingWelcome();
+        if (!EpharmPaused)
+        {
+            OnMessagesStamp(notice.MessagesAt);
+            if (wasPaused) ShowNextHqMessage();
+        }
     }
 
     /// <summary>The ePharm icon during the works: the notice with the HQ text.</summary>

@@ -6,12 +6,14 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using CustomerDisplay.Models.Posm;
+using CustomerDisplay.Services;
 
 namespace CustomerDisplay;
 
 /// <summary>
 /// The ePharm icon by the clock opens the pharmacist's personal window (no login): the person is the Standard-N
-/// user signed in at this till. A red dot on the icon reminds them to add phone and password until both are set.
+/// user signed in at this till. A red dot on the icon reminds them to add phone and password until both are set,
+/// and (1.0.99) stays while a required course is not finished or a notice from HQ is not closed.
 /// </summary>
 public partial class MainWindow
 {
@@ -46,6 +48,8 @@ public partial class MainWindow
         menu.Items.Add("Мой кабинет в браузере", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => _ = OpenCabinetAsync())));
         menu.Items.Add("Задания аптеки", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => OpenTaskKiosk(activate: true))));
         menu.Items.Add("Подсказки по чеку", null, (_, _) => Dispatcher.BeginInvoke(new Action(ReopenReceiptRecommendations)));
+        menu.Items.Add("Уведомления", null, (_, _) => Dispatcher.BeginInvoke(new Action(ShowHqMessagesPage)));
+        menu.Items.Add("Что такое ePharm", null, (_, _) => Dispatcher.BeginInvoke(new Action(ShowWhatIsEpharm)));
         _selfTray.ContextMenuStrip = menu;
 
         _selfStatusTimer.Tick += async (_, _) => await RefreshSelfStatusAsync();
@@ -64,6 +68,7 @@ public partial class MainWindow
         _selfStatusTimer.Stop();
         _selfWindowRefresh.Stop();
         _selfWindow?.Close();
+        DisposeHqMessages();
         if (_selfTray != null) { _selfTray.Visible = false; _selfTray.Dispose(); _selfTray = null; }
         _selfIconPlain?.Dispose();
         _selfIconAlert?.Dispose();
@@ -72,7 +77,12 @@ public partial class MainWindow
 
     /// <summary>A new cashier signed in at this till: refresh the red dot for them.</summary>
     partial void OnCashierChanged() =>
-        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _ = RefreshSelfStatusAsync()));
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            // A notice on screen belongs to the previous person: it goes at once, without a report (1.0.99).
+            ShowNextHqMessage();
+            _ = RefreshSelfStatusAsync();
+        }));
 
     /// <summary>Standard-N user id of the cashier currently signed in at this till (from the receipt reader).</summary>
     private string CurrentSelfUserId() => (_currentPharmacistId ?? "").Trim();
@@ -90,13 +100,22 @@ public partial class MainWindow
     {
         if (_epharm == null || _selfTray == null) return;
         var request = SelfRequest(link: false);
-        if (request == null) { _newHqTasks = 0; SetSelfTrayState(null, null); return; }
+        if (request == null)
+        {
+            _newHqTasks = 0;
+            _requiredCourses = 0;
+            _hqTasksUser = "";
+            CloseHqMessageQuietly();
+            SetSelfTrayState(null, null);
+            return;
+        }
         var result = await _epharm.GetSelfAsync(request);
         if (!result.Ok) return;
         _selfStatusUser = request.StandardNUserId;
         SetSelfTrayState(result.Value!.PhoneBound && result.Value.PasswordSet, result.Value.FullName);
         await LoadHqTasksAsync(request);
         MaybeWelcome(request.StandardNUserId, result.Value.FullName);
+        await RefreshHqMessagesAsync();
     }
 
     private void SetSelfTrayState(bool? complete, string? name)
@@ -118,20 +137,17 @@ public partial class MainWindow
         UpdateSelfTrayText();
     }
 
-    private bool NeedsAttention() => _selfProfileComplete == false || (TasksCountForSelf() ?? 0) > 0 || _newHqTasks > 0;
+    private bool NeedsAttention() => EpharmAttention.NeedsDot(
+        _selfProfileComplete, TasksCountForSelf() ?? 0, _newHqTasks, _requiredCourses, PendingHqMessages());
 
     private string _selfTrayName = "";
 
-    /// <summary>Tooltip of the one ePharm icon: who is known, whether the profile needs filling, open tasks.</summary>
+    /// <summary>Tooltip of the one ePharm icon: who is known, the profile, notices, required courses, open tasks.</summary>
     private void UpdateSelfTrayText()
     {
         if (_selfTray == null) return;
-        if (EpharmPaused) { _selfTray.Text = "ePharm: технические работы"; return; }
-        var text = _selfProfileComplete == false ? "ePharm: заполните профиль"
-            : _selfTrayName.Length > 0 ? "ePharm: " + _selfTrayName : "ePharm: мой кабинет";
-        var tasks = TasksCountForSelf() ?? 0;
-        if (tasks > 0) text += " · заданий: " + tasks;
-        _selfTray.Text = text.Length <= 63 ? text : text[..63];
+        _selfTray.Text = EpharmAttention.TrayText(
+            EpharmPaused, _selfProfileComplete, _selfTrayName, TasksCountForSelf() ?? 0, _requiredCourses, PendingHqMessages());
     }
 
     private async Task OpenStaffSelfAsync()
@@ -148,6 +164,8 @@ public partial class MainWindow
         var window = new StaffSelfWindow(model, PharmacistScreen());
         window.OpenCabinetRequested += () => _ = OpenCabinetAsync();
         window.OpenTasksRequested += () => OpenTaskKiosk(activate: true);
+        window.WhatIsEpharmRequested += ShowWhatIsEpharm;
+        window.OpenMessagesRequested += ShowHqMessagesPage;
         window.SaveContactRequested += (phone, password) => _ = SaveSelfContactAsync(phone, password);
         window.Closed += (_, _) => { _selfWindowRefresh.Stop(); if (ReferenceEquals(_selfWindow, window)) _selfWindow = null; };
         _selfWindow = window;
@@ -169,6 +187,8 @@ public partial class MainWindow
         var self = result.Value!;
         SetSelfTrayState(self.PhoneBound && self.PasswordSet, self.FullName);
         var hqTasks = await LoadHqTasksAsync(request);
+        await RefreshHqMessagesAsync();
+        var history = _messageInbox?.History(request.StandardNUserId).Count ?? 0;
         return new StaffSelfModel
         {
             FullName = self.FullName,
@@ -183,20 +203,39 @@ public partial class MainWindow
             TasksCount = TasksCountForSelf(),
             TasksOnline = _taskKioskOnline,
             HqTasks = hqTasks,
+            MessagesPending = _messagesFeedKnown ? PendingHqMessages() : null,
+            MessagesTotal = history,
         };
     }
 
     private int _newHqTasks;
+    /// <summary>Required courses not finished by the person at this till (1.0.99): the red dot stays while above 0.</summary>
+    private int _requiredCourses;
+    private string _hqTasksUser = "";
 
-    /// <summary>HQ tasks for the person (1.0.96); an older server without the feed gives none.</summary>
+    /// <summary>
+    /// HQ tasks for the person (1.0.96); an older server without the feed gives none. A failed request keeps the last
+    /// counts of the same person, so the red dot does not blink with the network.
+    /// </summary>
     private async Task<IReadOnlyList<StaffSelfTask>> LoadHqTasksAsync(PosmSelfRequestDto request)
     {
         var result = await _epharm!.GetSelfTasksAsync(request with { Link = false });
-        if (!result.Ok) { _newHqTasks = 0; ApplyNoticeToTray(); return Array.Empty<StaffSelfTask>(); }
-        _newHqTasks = result.Value!.NewCount + (result.Value.Tasks ?? new()).Count(t => t.Status == "overdue");
+        if (!result.Ok)
+        {
+            if (!string.Equals(_hqTasksUser, request.StandardNUserId, StringComparison.OrdinalIgnoreCase))
+            {
+                _newHqTasks = 0;
+                _requiredCourses = 0;
+            }
+            ApplyNoticeToTray();
+            return Array.Empty<StaffSelfTask>();
+        }
+        _hqTasksUser = request.StandardNUserId;
+        _newHqTasks = EpharmAttention.NewOrOverdue(result.Value);
+        _requiredCourses = EpharmAttention.RequiredUnfinished(result.Value);
         ApplyNoticeToTray();
-        return (result.Value.Tasks ?? new()).Select(t => new StaffSelfTask(
-            t.Title, t.Instructions ?? "", t.RewardKzt, t.Status, t.ProgressPct, t.DueAt)).ToList();
+        return (result.Value!.Tasks ?? new()).Select(t => new StaffSelfTask(
+            t.Title, t.Instructions ?? "", t.RewardKzt, t.Status, t.ProgressPct, t.DueAt, t.Required)).ToList();
     }
 
     /// <summary>Pharmacy tasks shown in the personal window; null when this till has no task feed.</summary>

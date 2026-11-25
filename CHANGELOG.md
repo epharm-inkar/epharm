@@ -16,6 +16,23 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- POSM 1.0.99 (Grigoriy, 25.11.2026), built for the pilot: the greeting at the first Standard-N sign-in of the day
+  (05:00 to 05:00) says «Доброе утро, Имя Отчество! Желаем хорошего дня» (by the time of day), two lines on how ePharm
+  helps and «Что такое ePharm»; once per person per day, also after a restart; never takes the focus, closes by itself
+  after 45 seconds, waits for an open recommendation and stays silent during the works. The small «?» of the personal
+  window became a clear «Что такое ePharm» entry and page (what it is, how to use it at the till, «Мой кабинет» and
+  courses, how a pharmacist earns, where to ask), also in the icon menu. Notices from HQ show in the corner of the
+  pharmacist screen until the person closes them with ×, one after another, hidden while a recommendation is open;
+  closes survive a lost report and a restart; the history of 30 days opens from the personal window («Уведомления»)
+  and the icon menu. The icon keeps its red dot while a required course is not finished or a notice is not closed.
+- Notices to pharmacists at the till (server and admin): «Экраны» → «Уведомления на кассах» (SYSTEM_ADMIN, HQ_HEAD)
+  writes a title and a text for everybody, chosen pharmacies (their tills and their staff) or chosen pharmacists, for
+  1-30 days, and shows per notice how many people saw it on a till and how many closed it; a notice can be withdrawn.
+  `POST/GET /api/admin/posm-messages`, `POST /api/admin/posm-messages/{id}/withdraw`; the till uses
+  `POST /api/posm/self/messages` and `.../{id}/shown|closed` (device key, person by Standard-N user), and
+  `GET /api/posm/notice` carries `messagesAt` so a till asks at once after a change. Tables `posm_messages`,
+  `posm_message_targets`, `posm_message_receipts` (V121). `POST /api/posm/self/tasks` adds `requiredOpenCount`
+  (required courses not finished, paused ones not counted) for the till's red dot.
 - POSM 1.0.96 (Grigoriy, 25.11.2026): «Вход в ePharm выполнен». When the person signed in to Standard-N is known,
   a card in the corner greets them once a day by name («Доброе утро, …!»), says that replacement tips will appear
   here and opens the personal window on a click; it never takes the focus and stays silent during the works.
