@@ -302,7 +302,7 @@ namespace CustomerDisplay
         private UIElement BuildHqTasks(StaffSelfModel model)
         {
             var stack = new StackPanel { Margin = new Thickness(16, 10, 16, 0) };
-            stack.Children.Add(new TextBlock { Text = "ЗАДАНИЯ", Foreground = Brush("#9AA2AE"), FontSize = 11, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
+            stack.Children.Add(new TextBlock { Text = "МОИ ЗАДАНИЯ", Foreground = Brush("#9AA2AE"), FontSize = 11, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
             foreach (var task in model.HqTasks.Take(4))
             {
                 var box = new Border

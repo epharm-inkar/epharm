@@ -96,10 +96,12 @@
                                  Foreground="{StaticResource Accent}"/><Run Text="{Binding Detail, Mode=OneWay}"/>
                         </TextBlock>
 
-                        <TextBlock x:Name="FootText" Grid.Row="4" Grid.ColumnSpan="2" FontSize="12"
-                                   TextWrapping="Wrap" Margin="0,3,0,0">
-                            <Run Text="{Binding GoalLead, Mode=OneWay}" FontWeight="Bold" Foreground="{StaticResource Bonus}"/><Run Text="{Binding StockShown, Mode=OneWay}" Foreground="{StaticResource Muted}"/>
-                        </TextBlock>
+                        <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,3,0,0">
+                            <TextBlock x:Name="GoalText" Text="{Binding Goal, Mode=OneWay}" FontSize="12" FontWeight="Bold"
+                                       Foreground="{StaticResource Bonus}" TextWrapping="Wrap" Margin="0,0,0,1"/>
+                            <TextBlock x:Name="StockText" Text="{Binding Stock, Mode=OneWay}" FontSize="12"
+                                       Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+                        </StackPanel>
                     </Grid>
                 </Grid>
             </Border>
@@ -119,8 +121,8 @@
                     <Setter TargetName="BonusText" Property="FontWeight" Value="ExtraBold"/>
                     <Setter TargetName="BonusText" Property="Foreground" Value="White"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding HasFoot}" Value="False">
-                    <Setter TargetName="FootText" Property="Visibility" Value="Collapsed"/>
+                <DataTrigger Binding="{Binding HasGoal}" Value="False">
+                    <Setter TargetName="GoalText" Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding HasDetail}" Value="False">
                     <Setter TargetName="DetailText" Property="Visibility" Value="Collapsed"/>

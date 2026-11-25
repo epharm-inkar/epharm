@@ -56,11 +56,7 @@ namespace CustomerDisplay.Models.Posm
         public string PartnerLabel { get; init; } = "";
         public string Stock { get; init; } = "Остаток не подтверждён";
         public bool HasConfirmedStock { get; init; }
-        /// <summary>1.0.96 compact card: the stock line only when the stock is confirmed (no «не подтверждён» noise).</summary>
-        public string StockShown => HasConfirmedStock ? Stock : "";
-        /// <summary>Goal first on the card's last line, separated from a confirmed stock by a dot.</summary>
-        public string GoalLead => HasGoal ? Goal + (HasConfirmedStock ? " · " : "") : "";
-        public bool HasFoot => HasGoal || HasConfirmedStock;
+
     }
 
     public static class RecommendationPopupModelBuilder
