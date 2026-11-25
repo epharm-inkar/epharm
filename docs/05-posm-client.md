@@ -2,6 +2,19 @@
 
 Path: `App/` and `Models/`.
 
+## The till has no sign-in window — 1.0.97 (25.11.2026)
+
+The owner's decision of 25.11.2026: a pharmacist never signs in at the till. POSM 1.0.97 removes the old
+«Вход / регистрация сотрудника» window (`StaffAuthWindow`), its tray icon, the employee grant channel
+(`StaffAuthClient`, `/api/posm/staff/*` calls from the till), the process-scoped session state and the
+capability polling. What a pharmacist has instead: the Standard-N user identifies the seller on the receipt,
+«Мой ePharm» in the tray sets or changes the cabinet password, and the cabinet accepts phone or IIN with that
+password. What stays in `App/MainWindow.Staff.cs`: every five minutes the till reads whether the Standard-N
+cashier session resolves (`staffSourceStatus` in the heartbeat, the «Стандарт-Н» column of «Все кассы»), and
+the receipt reader asks when the running cashier program started. `staffAuthStatus` is always
+`local_disabled`; the server still accepts the old codes from tills that have not updated. The sections below
+about RPS sign-in, registration and grants describe code that no longer exists and are kept as history.
+
 Ordinary receipt attribution candidate (2026-11-16): `sellerSource` travels with the
 queued sale independently of reward enrollment. Only a mutually consistent observed
 receipt group, native user/session/workstation and database namespace can produce it;
@@ -434,10 +447,9 @@ for a new poll. Such a task cannot reopen through snooze or produce a new displa
 | `App/MainWindow.Recommendations.cs`             | Recommendation popup wiring.                                       |
 | `App/MainWindow.Screen.cs`                      | Customer screen/video playlist logic.                              |
 | `App/MainWindow.Update.cs`                      | App auto-update logic.                                             |
-| `App/MainWindow.Staff.cs`, `StaffAuthWindow.cs` | Optional human sign-in, tray reopening and lifecycle.              |
+| `App/MainWindow.Staff.cs`                       | Standard-N source diagnostic and cashier start time (no sign-in).  |
 | `App/Services/StaffSessionObservation.cs`       | Exact-workstation source observation; strict legacy session guard. |
-| `App/Services/StaffDeviceSessionState.cs`       | Process-scoped own login, source binding and late-response guard.  |
-| `App/Services/StaffAuthClient.cs`               | Separate HTTPS employee credentials/grants channel.                |
+| `App/Services/StaffProcessPresence.cs`          | Running cashier process instances (one, none or several).          |
 | `App/RecommendationWindow.xaml[.cs]`            | Pharmacist recommendation popup.                                   |
 | `App/CdpForm.xaml[.cs]`                         | POSM customer-phone/CDP form.                                      |
 | `App/Config/EpharmConfig.cs`                    | Config/env parsing.                                                |
@@ -637,7 +649,7 @@ financial trust. Human attention and source matching require separate evidence.
 | `AppLogPath`                           | `EPHARM_APP_LOG`                           | POSM app log path.                                                                       |
 | `StandardNLogPaths`                    | `EPHARM_STANDARDN_LOG_PATHS`               | Optional explicit paths (`;`-separated in env).                                          |
 | `StandardNReceiptPollMs`               | `EPHARM_STANDARDN_RECEIPT_POLL_MS`         | Active receipt poll interval; default 400ms.                                             |
-| `StaffAuthenticationEnabled`           | `EPHARM_STAFF_AUTH_ENABLED`                | Local opt-out; server protocol-2/name/device-auth-v1 capability must also allow sign-in. |
+| `StaffAuthenticationEnabled`           | `EPHARM_STAFF_AUTH_ENABLED`                | Opt-out of the Standard-N session diagnostic (no sign-in at the till since 1.0.97).      |
 | `StaffSessionMaxAgeSec`                | `EPHARM_STAFF_SESSION_MAX_AGE_SEC`         | Staff DB-heartbeat freshness policy, default 300s; verify actual cadence in pilot.       |
 | `ReceiptCaptureEnabled`                | `EPHARM_RECEIPT_CAPTURE_ENABLED`           | Enables exact-only local capture; default true.                                          |
 | `ReceiptCaptureDir`                    | `EPHARM_RECEIPT_CAPTURE_DIR`               | Root for active/pending/quarantine receipt artifacts.                                    |

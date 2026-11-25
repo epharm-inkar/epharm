@@ -111,7 +111,7 @@ public partial class MainWindow
         state.AppendLine($"Версия ePharm: {AppUpdater.CurrentVersion()}");
         state.AppendLine($"Windows: {Environment.OSVersion.VersionString}, 64 бит: {Environment.Is64BitOperatingSystem}, компьютер: {Environment.MachineName}");
         state.AppendLine($"Аптека: {_posmConfig?.PharmacyId}, касса: {_posmConfig?.ResolveDeviceId()}");
-        state.AppendLine($"Вход (сервер): {StaffAuthenticationStatus}, Стандарт-Н: {StaffSourceStatus}");
+        state.AppendLine($"Стандарт-Н (кто продаёт): {StaffSourceStatus}");
         state.AppendLine($"Пользователь Стандарт-Н на кассе: {(_currentPharmacistId ?? "").Trim()}");
         state.AppendLine($"Технические работы: {(_noticeState?.Maintenance?.ToString() ?? "неизвестно")}");
         state.AppendLine($"Свободно на диске C: {FreeDiskMb("C:\\")} МБ, память процесса: {Environment.WorkingSet / (1024 * 1024)} МБ");

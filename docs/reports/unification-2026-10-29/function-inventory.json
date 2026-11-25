@@ -3921,8 +3921,6 @@
         "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffAuthService.kt",
         "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
         "admin-panel/backend/src/main/resources/db/migration/V097__posm_device_employee_sessions.sql",
-        "App/Services/StaffAuthClient.cs",
-        "App/Services/StaffDeviceSessionState.cs",
         "admin-panel/backend/src/main/resources/db/migration/V098__pharmacist_phone_verification.sql",
         "admin-panel/backend/src/test/kotlin/kz/epharm/posm/staff/StaffRegistrationWithoutSmsIntegrationTest.kt"
       ]
@@ -3968,6 +3966,12 @@
         "date": "2026-11-06",
         "revision": "5f1fe6466debfb754812f88ae0eba59beda3ca09",
         "scope": "Independent process grants for terminals sharing pharmacy credentials; pending/SMS fail-open form preserved; historical inventory evidence unchanged",
+        "runtimeVerifiedByThisInventory": false
+      },
+      {
+        "date": "2026-11-25",
+        "revision": "d8b0d1070c4482c5ce61a6d5efe9c452257bf476",
+        "scope": "POSM 1.0.97 removes the till sign-in window and its employee API client (StaffAuthClient, StaffDeviceSessionState) by the owner's decision of 25.11.2026; the server routes stay for tills that have not updated",
         "runtimeVerifiedByThisInventory": false
       }
     ]
