@@ -69,6 +69,7 @@ type QuizQuestionDraft = {
   options: string[]
   correctOption: number
   explanation: string
+  lessonId?: string
 }
 
 function newQuizQuestion(): QuizQuestionDraft {
@@ -506,7 +507,11 @@ function LessonEditorModal({
       options: [...question.options],
       correctOption: question.correctOption ?? 0,
       explanation: question.explanation,
+      lessonId: question.lessonId,
     })),
+  )
+  const [quizDrawCount, setQuizDrawCount] = useState(
+    lesson?.quizDrawCount ? String(lesson.quizDrawCount) : '',
   )
   const [durationMin, setDurationMin] = useState(String(lesson?.durationMin ?? 0))
   const [file, setFile] = useState<File | null>(null)
@@ -520,6 +525,9 @@ function LessonEditorModal({
     uploadAttachment.isPending ||
     deleteAttachment.isPending
   const quizMode = kind === 'quiz' || kind === 'test'
+  // Text and video lessons may end with self-check questions: the learner sees the answer and why.
+  const selfCheckMode = kind === 'text' || kind === 'video'
+  const drawCount = Math.max(0, Math.floor(Number(quizDrawCount) || 0))
 
   const submit = async () => {
     if (!canManage) return
@@ -553,8 +561,13 @@ function LessonEditorModal({
       if (invalidPoll >= 0)
         return setError(`Проверьте интерактив ${invalidPoll + 1} и варианты ответа`)
     }
-    if (quizMode) {
-      if (quizQuestions.length === 0) return setError('Добавьте хотя бы один вопрос теста')
+    if (quizMode && drawCount > quizQuestions.length)
+      return setError(
+        `Вопросов в попытке не может быть больше, чем в тесте (${quizQuestions.length})`,
+      )
+    if (quizMode || (selfCheckMode && quizQuestions.length > 0)) {
+      if (quizMode && quizQuestions.length === 0)
+        return setError('Добавьте хотя бы один вопрос теста')
       const invalidQuestion = quizQuestions.findIndex(
         (question) =>
           !question.prompt.trim() ||
@@ -586,15 +599,17 @@ function LessonEditorModal({
         required,
         minimumWatchPct:
           kind === 'video' ? Math.min(100, Math.max(1, Number(minimumWatchPct) || 80)) : null,
-        quizQuestions: quizMode
-          ? quizQuestions.map((question) => ({
-              ...question,
-              prompt: question.prompt.trim(),
-              options: question.options.map((option) => option.trim()),
-              explanation: question.explanation.trim(),
-            }))
-          : [],
+        quizQuestions:
+          quizMode || selfCheckMode
+            ? quizQuestions.map((question) => ({
+                ...question,
+                prompt: question.prompt.trim(),
+                options: question.options.map((option) => option.trim()),
+                explanation: question.explanation.trim(),
+              }))
+            : [],
         quizPassingScore: Math.min(100, Math.max(1, Number(quizPassingScore) || 80)),
+        ...(quizMode && drawCount > 0 ? { quizDrawCount: drawCount } : {}),
         durationMin: Number(durationMin) || 0,
       }
       if (lessonId) {
@@ -610,7 +625,8 @@ function LessonEditorModal({
               : { clearLiveSchedule: kind !== 'live' || !liveStartAt }),
             clearLiveSettings: kind !== 'live',
             clearMinimumWatchPct: kind !== 'video',
-            clearQuiz: !quizMode,
+            clearQuiz: !(quizMode || selfCheckMode) || quizQuestions.length === 0,
+            ...(quizMode ? { quizDrawCount: drawCount } : {}),
           },
         })
       } else {
@@ -1007,19 +1023,45 @@ function LessonEditorModal({
             />
           </Field>
         )}
-        {quizMode && (
+        {(quizMode || selfCheckMode) && (
           <section className="rounded-lg border border-ink-100 bg-paper-hover p-4">
+            {selfCheckMode && (
+              <div className="mb-3">
+                <div className="text-sm font-bold text-ink-900">Самопроверка после урока</div>
+                <p className="mt-1 text-xs leading-5 text-ink-500">
+                  Необязательно. Фармацевт отвечает после текста и сразу видит, верно ли и почему.
+                  Урок засчитывается, когда все ответы верные.
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <Field label="Проходной балл, %">
-                <Input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={quizPassingScore}
-                  disabled={!canManage}
-                  onChange={(event) => setQuizPassingScore(event.target.value)}
-                />
-              </Field>
+              {quizMode && (
+                <Field label="Проходной балл, %">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={quizPassingScore}
+                    disabled={!canManage}
+                    onChange={(event) => setQuizPassingScore(event.target.value)}
+                  />
+                </Field>
+              )}
+              {quizMode && (
+                <Field
+                  label="Вопросов в попытке"
+                  hint={`Пусто: все ${quizQuestions.length}. Каждая попытка берёт столько случайных вопросов.`}
+                >
+                  <Input
+                    type="number"
+                    min={0}
+                    max={quizQuestions.length}
+                    value={quizDrawCount}
+                    disabled={!canManage}
+                    onChange={(event) => setQuizDrawCount(event.target.value)}
+                  />
+                </Field>
+              )}
               {canManage && (
                 <Button
                   size="sm"

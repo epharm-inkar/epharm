@@ -504,6 +504,8 @@ data class QuizSubmissionResultDto(
     val totalQuestions: Int,
     val attempt: Int,
     val assignment: TrainingAssignmentDto,
+    /** After a failed attempt: lessons whose questions were missed, to repeat before the next try. */
+    val weakLessonIds: List<String> = emptyList(),
 ) {
     // Cached /learn clients require this array; per-question results must stay hidden.
     val questions: List<Any> get() = emptyList()

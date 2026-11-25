@@ -15,7 +15,6 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
   Clock3,
   CircleDollarSign,
@@ -58,6 +57,11 @@ import { currentLearnerTranslate, learnerTranslate, useLearnerT } from './learne
 import type { CourseLiveRoomDto } from '@/lib/api-types'
 import { parseLoginIdentifier } from './login-identifier'
 import { GuardedVideo, type GuardedVideoProgress } from './GuardedVideo'
+import { CoursePath } from './course/CoursePath'
+import { FinalTest } from './course/FinalTest'
+import { LessonBlock, LessonReader } from './course/LessonReader'
+import { lessonSections } from './course/lessonContent'
+import { SelfCheck, type SelfCheckQuestion } from './course/SelfCheck'
 
 type Tokens = {
   accessToken: string
@@ -291,8 +295,13 @@ type Lesson = {
     id: string
     prompt: string
     options: string[]
+    /** Present only for self-check questions of text and video lessons; graded tests never send it. */
+    correctOption?: number | null
+    explanation?: string
+    lessonId?: string
   }>
   quizPassingScore?: number
+  quizDrawCount?: number | null
   quizScore?: number | null
   quizAttempts?: number
   durationMin?: number
@@ -363,6 +372,7 @@ type QuizSubmissionResult = {
   totalQuestions: number
   attempt: number
   assignment: Assignment
+  weakLessonIds?: string[]
 }
 
 type Overview = {
@@ -3531,12 +3541,29 @@ function AssignmentView({
   const cancelled = assignment.status === 'cancelled'
   const startsLater = assignment.status === 'scheduled' || assignment.status === 'planned'
   const canStart = !completed && !cancelled && !assignment.startedAt && !startsLater
+  const courseLessons = assignment.stages
+    .filter((stage) => stage.status !== 'locked')
+    .flatMap((stage) =>
+      [...(stage.course?.lessons ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    )
+  const doneLessons = courseLessons.filter(lessonCompleted).length
+  const nextLesson = completed
+    ? undefined
+    : courseLessons.find((lesson) => !lessonCompleted(lesson))
+  const openNext = async () => {
+    if (!nextLesson) return
+    if (canStart) await onStart()
+    onOpenLesson(nextLesson.id)
+  }
   return (
     <div>
       <button className="btn btn-ghost mb-4 -ml-2" onClick={onBack}>
         <ArrowLeft size={18} /> {t('Обучение')}
       </button>
       <section className="rounded-3xl bg-white p-5 shadow-card sm:p-7">
+        <h1 className="mb-3 text-2xl font-extrabold leading-8 text-ink-900 sm:text-3xl sm:leading-10">
+          {assignment.programName}
+        </h1>
         <div className="flex flex-wrap items-center gap-2">
           <span className="chip chip-green">{statusText(assignment.status)}</span>
           {assignment.required && <span className="chip chip-blue">{t('Обязательно')}</span>}
@@ -3553,13 +3580,17 @@ function AssignmentView({
           </p>
         )}
         <div className="mt-5 flex items-center gap-3">
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-paper-input">
+          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-paper-input">
             <div
-              className="h-full rounded-full bg-brand-green-600"
+              className="h-full rounded-full bg-brand-green-600 transition-[width]"
               style={{ width: `${assignment.progressPct}%` }}
             />
           </div>
-          <strong className="text-sm text-brand-green-700">{assignment.progressPct}%</strong>
+          <strong className="shrink-0 text-sm text-brand-green-700">
+            {courseLessons.length > 0
+              ? t('{done} из {total} уроков', { done: doneLessons, total: courseLessons.length })
+              : `${assignment.progressPct}%`}
+          </strong>
         </div>
         <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs font-semibold text-ink-400">
           <span className="flex items-center gap-1.5">
@@ -3575,14 +3606,29 @@ function AssignmentView({
             </span>
           )}
         </div>
-        {canStart && (
+        {nextLesson ? (
           <button
-            className="btn btn-primary btn-md mt-5 w-full sm:w-auto"
+            className="btn btn-primary btn-lg mt-5 w-full sm:w-auto"
             disabled={busy}
-            onClick={onStart}
+            onClick={() => void openNext()}
           >
-            <PlayCircle size={18} /> {busy ? t('Запускаем…') : t('Начать курс')}
+            <PlayCircle size={18} />{' '}
+            {busy
+              ? t('Запускаем…')
+              : doneLessons === 0
+                ? t('Начать курс')
+                : t('Продолжить: {title}', { title: nextLesson.title })}
           </button>
+        ) : (
+          canStart && (
+            <button
+              className="btn btn-primary btn-md mt-5 w-full sm:w-auto"
+              disabled={busy}
+              onClick={onStart}
+            >
+              <PlayCircle size={18} /> {busy ? t('Запускаем…') : t('Начать курс')}
+            </button>
+          )
         )}
         {startsLater && (
           <div className="mt-4 rounded-xl bg-paper-hover px-4 py-3 text-sm font-semibold text-ink-500">
@@ -3651,6 +3697,9 @@ function AssignmentView({
             key={stage.id}
             stage={stage}
             busy={busy}
+            certificateReady={completed}
+            certificateUrl={assignment.certificate?.pdfUrl}
+            programName={assignment.programName}
             onOpenLesson={onOpenLesson}
             onComplete={() => onComplete(stage)}
           />
@@ -3698,18 +3747,36 @@ function AssignmentView({
   )
 }
 
+const titleKey = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[«»"'.,:]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+function sameTitle(a: string, b: string) {
+  return titleKey(a) === titleKey(b)
+}
+
 function StageCard({
   stage,
   busy,
+  certificateReady,
+  certificateUrl,
+  programName,
   onOpenLesson,
   onComplete,
 }: {
   stage: Stage
   busy: boolean
+  certificateReady: boolean
+  certificateUrl?: string | null
+  programName: string
   onOpenLesson: (lessonId: string) => void
   onComplete: () => void | Promise<void>
 }) {
   const t = useLearnerT()
+  const [descriptionOpen, setDescriptionOpen] = useState(false)
   const lessons = useMemo(
     () => [...(stage.course?.lessons ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
     [stage.course?.lessons],
@@ -3728,13 +3795,29 @@ function StageCard({
         <div className="flex items-start justify-between gap-3">
           <div>
             <span className="text-xs font-extrabold uppercase tracking-wider text-brand-green-700">
-              {t('Этап обучения')}
+              {lessons.length > 0 ? t('Уроки курса') : t('Этап обучения')}
             </span>
-            <h2 className="mt-1 text-xl font-extrabold text-ink-900">
-              {stage.course?.title || stage.title}
-            </h2>
+            {/* The page title already names the course; repeat it only when the stage is something else. */}
+            {sameTitle(stage.course?.title || stage.title, programName) ? null : (
+              <h2 className="mt-1 text-xl font-extrabold text-ink-900">
+                {stage.course?.title || stage.title}
+              </h2>
+            )}
             {stage.course?.description && (
-              <p className="mt-2 text-sm leading-6 text-ink-500">{stage.course.description}</p>
+              <div className="mt-2">
+                <p
+                  className={`whitespace-pre-line text-sm leading-6 text-ink-500 ${descriptionOpen ? '' : 'line-clamp-3'}`}
+                >
+                  {stage.course.description}
+                </p>
+                <button
+                  type="button"
+                  className="mt-1 text-xs font-extrabold text-brand-green-700 hover:underline"
+                  onClick={() => setDescriptionOpen((open) => !open)}
+                >
+                  {descriptionOpen ? t('Свернуть') : t('О курсе подробнее')}
+                </button>
+              </div>
             )}
           </div>
           {completed && (
@@ -3756,23 +3839,26 @@ function StageCard({
         )}
       </div>
 
-      <div className="divide-y divide-ink-100">
-        {lessons.map((lesson, index) => (
-          <LessonRow
-            key={lesson.id}
-            lesson={lesson}
-            number={index + 1}
-            read={completed || lessonCompleted(lesson)}
-            disabled={
-              stage.status === 'locked' ||
-              (!completed &&
-                lessons
-                  .slice(0, index)
-                  .some((previous) => (previous.required ?? true) && !lessonCompleted(previous)))
-            }
-            onOpen={() => onOpenLesson(lesson.id)}
+      {lessons.length > 0 && (
+        <div className="p-3 sm:p-5">
+          <CoursePath
+            lessons={lessons.map((lesson, index) => ({
+              ...lesson,
+              done: completed || lessonCompleted(lesson),
+              locked:
+                stage.status === 'locked' ||
+                (!completed &&
+                  lessons
+                    .slice(0, index)
+                    .some((previous) => (previous.required ?? true) && !lessonCompleted(previous))),
+            }))}
+            certificateReady={certificateReady}
+            certificateUrl={certificateUrl}
+            onOpenLesson={onOpenLesson}
           />
-        ))}
+        </div>
+      )}
+      <div className="divide-y divide-ink-100">
         {lessons.length === 0 && stage.contentUrl && (
           <a
             className="flex items-center gap-2 p-5 font-bold text-brand-green-700 hover:bg-paper-hover"
@@ -3809,223 +3895,6 @@ function StageCard({
         </div>
       )}
     </section>
-  )
-}
-
-type LessonContentBlock =
-  | { kind: 'heading' | 'paragraph'; text: string }
-  | { kind: 'list'; items: string[]; ordered: boolean }
-
-type LessonContentSection = {
-  title: string
-  blocks: LessonContentBlock[]
-}
-
-function parseLessonContent(content: string): LessonContentBlock[] {
-  const lines = content
-    .replace(/\r/g, '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-  const blocks: LessonContentBlock[] = []
-  const sectionHeading = /^\d+(?:\.\d+)+(?:[.)])?\s+\S/
-  const bulletItem = /^[-•–—]\s+/
-  const numberedItem = /^\d+[.)]\s+/
-  let index = 0
-
-  while (index < lines.length) {
-    const line = lines[index]
-    if (sectionHeading.test(line)) {
-      blocks.push({ kind: 'heading', text: line })
-      index += 1
-      continue
-    }
-
-    const explicitList = bulletItem.test(line) || numberedItem.test(line)
-    if (explicitList) {
-      const ordered = numberedItem.test(line)
-      const items: string[] = []
-      while (index < lines.length) {
-        const candidate = lines[index]
-        const matches = ordered ? numberedItem.test(candidate) : bulletItem.test(candidate)
-        if (!matches) break
-        items.push(candidate.replace(ordered ? numberedItem : bulletItem, '').trim())
-        index += 1
-      }
-      blocks.push({ kind: 'list', items, ordered })
-      continue
-    }
-
-    if (line.endsWith(':')) {
-      const items: string[] = []
-      let cursor = index + 1
-      while (cursor < lines.length) {
-        const candidate = lines[cursor]
-        if (sectionHeading.test(candidate) || candidate.endsWith(':')) break
-        items.push(candidate.replace(bulletItem, '').replace(numberedItem, '').trim())
-        cursor += 1
-        if (
-          !bulletItem.test(candidate) &&
-          !numberedItem.test(candidate) &&
-          /[.!?]$/.test(candidate)
-        )
-          break
-      }
-      if (items.length >= 2) {
-        blocks.push({ kind: 'paragraph', text: line }, { kind: 'list', items, ordered: false })
-        index = cursor
-        continue
-      }
-    }
-
-    blocks.push({ kind: 'paragraph', text: line })
-    index += 1
-  }
-
-  return blocks
-}
-
-function splitLessonContentIntoSections(
-  blocks: LessonContentBlock[],
-  fallbackTitle: string,
-): LessonContentSection[] {
-  const sections: LessonContentSection[] = []
-  let current: LessonContentSection = { title: fallbackTitle, blocks: [] }
-
-  for (const block of blocks) {
-    if (block.kind === 'heading') {
-      if (current.blocks.length > 0) sections.push(current)
-      current = { title: block.text, blocks: [] }
-      continue
-    }
-    current.blocks.push(block)
-  }
-
-  if (current.blocks.length > 0 || sections.length === 0) sections.push(current)
-  return sections
-}
-
-function LessonContent({ content }: { content: string }) {
-  const t = useLearnerT()
-  const blocks = useMemo(() => parseLessonContent(content), [content])
-  const sections = useMemo(() => splitLessonContentIntoSections(blocks, t('Введение')), [blocks, t])
-  const [selection, setSelection] = useState({ content, index: 0 })
-  const activeSection = selection.content === content ? selection.index : 0
-  const selectedSection = sections[Math.min(activeSection, sections.length - 1)]
-  const selectSection = (index: number | ((current: number) => number)) => {
-    setSelection((current) => {
-      const currentIndex = current.content === content ? current.index : 0
-      return {
-        content,
-        index: typeof index === 'function' ? index(currentIndex) : index,
-      }
-    })
-  }
-
-  const renderBlock = (block: LessonContentBlock, index: number) => {
-    if (block.kind === 'list') {
-      const List = block.ordered ? 'ol' : 'ul'
-      return (
-        <List
-          key={`${block.kind}-${index}`}
-          className="grid gap-2.5 rounded-2xl border border-brand-green-100 bg-white p-4 sm:p-5"
-        >
-          {block.items.map((item, itemIndex) => (
-            <li
-              key={`${item}-${itemIndex}`}
-              className="flex min-w-0 items-start gap-3 text-sm leading-6 text-ink-700 sm:text-[15px]"
-            >
-              <span
-                className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-green-500"
-                aria-hidden="true"
-              />
-              <span className="min-w-0 break-words">{item}</span>
-            </li>
-          ))}
-        </List>
-      )
-    }
-    return (
-      <p
-        key={`${block.kind}-${index}`}
-        className="break-words text-sm leading-7 text-ink-700 sm:text-[15px] sm:leading-7"
-      >
-        {block.text}
-      </p>
-    )
-  }
-
-  if (!selectedSection) return null
-
-  return (
-    <div className="lesson-section-reader">
-      {sections.length > 1 && (
-        <div className="lesson-section-tabs" role="tablist" aria-label={t('Разделы урока')}>
-          {sections.map((section, index) => (
-            <button
-              key={`${section.title}-${index}`}
-              id={`lesson-section-tab-${index}`}
-              type="button"
-              role="tab"
-              aria-selected={activeSection === index}
-              aria-controls={`lesson-section-panel-${index}`}
-              className={`lesson-section-tab ${activeSection === index ? 'is-active' : ''}`}
-              onClick={() => selectSection(index)}
-            >
-              <span className="lesson-section-number">{String(index + 1).padStart(2, '0')}</span>
-              <span className="line-clamp-2">{section.title}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div
-        id={`lesson-section-panel-${activeSection}`}
-        role="tabpanel"
-        aria-labelledby={`lesson-section-tab-${activeSection}`}
-        className="lesson-section-panel"
-      >
-        <div className="mb-5 flex items-start justify-between gap-4 border-b border-ink-100 pb-4">
-          <div>
-            <div className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-brand-green-700">
-              {t('Раздел {current} из {total}', {
-                current: activeSection + 1,
-                total: sections.length,
-              })}
-            </div>
-            <h4 className="mt-1 text-lg font-extrabold leading-6 text-ink-900">
-              {selectedSection.title}
-            </h4>
-          </div>
-          {sections.length > 1 && (
-            <span className="shrink-0 rounded-full bg-brand-green-50 px-2.5 py-1 text-[10px] font-extrabold text-brand-green-700">
-              {Math.round(((activeSection + 1) / sections.length) * 100)}%
-            </span>
-          )}
-        </div>
-        <div className="max-w-4xl space-y-4">{selectedSection.blocks.map(renderBlock)}</div>
-        {sections.length > 1 && (
-          <div className="mt-7 flex items-center justify-between gap-3 border-t border-ink-100 pt-5">
-            <button
-              type="button"
-              className="btn btn-outline btn-md"
-              disabled={activeSection === 0}
-              onClick={() => selectSection((current) => Math.max(0, current - 1))}
-            >
-              <ArrowLeft size={16} /> {t('Предыдущий раздел')}
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-md"
-              disabled={activeSection === sections.length - 1}
-              onClick={() => selectSection((current) => Math.min(sections.length - 1, current + 1))}
-            >
-              {t('Следующий раздел')} <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
   )
 }
 
@@ -4072,6 +3941,9 @@ function LessonPage({
   const lesson = lessons[index]
   const [watchedProgress, setWatchedProgress] = useState<Record<string, number>>({})
   const [saving, setSaving] = useState(false)
+  // Per lesson: the text was read to the end, the self-check answered (first reading only).
+  const [readerDone, setReaderDone] = useState<Record<string, boolean>>({})
+  const [selfCheckDone, setSelfCheckDone] = useState<Record<string, boolean>>({})
   const [liveState, setLiveState] = useState({
     lessonId: lesson?.id ?? lessonId,
     ended: lesson?.liveStatus === 'ended',
@@ -4125,6 +3997,29 @@ function LessonPage({
   const threshold = lessonThreshold(lesson)
 
   const effectiveProgress = Math.max(watchedProgress[lesson.id] ?? 0, lesson.progressPct ?? 0)
+  const selfCheckQuestions: SelfCheckQuestion[] = quizLesson
+    ? []
+    : (lesson.quizQuestions ?? []).flatMap((question) =>
+        typeof question.correctOption === 'number'
+          ? [
+              {
+                id: question.id,
+                prompt: question.prompt,
+                options: question.options,
+                correctOption: question.correctOption,
+                explanation: question.explanation,
+              },
+            ]
+          : [],
+      )
+  const textGated = !quizLesson && !liveLesson && !!lesson.content?.trim()
+  const readerFinished = read || !textGated || !!readerDone[lesson.id]
+  const selfCheckFinished = read || selfCheckQuestions.length === 0 || !!selfCheckDone[lesson.id]
+  const lessonTitles = Object.fromEntries(lessons.map((item) => [item.id, item.title]))
+  const scrollToStep = (id: string) =>
+    window.requestAnimationFrame(() =>
+      document.getElementById(id)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }),
+    )
   const blockedByPrevious = lessons
     .slice(0, index)
     .find((previousLesson) => (previousLesson.required ?? true) && !lessonCompleted(previousLesson))
@@ -4336,26 +4231,69 @@ function LessonPage({
             </section>
           )}
 
-          {lesson.content && (
-            <section className="overflow-hidden rounded-3xl border border-ink-100 bg-paper-hover">
-              <div className="flex items-center gap-3 border-b border-ink-100 bg-white px-4 py-4 sm:px-6">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-brand-green-700 shadow-sm">
-                  <BookOpen size={18} />
-                </span>
-                <h3 className="text-base font-extrabold text-ink-900">{t('Материал урока')}</h3>
-              </div>
-              <div className="p-3 sm:p-5">
-                <LessonContent content={lesson.content} />
-              </div>
-            </section>
+          {lesson.content && quizLesson && (
+            <div className="space-y-3">
+              {lessonSections(lesson.content).map((section, sectionIndex) => (
+                <div key={`${section.title ?? 'intro'}-${sectionIndex}`} className="space-y-3">
+                  {section.title && (
+                    <h3 className="text-lg font-extrabold text-ink-900">{section.title}</h3>
+                  )}
+                  {section.blocks.map((block, blockIndex) => (
+                    <LessonBlock key={`${block.kind}-${blockIndex}`} block={block} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {lesson.content && !quizLesson && (
+            <LessonReader
+              key={lesson.id}
+              content={lesson.content}
+              gated={!read}
+              finishLabel={selfCheckQuestions.length > 0 ? t('К самопроверке') : t('Готово')}
+              onFinished={() => {
+                setReaderDone((current) => ({ ...current, [lesson.id]: true }))
+                scrollToStep(
+                  selfCheckQuestions.length > 0
+                    ? `self-check-${lesson.id}`
+                    : `lesson-finish-${lesson.id}`,
+                )
+              }}
+            />
+          )}
+
+          {selfCheckQuestions.length > 0 && readerFinished && (
+            <div id={`self-check-${lesson.id}`} className="scroll-mt-24">
+              <SelfCheck
+                key={lesson.id}
+                questions={selfCheckQuestions}
+                seed={`${assignment.id}:${lesson.id}`}
+                passed={read}
+                onPassed={() => {
+                  setSelfCheckDone((current) => ({ ...current, [lesson.id]: true }))
+                  scrollToStep(`lesson-finish-${lesson.id}`)
+                }}
+              />
+            </div>
           )}
 
           {quizLesson && (lesson.quizQuestions?.length ?? 0) > 0 && (
-            <QuizLesson
+            <FinalTest
               key={`${assignment.id}:${lesson.id}`}
-              lesson={lesson}
+              lessonId={lesson.id}
+              questions={(lesson.quizQuestions ?? []).map(({ id, prompt, options }) => ({
+                id,
+                prompt,
+                options,
+              }))}
+              passingScore={lesson.quizPassingScore ?? 80}
+              attemptsUsed={lesson.quizAttempts ?? 0}
+              bestScore={lesson.quizScore ?? null}
               completed={read}
+              lessonTitles={lessonTitles}
               onSubmit={(answers) => onSubmitQuiz(currentStage, lesson, answers)}
+              onOpenLesson={onOpenLesson}
             />
           )}
 
@@ -4445,7 +4383,10 @@ function LessonPage({
             )}
         </div>
 
-        <footer className="border-t border-ink-100 bg-paper-hover p-5 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-6">
+        <footer
+          id={`lesson-finish-${lesson.id}`}
+          className="scroll-mt-24 border-t border-ink-100 bg-paper-hover p-5 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-6"
+        >
           <div className="mb-3 flex gap-2 sm:mb-0">
             {previous && (
               <button className="btn btn-outline btn-md" onClick={() => onOpenLesson(previous.id)}>
@@ -4460,7 +4401,9 @@ function LessonPage({
               saving ||
               (videoLesson && !read && effectiveProgress < threshold) ||
               (quizLesson && !read) ||
-              (liveLesson && !read && !liveEnded)
+              (liveLesson && !read && !liveEnded) ||
+              !readerFinished ||
+              !selfCheckFinished
             }
             onClick={finishLesson}
           >
@@ -4470,12 +4413,16 @@ function LessonPage({
               : liveLesson && !read && !liveEnded
                 ? t('Дождитесь окончания эфира')
                 : videoLesson && !read && effectiveProgress < threshold
-                  ? t('Просмотрите ещё {progress}%', { progress: threshold - effectiveProgress })
-                  : next
-                    ? read
-                      ? t('Следующий урок')
-                      : t('Урок изучен — далее')
-                    : t('Завершить курс')}
+                  ? t('Досмотрите видео')
+                  : !readerFinished
+                    ? t('Дочитайте урок')
+                    : !selfCheckFinished
+                      ? t('Ответьте на вопросы самопроверки')
+                      : next
+                        ? read
+                          ? t('Следующий урок')
+                          : t('Урок изучен, дальше')
+                        : t('Завершить курс')}
           </button>
         </footer>
       </div>
@@ -4897,223 +4844,9 @@ function learnerEmbedUrl(
   }
 }
 
-function QuizLesson({
-  lesson,
-  completed,
-  onSubmit,
-}: {
-  lesson: Lesson
-  completed: boolean
-  onSubmit: (answers: Record<string, number>) => Promise<QuizSubmissionResult | null>
-}) {
-  const t = useLearnerT()
-  const questions = lesson.quizQuestions ?? []
-  const [answers, setAnswers] = useState<Record<string, number>>({})
-  const [result, setResult] = useState<QuizSubmissionResult | null>(null)
-  const [retryStarted, setRetryStarted] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-
-  async function submit() {
-    const firstUnanswered = questions.find((question) => answers[question.id] == null)
-    if (firstUnanswered) {
-      setError(t('Ответьте на все вопросы'))
-      window.requestAnimationFrame(() => {
-        const target = document.getElementById(`quiz-question-card-${firstUnanswered.id}`)
-        target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
-        target?.focus({ preventScroll: true })
-      })
-      return
-    }
-    setSubmitting(true)
-    setError('')
-    const nextResult = await onSubmit(answers)
-    if (nextResult) {
-      setResult(nextResult)
-      setAnswers({})
-    }
-    setSubmitting(false)
-  }
-
-  const previousAttempt =
-    !retryStarted && (lesson.quizAttempts ?? 0) > 0 && lesson.quizScore != null
-  if (result || completed || previousAttempt) {
-    const passed = result?.passed ?? completed
-    const score = result?.score ?? lesson.quizScore
-    const attempt = result?.attempt ?? lesson.quizAttempts
-    return (
-      <section
-        aria-live="polite"
-        className={`rounded-2xl border p-5 ${passed ? 'border-brand-green-200 bg-brand-green-50 text-brand-green-800' : 'border-ink-100 bg-paper-hover text-ink-800'}`}
-      >
-        <div className="flex items-center gap-3">
-          {passed ? <CheckCircle2 size={24} /> : <RefreshCw size={24} />}
-          <div>
-            <div className="font-extrabold">
-              {passed ? t('Тест пройден') : t('Тест не пройден')}
-            </div>
-            {score != null && (
-              <div className="mt-1 text-sm font-semibold">
-                {t(result ? 'Результат: {score}%' : 'Лучший результат: {score}%', { score })}
-                {!!attempt && (
-                  <> · {t(result ? 'Попытка {attempt}' : 'Попыток: {attempt}', { attempt })}</>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-        <p className="mt-3 text-sm leading-6">
-          {passed
-            ? t('Продолжите обучение с помощью кнопки ниже.')
-            : t('Повторите материалы и попробуйте ещё раз.')}
-        </p>
-        {!passed && (
-          <button
-            type="button"
-            className="btn btn-outline btn-md mt-4"
-            disabled={submitting}
-            onClick={() => {
-              setAnswers({})
-              setResult(null)
-              setRetryStarted(true)
-              setError('')
-            }}
-          >
-            <RefreshCw size={17} /> {t('Повторить тест')}
-          </button>
-        )}
-      </section>
-    )
-  }
-
-  return (
-    <section className="rounded-2xl border border-ink-100 bg-paper-hover p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="font-extrabold text-ink-900">{t('Тест')}</h3>
-          <p className="mt-1 text-sm text-ink-500">
-            {t('Выберите один вариант ответа в каждом вопросе.')}
-          </p>
-        </div>
-        <span className="chip chip-blue">
-          {t('Проходной балл: {score}%', { score: lesson.quizPassingScore ?? 80 })}
-        </span>
-      </div>
-
-      <div className="mt-5 space-y-4">
-        {questions.map((question, questionIndex) => {
-          return (
-            <div
-              key={question.id}
-              id={`quiz-question-card-${question.id}`}
-              role="group"
-              tabIndex={-1}
-              aria-labelledby={`quiz-question-${question.id}`}
-              className={`rounded-xl border bg-white p-4 outline-none transition focus:ring-4 focus:ring-red-100 ${error && answers[question.id] == null ? 'border-red-300' : 'border-ink-100'}`}
-            >
-              <div
-                id={`quiz-question-${question.id}`}
-                className="text-sm font-extrabold leading-5 text-ink-900"
-              >
-                {t('Вопрос {number}', { number: questionIndex + 1 })}. {question.prompt}
-              </div>
-              <div className="mt-3 space-y-2">
-                {question.options.map((option, optionIndex) => {
-                  const selected = answers[question.id] === optionIndex
-                  return (
-                    <label
-                      key={`${question.id}-${optionIndex}`}
-                      data-answer-state={selected ? 'selected' : 'idle'}
-                      className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-sm font-semibold transition ${
-                        selected
-                          ? 'border-brand-green-400 bg-brand-green-50 text-ink-800'
-                          : 'border-ink-100 bg-white text-ink-700 hover:bg-paper-hover'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name={`quiz-${lesson.id}-${question.id}`}
-                        checked={selected}
-                        disabled={submitting}
-                        onChange={() =>
-                          setAnswers((current) => ({ ...current, [question.id]: optionIndex }))
-                        }
-                      />
-                      <span className="min-w-0 flex-1">{option}</span>
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {error && <div className="mt-4 text-sm font-bold text-accent-danger">{error}</div>}
-      <div className="mt-5 flex justify-end">
-        <button
-          type="button"
-          className="btn btn-primary btn-md"
-          disabled={submitting}
-          onClick={() => void submit()}
-        >
-          {submitting ? <Loader2 className="animate-spin" size={17} /> : <Check size={17} />}
-          {submitting ? t('Отправляем ответы…') : t('Завершить тест')}
-        </button>
-      </div>
-    </section>
-  )
-}
-
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} КБ`
   return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
-}
-
-function LessonRow({
-  lesson,
-  number,
-  read,
-  disabled,
-  onOpen,
-}: {
-  lesson: Lesson
-  number: number
-  read: boolean
-  disabled: boolean
-  onOpen: () => void
-}) {
-  const t = useLearnerT()
-  return (
-    <article>
-      <button
-        className="flex w-full items-center gap-3 p-5 text-left hover:bg-paper-hover disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:bg-white"
-        disabled={disabled}
-        onClick={onOpen}
-      >
-        <span
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-extrabold ${read ? 'bg-brand-green-600 text-white' : disabled ? 'bg-ink-100 text-ink-400' : 'bg-brand-green-100 text-brand-green-700'}`}
-        >
-          {read ? <Check size={18} /> : disabled ? <Lock size={16} /> : number}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-extrabold text-ink-900">{lesson.title}</span>
-          <span className="mt-1 block text-xs font-semibold text-ink-400">
-            {disabled
-              ? t('Сначала завершите предыдущий урок')
-              : lesson.durationMin
-                ? t('{minutes} мин', { minutes: lesson.durationMin })
-                : t('Учебный материал')}
-          </span>
-        </span>
-        {disabled ? (
-          <Lock className="shrink-0 text-ink-300" size={18} />
-        ) : (
-          <ChevronDown className="-rotate-90 shrink-0 text-ink-400" size={20} />
-        )}
-      </button>
-    </article>
-  )
 }
 
 function EventCard({ event, compact = false }: { event: TrainingEvent; compact?: boolean }) {

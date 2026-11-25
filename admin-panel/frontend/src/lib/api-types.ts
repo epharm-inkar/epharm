@@ -116,12 +116,7 @@ export type RuleType = 'substitution' | 'crosssell'
 export type RuleStatus = 'active' | 'paused' | 'draft' | 'archived'
 
 export type TriggerKind =
-  | 'product'
-  | 'mnn'
-  | 'product_any'
-  | 'acc_group'
-  | 'acc_subgroup'
-  | 'acc_mnn'
+  'product' | 'mnn' | 'product_any' | 'acc_group' | 'acc_subgroup' | 'acc_mnn'
 
 /** Stable ACC taxonomy scope used by campaign recommendation triggers. */
 export type PromoTriggerKind = 'product' | 'acc_group' | 'acc_subgroup' | 'acc_mnn'
@@ -784,6 +779,8 @@ export interface CourseQuizQuestionDto {
   options: string[]
   correctOption: number | null
   explanation: string
+  /** Lesson the question checks; a failed test names these lessons to repeat. */
+  lessonId?: string
 }
 
 export interface CourseLessonAttachmentDto {
@@ -817,6 +814,8 @@ export interface CourseLessonDto {
   minimumWatchPct: number | null
   quizQuestions: CourseQuizQuestionDto[]
   quizPassingScore: number
+  /** Test lessons: questions per attempt drawn from the bank; null asks every question. */
+  quizDrawCount?: number | null
   quizScore?: number | null
   quizAttempts?: number
   attachments: CourseLessonAttachmentDto[]
@@ -888,8 +887,10 @@ export interface CreateCourseLessonRequest {
     options: string[]
     correctOption: number
     explanation?: string
+    lessonId?: string | null
   }>
   quizPassingScore?: number
+  quizDrawCount?: number | null
   durationMin?: number
 }
 
@@ -915,6 +916,8 @@ export interface UpdateCourseLessonRequest {
   clearMinimumWatchPct?: boolean
   quizQuestions?: CreateCourseLessonRequest['quizQuestions']
   quizPassingScore?: number
+  /** 0 turns the bank off: every question is asked. */
+  quizDrawCount?: number
   clearQuiz?: boolean
   durationMin?: number
   clearVideo?: boolean
@@ -1369,28 +1372,11 @@ export interface BannerImageUploadDto {
 // Mirrors kz.epharm.training.dto and is shared by the operational admin UI.
 export type TrainingFormat = 'online' | 'hybrid' | 'offline'
 export type TrainingProgramStatus =
-  | 'draft'
-  | 'review'
-  | 'scheduled'
-  | 'published'
-  | 'paused'
-  | 'completed'
-  | 'archived'
+  'draft' | 'review' | 'scheduled' | 'published' | 'paused' | 'completed' | 'archived'
 export type TrainingStageType =
-  | 'material'
-  | 'online_course'
-  | 'test'
-  | 'ai_exam'
-  | 'offline_event'
-  | 'manual_review'
+  'material' | 'online_course' | 'test' | 'ai_exam' | 'offline_event' | 'manual_review'
 export type TrainingStageStatus =
-  | 'locked'
-  | 'available'
-  | 'in_progress'
-  | 'waiting_review'
-  | 'completed'
-  | 'failed'
-  | 'skipped'
+  'locked' | 'available' | 'in_progress' | 'waiting_review' | 'completed' | 'failed' | 'skipped'
 export type TrainingAssignmentStatus =
   | 'scheduled'
   | 'not_started'
@@ -1409,13 +1395,7 @@ export type TrainingAssignmentStatus =
   | 'cancelled'
 export type TrainingPriority = 'low' | 'normal' | 'high' | 'critical'
 export type OfflineEventStatus =
-  | 'draft'
-  | 'registration'
-  | 'scheduled'
-  | 'in_progress'
-  | 'completed'
-  | 'cancelled'
-  | 'archived'
+  'draft' | 'registration' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'archived'
 export type EventParticipantStatus =
   | 'registered'
   | 'confirmed'

@@ -48,6 +48,8 @@ data class CourseLessonDto(
     val completedAt: Instant? = null,
     val quizScore: Int? = null,
     val quizAttempts: Int = 0,
+    /** Questions per attempt drawn from the bank (test lessons); null asks every question. */
+    val quizDrawCount: Int? = null,
 ) {
     companion object {
         fun of(
@@ -76,6 +78,7 @@ data class CourseLessonDto(
                 CourseQuizQuestionDto.of(it, includeAnswer = includeQuizAnswers)
             },
             quizPassingScore = entity.quizPassingScore,
+            quizDrawCount = entity.quizDrawCount,
             attachments = attachments.map(CourseLessonAttachmentDto::of),
             durationMin = entity.durationMin,
             order = entity.order,
@@ -91,6 +94,7 @@ data class CourseQuizQuestionDto(
     val options: List<String>,
     val correctOption: Int?,
     val explanation: String,
+    val lessonId: String = "",
 ) {
     companion object {
         fun of(question: CourseQuizQuestion, includeAnswer: Boolean): CourseQuizQuestionDto =
@@ -100,6 +104,7 @@ data class CourseQuizQuestionDto(
                 options = question.options,
                 correctOption = question.correctOption.takeIf { includeAnswer },
                 explanation = question.explanation.takeIf { includeAnswer }.orEmpty(),
+                lessonId = question.lessonId,
             )
     }
 }
@@ -157,7 +162,9 @@ data class CourseContentDto(
                 CourseLessonDto.of(
                     it,
                     attachmentsByLesson[it.id].orEmpty(),
-                    includeQuizAnswers = false,
+                    // Graded tests never reach the learner with answers. Questions on a text or video
+                    // lesson are a self-check after reading: the learner sees the answer and why.
+                    includeQuizAnswers = it.kind !in GRADED_QUIZ_KINDS,
                 )
             },
         )
@@ -267,6 +274,8 @@ data class CreateCourseLessonRequest(
     val quizQuestions: List<CourseQuizQuestionRequest> = emptyList(),
     @field:Min(1) @field:Max(100)
     val quizPassingScore: Int = 80,
+    @field:Min(1) @field:Max(50)
+    val quizDrawCount: Int? = null,
     @field:Min(0)
     val durationMin: Int = 0,
 )
@@ -302,6 +311,9 @@ data class UpdateCourseLessonRequest(
     val quizQuestions: List<CourseQuizQuestionRequest>? = null,
     @field:Min(1) @field:Max(100)
     val quizPassingScore: Int? = null,
+    /** Questions per attempt from the bank; 0 turns the bank off (every question is asked). */
+    @field:Min(0) @field:Max(50)
+    val quizDrawCount: Int? = null,
     val clearQuiz: Boolean = false,
     @field:Min(0)
     val durationMin: Int? = null,
@@ -320,9 +332,14 @@ data class CourseQuizQuestionRequest(
     val correctOption: Int,
     @field:Size(max = 2000)
     val explanation: String = "",
+    @field:Size(max = 64)
+    val lessonId: String? = null,
 )
 
 data class ReorderCourseLessonsRequest(
     @field:NotEmpty
     val lessonIds: List<@NotBlank String>,
 )
+
+/** Lesson kinds whose questions are graded on the server; their answers never go to learners. */
+val GRADED_QUIZ_KINDS = setOf(CourseLessonKind.quiz, CourseLessonKind.test)

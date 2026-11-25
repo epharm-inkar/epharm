@@ -48,6 +48,8 @@ data class CourseQuizQuestion(
     val options: List<String> = emptyList(),
     val correctOption: Int = 0,
     val explanation: String = "",
+    /** Lesson the question checks; after a failed attempt the learner is told which lessons to repeat. */
+    val lessonId: String = "",
 )
 
 @Entity
@@ -115,6 +117,10 @@ class CourseLessonEntity(
 
     @Column(name = "quiz_passing_score", nullable = false)
     var quizPassingScore: Int = 80,
+
+    /** Questions per attempt drawn from the bank; null asks every question (test lessons only). */
+    @Column(name = "quiz_draw_count")
+    var quizDrawCount: Int? = null,
 
     @Column(name = "duration_min", nullable = false)
     var durationMin: Int = 0,
