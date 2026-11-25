@@ -45,6 +45,7 @@ public partial class MainWindow
         menu.Items.Add("Открыть ePharm", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => _ = OpenStaffSelfAsync())));
         menu.Items.Add("Мой кабинет в браузере", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => _ = OpenCabinetAsync())));
         menu.Items.Add("Задания аптеки", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => OpenTaskKiosk(activate: true))));
+        menu.Items.Add("Подсказки по чеку", null, (_, _) => Dispatcher.BeginInvoke(new Action(ReopenReceiptRecommendations)));
         _selfTray.ContextMenuStrip = menu;
 
         _selfStatusTimer.Tick += async (_, _) => await RefreshSelfStatusAsync();

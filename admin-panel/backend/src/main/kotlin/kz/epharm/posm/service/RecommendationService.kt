@@ -60,6 +60,23 @@ class RecommendationService(
     companion object {
         /** UX-контракт popup: максимум пять замен и пять cross-sell одновременно. */
         private const val MAX_RECOMMENDATIONS_PER_KIND = 5
+        /** Up to three basket products' worth of offers per kind in one response (one popup tab per product). */
+        private const val MAX_RECOMMENDATIONS_PER_KIND_IN_RESPONSE = 15
+
+        /**
+         * The till shows one tab per basket product (POSM 1.0.95). The product just scanned comes first, so its
+         * offers are never cut by earlier products; each product keeps up to five offers per kind, in the rules
+         * engine's order. Older tills take the first five per kind and so also show the scanned product first.
+         */
+        internal fun rankForTill(matches: List<RuleMatch>, scannedBarcode: String?): List<RuleMatch> {
+            val scanned = scannedBarcode?.trim()?.takeIf(String::isNotEmpty)
+            val ordered = matches.sortedBy { if (scanned != null && it.triggerBarcode?.trim() == scanned) 0 else 1 }
+            fun ofKind(type: kz.epharm.rules.entity.RuleType) = ordered.filter { it.rule.type == type }
+                .groupBy { it.triggerBarcode ?: it.triggerIpartId ?: it.triggerSku ?: it.triggerName.orEmpty() }
+                .values.flatMap { it.take(MAX_RECOMMENDATIONS_PER_KIND) }
+                .take(MAX_RECOMMENDATIONS_PER_KIND_IN_RESPONSE)
+            return ofKind(kz.epharm.rules.entity.RuleType.substitution) + ofKind(kz.epharm.rules.entity.RuleType.crosssell)
+        }
         // Matches the CRM integration's documented PHARMAPAY_BALANCE_MAX_AGE_SECONDS contract.
         private const val MAX_CONFIRMED_STOCK_AGE_SECONDS = 1_800L
     }
@@ -75,10 +92,7 @@ class RecommendationService(
 
         val matchResult = rulesEngine.match(req.cart, req.scannedBarcode, pilotTill)
         val eligible = matchResult.matches.filter { it.recommend.id !in decidedSkus }
-        val ranked = eligible.filter { it.rule.type == kz.epharm.rules.entity.RuleType.substitution }
-            .take(MAX_RECOMMENDATIONS_PER_KIND) +
-            eligible.filter { it.rule.type == kz.epharm.rules.entity.RuleType.crosssell }
-                .take(MAX_RECOMMENDATIONS_PER_KIND)
+        val ranked = rankForTill(eligible, req.scannedBarcode)
 
         // The optional call carries only pharmacy/product context. Pharmacist identity and the
         // receipt session remain inside ePharm. A timeout or malformed response yields an empty

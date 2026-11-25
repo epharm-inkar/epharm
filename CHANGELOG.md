@@ -7,6 +7,12 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- The recommendation popup groups offers by basket product: with several products, one tab per product («Товар · N»),
+  the last scanned one open, each with up to five replacements and five cross-sells; only the open tab counts as
+  shown. «Подсказки по чеку» in the ePharm icon menu reopens every offer of the current receipt after the popup was
+  closed. The server puts the offers of the product just scanned first and keeps up to five per kind for each
+  product (at most fifteen per kind per answer), so an earlier product no longer pushes the new one out; older tills
+  keep taking the first five per kind.
 - POSM 1.0.94, one ePharm icon by the clock: the personal window (name, earnings, profile, cabinet) also shows
   the pharmacy tasks («Задания аптеки», opens the tasks window), so the separate «i» tasks icon is gone. A «?»
   button explains what ePharm is, that no registration is needed, how the bonus per package is earned and that the

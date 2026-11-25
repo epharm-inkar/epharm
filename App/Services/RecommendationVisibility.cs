@@ -31,10 +31,7 @@ public static class RecommendationVisibility
     public static List<Recommendation> ForCart(IEnumerable<Recommendation> visible, Func<Recommendation, bool> applies) =>
         visible.Where(applies).ToList();
 
-    private static IEnumerable<Recommendation> Limit(IEnumerable<Recommendation> source)
-    {
-        var all = source.Where(r => r != null).ToList();
-        return all.Where(r => r.IsSubstitution).Take(RecommendationPopupModelBuilder.MaxPerKind)
-            .Concat(all.Where(r => !r.IsSubstitution).Take(RecommendationPopupModelBuilder.MaxPerKind));
-    }
+    // Per basket product: the popup has one tab per product, each with at most 5 replacements and 5 cross-sells.
+    private static IEnumerable<Recommendation> Limit(IEnumerable<Recommendation> source) =>
+        RecommendationPopupModelBuilder.LimitPerTrigger(source);
 }

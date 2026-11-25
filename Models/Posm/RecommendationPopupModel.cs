@@ -44,6 +44,28 @@ namespace CustomerDisplay.Models.Posm
     {
         public const int MaxPerKind = 5;
 
+        /// <summary>The basket product an offer belongs to: barcode, then Standard-N part, then catalogue id or name.</summary>
+        public static string TriggerKey(Recommendation r) =>
+            new[] { r.TriggerBarcode, r.TriggerIpartId, r.TriggerSku, r.TriggerName }
+                .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? "";
+
+        /// <summary>At most <see cref="MaxPerKind"/> replacements and cross-sells per basket product, order kept.</summary>
+        public static List<Recommendation> LimitPerTrigger(IEnumerable<Recommendation>? source)
+        {
+            var taken = new Dictionary<(string, bool), int>();
+            var result = new List<Recommendation>();
+            foreach (var r in source ?? Array.Empty<Recommendation>())
+            {
+                if (r == null) continue;
+                var key = (TriggerKey(r), r.IsSubstitution);
+                taken.TryGetValue(key, out var n);
+                if (n >= MaxPerKind) continue;
+                taken[key] = n + 1;
+                result.Add(r);
+            }
+            return result;
+        }
+
         public static RecommendationPopupModel Build(IEnumerable<Recommendation>? recommendations)
         {
             var all = recommendations?.Where(r => r != null).ToList() ?? new List<Recommendation>();
