@@ -6,6 +6,8 @@ import kz.epharm.pharmacists.dto.CreatePharmacistRequest
 import kz.epharm.pharmacists.dto.PharmacistDto
 import kz.epharm.pharmacists.dto.UpdatePharmacistRequest
 import kz.epharm.pharmacists.entity.PharmacistStatus
+import kz.epharm.pharmacists.service.PharmacistActivityService
+import kz.epharm.pharmacists.service.PharmacistCoverageDto
 import kz.epharm.pharmacists.service.PharmacistService
 import kz.epharm.pharmacists.service.StandardNPharmacistSyncService
 import kz.epharm.pharmacists.service.StandardNSyncResult
@@ -23,7 +25,13 @@ import org.springframework.web.bind.annotation.RestController
 class PharmacistController(
     private val pharmacistService: PharmacistService,
     private val standardNSyncService: StandardNPharmacistSyncService,
+    private val activityService: PharmacistActivityService,
 ) {
+
+    /** Coverage of the network by ePharm, by day (network-wide: whole-network roles only). */
+    @GetMapping("/coverage")
+    fun coverage(@RequestParam(defaultValue = "30") days: Int): PharmacistCoverageDto =
+        activityService.coverage(days)
 
     @GetMapping
     fun list(

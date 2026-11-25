@@ -133,6 +133,15 @@ export const TRAINING_NAVIGATION: readonly TrainingNavigationItem[] = [
   },
 ]
 
+/** Tabs always in sight on the «Обучение» page; the others sit under «Ещё» (25.11.2026). */
+export const PRIMARY_TRAINING_TABS: readonly TrainingTab[] = [
+  'overview',
+  'programs',
+  'courses',
+  'assignments',
+  'certificates',
+]
+
 export const TRAINING_NAVIGATION_GROUPS = [
   'Обзор',
   'Контент',

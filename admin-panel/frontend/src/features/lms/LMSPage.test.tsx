@@ -21,8 +21,7 @@ const exportCaps = vi.hoisted(() => ({
   isFetchedAfterMount: true,
   isError: false,
   data: { managed: false } as
-    | { managed: boolean; trainingActions?: Record<string, boolean> }
-    | undefined,
+    { managed: boolean; trainingActions?: Record<string, boolean> } | undefined,
   canExportTrainingCourses: false,
   canExportTrainingPrograms: false,
   canExportTrainingAssignments: false,
@@ -536,14 +535,26 @@ describe('Обучение — операционный раздел', () => {
     expect(screen.getByText('2 250 ₸')).toBeInTheDocument()
   })
 
-  it('в учебном workspace получает активный раздел из URL и не дублирует sidebar вкладками', () => {
+  it('в учебном workspace получает активный раздел из URL и показывает одну навигацию вкладками', async () => {
     useUiStore.setState({ authedUser: USERS.lms })
+    const user = userEvent.setup()
 
     renderPage('/lms?tab=programs')
 
     expect(screen.getByRole('heading', { level: 1, name: 'Программы' })).toBeInTheDocument()
     expect(screen.getByTestId('training-programs-table')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Программы' })).not.toBeInTheDocument()
+    // The sidebar has no training submenu any more: the page tabs are the only navigation.
+    expect(screen.getByRole('button', { name: 'Программы' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.queryByRole('button', { name: 'Посещаемость' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Ещё/ }))
+    await user.click(screen.getByRole('menuitem', { name: /Посещаемость/ }))
+    expect(screen.getByRole('button', { name: 'Посещаемость' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
   })
 
   it('неизвестный учебный URL безопасно возвращает на дашборд', () => {
@@ -1087,7 +1098,8 @@ describe('Обучение — операционный раздел', () => {
     lmsHooks.useOfflineEvents.mockReturnValue(queryResult([offlineEvent]))
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByRole('button', { name: 'Офлайн-мероприятия' }))
+    await user.click(screen.getByRole('button', { name: /Ещё/ }))
+    await user.click(screen.getByRole('menuitem', { name: /Офлайн-мероприятия/ }))
     await user.click(screen.getByRole('button', { name: 'QR-код' }))
     expect(screen.getByRole('dialog', { name: 'QR-код посещаемости' })).toBeInTheDocument()
     expect(screen.getByLabelText('QR-код регистрации на мероприятии')).toBeInTheDocument()
@@ -1099,7 +1111,8 @@ describe('Обучение — операционный раздел', () => {
     lmsHooks.useUpdateOfflineEvent.mockReturnValue(mutationResult(mutate))
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByRole('button', { name: 'Офлайн-мероприятия' }))
+    await user.click(screen.getByRole('button', { name: /Ещё/ }))
+    await user.click(screen.getByRole('menuitem', { name: /Офлайн-мероприятия/ }))
     await user.click(screen.getByRole('button', { name: 'Редактировать событие' }))
     expect(screen.getByRole('dialog', { name: 'Редактировать событие' })).toBeInTheDocument()
     expect(screen.getByLabelText('Программа')).toHaveValue(program.name)
@@ -1122,7 +1135,8 @@ describe('Обучение — операционный раздел', () => {
     lmsHooks.useMarkAttendance.mockReturnValue(mutationResult(mutate))
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByRole('button', { name: 'Посещаемость' }))
+    await user.click(screen.getByRole('button', { name: /Ещё/ }))
+    await user.click(screen.getByRole('menuitem', { name: /Посещаемость/ }))
     await user.click(screen.getByRole('button', { name: 'Участники' }))
     await user.type(screen.getByLabelText(`Оценка ${pharmacist.name}`), '95')
     await user.type(screen.getByLabelText(`Комментарий ${pharmacist.name}`), 'Активно участвовала')
