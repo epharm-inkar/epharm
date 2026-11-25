@@ -779,6 +779,14 @@ body.learner-portal {
   outline-offset: 2px;
 }
 
+/* The phone bottom bar scrolls sideways when enlarged text needs it, and a scroll box clips anything
+   drawn outside it: the focus ring goes inside the tab there (26.11.2026). */
+@media (max-width: 1023px) {
+  .learner-navigation .learner-nav-item:focus-visible {
+    outline-offset: -3px;
+  }
+}
+
 @media (min-width: 768px) {
   .learner-auth-card {
     grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
