@@ -57,6 +57,7 @@ import { currentLearnerTranslate, learnerTranslate, useLearnerT } from './learne
 import type { CourseLiveRoomDto } from '@/lib/api-types'
 import { parseLoginIdentifier } from './login-identifier'
 import { GuardedVideo, type GuardedVideoProgress } from './GuardedVideo'
+import { videoProgressToSave } from './guardedVideoRules'
 import { CoursePath } from './course/CoursePath'
 import { FinalTest } from './course/FinalTest'
 import { LessonBlock, LessonReader } from './course/LessonReader'
@@ -4084,9 +4085,12 @@ function LessonPage({
       ...current,
       [lesson.id]: Math.max(current[lesson.id] ?? 0, progressPct),
     }))
+    // The video alone must not complete a lesson that also has reading or a self-check (26.11.2026);
+    // the watched seconds are saved as they are.
+    const saved = videoProgressToSave(progressPct, threshold, readerFinished && selfCheckFinished)
     const lastSynced = Math.max(lastSyncedProgress.current[lesson.id] ?? 0, lesson.progressPct ?? 0)
-    if (progressPct >= lastSynced + 5 || progressPct >= threshold) {
-      void persistVideoProgress(progressPct, positionSeconds, progress.durationSeconds)
+    if (saved > lastSynced && (saved >= lastSynced + 5 || saved >= threshold - 1)) {
+      void persistVideoProgress(saved, positionSeconds, progress.durationSeconds)
     }
   }
 
