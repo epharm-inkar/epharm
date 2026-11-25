@@ -6,14 +6,16 @@ Path: `App/` and `Models/`.
 
 The owner's requests of 25.11.2026, built for the pilot (not released):
 
-- **Greeting** (`MainWindow.Welcome.cs`, `EpharmGreetingWindow`, rules in `Services/PharmacistGreeting.cs`). The first
-  time the server names the person signed in to Standard-N on a greeting day (05:00 to 05:00, so a night shift is
-  greeted once), a card in the lower right corner says «Доброе утро, Имя Отчество! Желаем хорошего дня» (утро 05-12,
+- **Greeting** (`MainWindow.Welcome.cs`, `EpharmGreetingWindow`, rules in `Services/PharmacistGreeting.cs`). At the
+  first sign-in of a person's shift (the till sees who is signed in to Standard-N at every 15-minute check; 8 hours
+  without them start a new shift, so a night shift 20:00-08:00 is greeted once and a colleague signing in between
+  does not make the first person greeted again), a card in the lower right corner says «Доброе утро, Имя Отчество! Желаем хорошего дня» (утро 05-12,
   день 12-18, вечер 18-23 with «Желаем хорошего вечера», night «Здравствуйте» with «Желаем спокойной смены»), two
   lines on how ePharm helps (no numbers, no money) and the buttons «Что такое ePharm» and «Закрыть». It never takes
   the focus (`WS_EX_NOACTIVATE`), closes by itself after 45 seconds (the countdown waits under the mouse), waits while
-  a recommendation popup is open and stays silent during the works. Once per person per day, also across restarts
-  (`%LOCALAPPDATA%\Epharm\greeting-state.json`; the 1.0.96 `welcome-state.json` still counts for its day). «Имя
+  a recommendation popup is open and stays silent during the works. Once per person per shift, also across restarts
+  (`%LOCALAPPDATA%\Epharm\greeting-state.json` keeps when each person was last seen; the 1.0.96 `welcome-state.json`
+  still counts for its day). «Имя
   Отчество» is everything after the surname of the Standard-N «Фамилия Имя Отчество»; ALL-CAPS names get capitals.
 - **«Что такое ePharm»** (`EpharmPageWindow`, texts in `Services/EpharmHelpContent.cs`) replaces the small «?»: a
   clear entry under the header of the personal window, an item in the icon menu and the greeting's button open a
@@ -25,7 +27,9 @@ The owner's requests of 25.11.2026, built for the pilot (not released):
   cashier change, when the personal window opens, and at once when the minute check of `GET /api/posm/notice` brings
   a newer `messagesAt` (HQ sent or withdrew a notice). An open notice stays in the lower right corner until the
   person closes it with × or «Понятно, закрыть»; several come one after another («1 из 3»). It never takes the
-  focus, waits for the greeting, hides while a recommendation popup is open and during the works. The close is kept
+  focus, waits for the greeting, hides while a recommendation popup is open and during the works. A card whose
+  notice HQ withdrew, whose last day passed or which the person closed on another till leaves the screen at the next
+  check, without a report, and the next open notice takes its place. The close is kept
   on disk at once (`messages-state.json`, at most 500 entries, 45 days), so a lost report or a restart never brings a
   closed notice back; `.../{id}/shown` and `.../{id}/closed` are resent until the server answers (400, 403, 404 and
   409 end the retries). The personal window has a «Уведомления» row (new ones in red) and the icon menu an item;

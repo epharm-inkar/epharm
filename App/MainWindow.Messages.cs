@@ -109,6 +109,13 @@ public partial class MainWindow
     {
         var user = CurrentSelfUserId();
         if (_messageWindow != null && !string.Equals(_messageWindowUser, user, StringComparison.OrdinalIgnoreCase)) CloseHqMessageQuietly();
+        // HQ withdrew the notice on screen, its last day passed or the person closed it on another till: it goes
+        // without a report, and the next open one (if any) takes its place.
+        if (_messageWindow != null && _messageInbox != null && !_messageInbox.IsPending(_messageWindowUser, _messageWindow.Message.Id))
+        {
+            Log("ePharm: уведомление HQ " + _messageWindow.Message.Id + " больше не ждёт закрытия, убрано с экрана");
+            CloseHqMessageQuietly();
+        }
         if (_hqMessagesDisposed || _messageWindow != null || user.Length == 0 || _messageInbox == null) return;
         // The corner is busy: the greeting or «ePharm снова работает» goes first.
         if (EpharmPaused || _recoWindow != null || _greetingWindow != null || _liveToast != null) return;

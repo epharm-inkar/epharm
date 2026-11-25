@@ -7,10 +7,10 @@ namespace CustomerDisplay;
 
 /// <summary>
 /// The greeting (1.0.99, Grigoriy 25.11.2026): when the server knows the person signed in to Standard-N at this till,
-/// their first sign-in of the day (from 05:00) brings «Доброе утро, Имя Отчество! Желаем хорошего дня» with two lines on
-/// how ePharm helps and «Что такое ePharm». Once per person per day, also across restarts; never during the works,
-/// never over an open recommendation (it waits for the popup to close) and never takes the focus. The «снова работает»
-/// card counts as today's greeting.
+/// the first sign-in of their shift brings «Доброе утро, Имя Отчество! Желаем хорошего дня» with two lines on how ePharm
+/// helps and «Что такое ePharm». Once per person per shift (again only after 8 hours without them at this till; a night
+/// shift is greeted once), also across restarts; never during the works, never over an open recommendation (it waits
+/// for the popup to close) and never takes the focus. The «снова работает» card counts as the shift's greeting.
 /// </summary>
 public partial class MainWindow
 {
@@ -87,7 +87,19 @@ public partial class MainWindow
         if (_greetingLog != null) return _greetingLog;
         var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Epharm");
         _greetingLogPath = Path.Combine(folder, "greeting-state.json");
-        _greetingLog = GreetingLog.Load(_greetingLogPath, Path.Combine(folder, "welcome-state.json"));
+        _greetingLog = GreetingLog.Load(_greetingLogPath, Path.Combine(folder, "welcome-state.json"), DateTime.Now);
         return _greetingLog;
+    }
+
+    /// <summary>
+    /// The person is signed in at this till now (every status check, whatever the server answers): keeps their shift
+    /// going, so a night shift is not greeted again in the morning and a slow server never starts a new shift.
+    /// </summary>
+    private void NoteSignedInForGreeting(string standardNUserId)
+    {
+        if (string.IsNullOrWhiteSpace(standardNUserId) || _hqMessagesDisposed) return;
+        var log = GreetingLogState();
+        log.Seen(standardNUserId, DateTime.Now);
+        log.Save(_greetingLogPath!, Log);
     }
 }

@@ -92,6 +92,13 @@ namespace CustomerDisplay.Services
 
         public TillMessage? NextToShow(string user) => Pending(user).FirstOrDefault();
 
+        /// <summary>
+        /// Whether a notice on screen may stay: still open for this person. After HQ withdrew it, its last day passed or
+        /// the person closed it on another till, the card leaves the screen without a report (the server needs none).
+        /// </summary>
+        public bool IsPending(string user, string id) =>
+            Pending(user).Any(m => string.Equals(m.Id, id.Trim(), StringComparison.Ordinal));
+
         /// <summary>Every notice of the person for the history, newest first, with closes made here applied.</summary>
         public IReadOnlyList<TillMessage> History(string user) =>
             ServerList(user)

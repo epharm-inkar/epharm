@@ -14,9 +14,6 @@ namespace CustomerDisplay.Services
     /// </summary>
     public static class PharmacistGreeting
     {
-        /// <summary>A greeting day starts at 05:00, so a night shift that crosses midnight is greeted once.</summary>
-        public const int DayStartHour = 5;
-
         /// <summary>How long the window stays when nobody touches it.</summary>
         public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(45);
 
@@ -57,9 +54,6 @@ namespace CustomerDisplay.Services
             return name.Length <= 48 ? name : name[..48].TrimEnd();
         }
 
-        /// <summary>The greeting day of a moment: the calendar day of (now - 5 h).</summary>
-        public static DateTime GreetingDay(DateTime localNow) => localNow.AddHours(-DayStartHour).Date;
-
         private static string Capitalize(string word)
         {
             var letters = word.Where(char.IsLetter).ToList();
@@ -76,68 +70,90 @@ namespace CustomerDisplay.Services
     }
 
     /// <summary>
-    /// Who has been greeted at this till on the current greeting day. Kept on disk so a restart does not greet again;
-    /// a damaged file only costs one extra greeting. Bounded to 200 people.
+    /// Who has been greeted at this till in their current shift. A shift is a stretch in which the person is seen signed
+    /// in to Standard-N at the till with no gap of 8 hours or more: a night shift 20:00-08:00 is greeted once, not again
+    /// in the morning, and a colleague signing in between does not make the first person greeted again. The last time
+    /// each person was seen is kept on disk, so a restart does not greet again; a damaged file only costs one extra
+    /// greeting. At most 200 people, a week back.
     /// </summary>
     public sealed class GreetingLog
     {
+        /// <summary>This long without the person at the till ends their shift: the next sign-in is greeted again.</summary>
+        public static readonly TimeSpan ShiftGap = TimeSpan.FromHours(8);
+
         private const int MaxPeople = 200;
-        private DateTime _day;
-        private readonly HashSet<string> _greeted = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan KeepFor = TimeSpan.FromDays(7);
+        private readonly Dictionary<string, Shift> _people = new(StringComparer.OrdinalIgnoreCase);
 
-        public GreetingLog() { }
-
-        private GreetingLog(DateTime day, IEnumerable<string> greeted)
+        /// <summary>The person is signed in at the till now (every status check); 8 hours without them start a new shift.</summary>
+        public void Seen(string user, DateTime localNow)
         {
-            _day = day;
-            foreach (var user in greeted.Where(u => !string.IsNullOrWhiteSpace(u)).Take(MaxPeople)) _greeted.Add(user.Trim());
+            if (string.IsNullOrWhiteSpace(user)) return;
+            var key = user.Trim();
+            if (!_people.TryGetValue(key, out var shift) || localNow - shift.LastSeen >= ShiftGap)
+            {
+                _people[key] = new Shift { User = key, Start = localNow, LastSeen = localNow };
+                Prune(localNow);
+                return;
+            }
+            // A clock set back never shortens the shift.
+            if (localNow > shift.LastSeen) shift.LastSeen = localNow;
         }
 
-        /// <summary>True when this Standard-N user has not been greeted yet on this greeting day.</summary>
+        /// <summary>True when the person's shift (or the one starting now) has not been greeted yet.</summary>
         public bool ShouldGreet(string user, DateTime localNow)
         {
             if (string.IsNullOrWhiteSpace(user)) return false;
-            return PharmacistGreeting.GreetingDay(localNow) != _day || !_greeted.Contains(user.Trim());
+            if (!_people.TryGetValue(user.Trim(), out var shift)) return true;
+            return localNow - shift.LastSeen >= ShiftGap || !shift.Greeted;
         }
 
+        /// <summary>The greeting went out: not again in this shift.</summary>
         public void Remember(string user, DateTime localNow)
         {
             if (string.IsNullOrWhiteSpace(user)) return;
-            var day = PharmacistGreeting.GreetingDay(localNow);
-            if (day != _day)
-            {
-                _day = day;
-                _greeted.Clear();
-            }
-            if (_greeted.Count < MaxPeople) _greeted.Add(user.Trim());
+            Seen(user, localNow);
+            if (_people.TryGetValue(user.Trim(), out var shift)) shift.Greeted = true;
         }
 
-        /// <summary>Reads the log; without it, the 1.0.96 file (one person, calendar day) still counts for today.</summary>
-        public static GreetingLog Load(string path, string? legacyPath = null)
+        private void Prune(DateTime localNow)
         {
+            foreach (var key in _people.Where(p => localNow - p.Value.LastSeen > KeepFor).Select(p => p.Key).ToList()) _people.Remove(key);
+            if (_people.Count <= MaxPeople) return;
+            foreach (var key in _people.OrderBy(p => p.Value.LastSeen).Take(_people.Count - MaxPeople).Select(p => p.Key).ToList())
+                _people.Remove(key);
+        }
+
+        /// <summary>
+        /// Reads the log; without it, the 1.0.96 file (one person greeted on a calendar day) still counts as greeted when
+        /// that day is today.
+        /// </summary>
+        public static GreetingLog Load(string path, string? legacyPath, DateTime localNow)
+        {
+            var log = new GreetingLog();
             try
             {
                 if (File.Exists(path))
                 {
-                    using var doc = JsonDocument.Parse(File.ReadAllText(path));
-                    var day = DateTime.ParseExact(doc.RootElement.GetProperty("day").GetString() ?? "", "yyyy-MM-dd", CultureInfo.InvariantCulture);
-                    var users = doc.RootElement.GetProperty("users").EnumerateArray().Select(u => u.GetString() ?? "").ToList();
-                    return new GreetingLog(day, users);
+                    var stored = JsonSerializer.Deserialize<List<Shift>>(File.ReadAllText(path)) ?? new List<Shift>();
+                    foreach (var shift in stored.Where(s => !string.IsNullOrWhiteSpace(s.User))) log._people[shift.User.Trim()] = shift;
+                    log.Prune(localNow);
+                    return log;
                 }
                 if (legacyPath != null && File.Exists(legacyPath))
                 {
                     using var doc = JsonDocument.Parse(File.ReadAllText(legacyPath));
                     var user = doc.RootElement.GetProperty("user").GetString() ?? "";
-                    var calendarDay = DateTime.ParseExact(doc.RootElement.GetProperty("day").GetString() ?? "", "yyyy-MM-dd", CultureInfo.InvariantCulture);
-                    // The old file kept a calendar day; it greeted at the first sign-in of that day, after 05:00 as a rule.
-                    return new GreetingLog(calendarDay, new[] { user });
+                    var day = DateTime.ParseExact(doc.RootElement.GetProperty("day").GetString() ?? "", "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    if (day == localNow.Date) log.Remember(user, localNow);
                 }
             }
             catch
             {
                 // Unreadable: start empty.
+                return new GreetingLog();
             }
-            return new GreetingLog();
+            return log;
         }
 
         public void Save(string path, Action<string>? log = null)
@@ -146,17 +162,22 @@ namespace CustomerDisplay.Services
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var temp = path + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(new
-                {
-                    day = _day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                    users = _greeted.OrderBy(u => u, StringComparer.Ordinal).ToArray(),
-                }));
+                File.WriteAllText(temp, JsonSerializer.Serialize(_people.Values.OrderBy(s => s.User, StringComparer.Ordinal).ToList()));
                 File.Move(temp, path, overwrite: true);
             }
             catch (Exception error)
             {
                 log?.Invoke("ePharm: не удалось сохранить приветствие: " + error.Message);
             }
+        }
+
+        /// <summary>One person's shift at this till, as kept on disk.</summary>
+        public sealed class Shift
+        {
+            public string User { get; set; } = "";
+            public DateTime Start { get; set; }
+            public DateTime LastSeen { get; set; }
+            public bool Greeted { get; set; }
         }
     }
 }

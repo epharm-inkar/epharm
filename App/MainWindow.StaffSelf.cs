@@ -109,6 +109,7 @@ public partial class MainWindow
             SetSelfTrayState(null, null);
             return;
         }
+        NoteSignedInForGreeting(request.StandardNUserId);
         var result = await _epharm.GetSelfAsync(request);
         if (!result.Ok) return;
         _selfStatusUser = request.StandardNUserId;

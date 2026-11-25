@@ -65,6 +65,49 @@ public sealed class PharmacistMessageInboxTests : IDisposable
     }
 
     [Fact]
+    public void A_notice_on_screen_leaves_once_withdrawn_expired_or_closed_elsewhere_without_a_report()
+    {
+        var inbox = new PharmacistMessageInbox();
+        inbox.Apply("34", new[] { Message("a", 3), Message("b", 2), Message("c", 1) }, Now);
+        inbox.MarkShown("34", "a", Now);
+        inbox.AckDone(new TillMessageAck("34", "a", TillMessageAckKind.Shown));
+        Assert.True(inbox.IsPending("34", "a"));
+
+        // HQ withdrew «a» while it is on screen: the server no longer lists it, the card goes and «b» is next.
+        inbox.Apply("34", new[] { Message("b", 2), Message("c", 1) }, Now.AddMinutes(1));
+        Assert.False(inbox.IsPending("34", "a"));
+        Assert.Equal("b", inbox.NextToShow("34")!.Id);
+
+        // «b» passed its last day: listed, but no longer open.
+        inbox.Apply("34", new[] { Message("b", 2, pending: false), Message("c", 1) }, Now.AddMinutes(2));
+        Assert.False(inbox.IsPending("34", "b"));
+
+        // «c» was closed on another till.
+        inbox.Apply("34", new[] { Message("c", 1, pending: false, closedAt: Now.AddMinutes(2)) }, Now.AddMinutes(3));
+        Assert.False(inbox.IsPending("34", "c"));
+        Assert.Null(inbox.NextToShow("34"));
+
+        // Leaving the screen this way owes the server nothing, and it is never «closed here».
+        Assert.Empty(inbox.AcksToSend());
+        Assert.DoesNotContain(inbox.History("34"), m => m.Id == "a");
+    }
+
+    [Fact]
+    public void A_notice_stays_while_it_is_still_open_for_this_person_only()
+    {
+        var inbox = new PharmacistMessageInbox();
+        inbox.Apply("34", new[] { Message("a", 1) }, Now);
+        Assert.True(inbox.IsPending("34", "a"));
+        Assert.True(inbox.IsPending(" 34 ", " a "));
+        Assert.False(inbox.IsPending("35", "a"));
+        Assert.False(inbox.IsPending("34", "unknown"));
+        // A failed refresh does not call Apply: the card keeps its place.
+        Assert.True(inbox.IsPending("34", "a"));
+        inbox.MarkClosed("34", "a", Now);
+        Assert.False(inbox.IsPending("34", "a"));
+    }
+
+    [Fact]
     public void A_notice_closed_on_another_till_leaves_this_one_without_a_report()
     {
         var inbox = new PharmacistMessageInbox();

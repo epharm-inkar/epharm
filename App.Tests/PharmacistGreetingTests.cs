@@ -8,7 +8,7 @@ namespace CustomerDisplay.Core.Tests;
 
 /// <summary>
 /// The greeting at the till (1.0.99): «Доброе утро, Имя Отчество! Желаем хорошего дня» by the time of day, once per
-/// person per day (the day starts at 05:00), also across a restart.
+/// person per shift (again only after 8 hours without them at the till), also across a restart.
 /// </summary>
 public sealed class PharmacistGreetingTests : IDisposable
 {
@@ -64,65 +64,107 @@ public sealed class PharmacistGreetingTests : IDisposable
         Assert.True(name.Length <= 48);
     }
 
-    [Fact]
-    public void The_greeting_day_starts_at_five_in_the_morning()
+    /// <summary>The till's status check every 15 minutes while the person stays signed in.</summary>
+    private static void SeenEvery15Minutes(GreetingLog log, string user, DateTime from, DateTime to, Action<DateTime>? each = null)
     {
-        Assert.Equal(new DateTime(2026, 11, 25), PharmacistGreeting.GreetingDay(At(26, 4, 59)));
-        Assert.Equal(new DateTime(2026, 11, 26), PharmacistGreeting.GreetingDay(At(26, 5, 0)));
-        Assert.Equal(new DateTime(2026, 11, 26), PharmacistGreeting.GreetingDay(At(26, 23, 30)));
+        for (var t = from; t <= to; t = t.AddMinutes(15))
+        {
+            log.Seen(user, t);
+            each?.Invoke(t);
+        }
     }
 
     [Fact]
-    public void Each_person_is_greeted_once_a_day()
+    public void Each_person_is_greeted_once_per_shift_and_a_colleague_in_between_changes_nothing()
     {
         var log = new GreetingLog();
+        log.Seen("34", At(26, 8));
         Assert.True(log.ShouldGreet("34", At(26, 8)));
         log.Remember("34", At(26, 8));
-        Assert.False(log.ShouldGreet("34", At(26, 8, 15)));
-        // A colleague signs in at the same till: their own greeting; the first person is not greeted again.
-        Assert.True(log.ShouldGreet("35", At(26, 9)));
-        log.Remember("35", At(26, 9));
-        Assert.False(log.ShouldGreet("34", At(26, 14)));
-        Assert.False(log.ShouldGreet("35", At(26, 22)));
-        // The next morning both are greeted again.
-        Assert.True(log.ShouldGreet("34", At(27, 7)));
-        Assert.True(log.ShouldGreet("35", At(27, 7)));
+        SeenEvery15Minutes(log, "34", At(26, 8, 15), At(26, 12), t => Assert.False(log.ShouldGreet("34", t)));
+
+        // A colleague signs in at the same till: their own greeting.
+        log.Seen("35", At(26, 12, 5));
+        Assert.True(log.ShouldGreet("35", At(26, 12, 5)));
+        log.Remember("35", At(26, 12, 5));
+        // The first person comes back within the shift: no second greeting.
+        log.Seen("34", At(26, 12, 40));
+        Assert.False(log.ShouldGreet("34", At(26, 12, 40)));
+        Assert.False(log.ShouldGreet("35", At(26, 13)));
     }
 
     [Fact]
-    public void A_night_shift_crossing_midnight_is_greeted_once()
+    public void A_night_shift_from_eight_to_eight_is_greeted_once()
+    {
+        var log = new GreetingLog();
+        var greetings = 0;
+        SeenEvery15Minutes(log, "34", At(26, 20), At(27, 8), t =>
+        {
+            if (!log.ShouldGreet("34", t)) return;
+            greetings++;
+            log.Remember("34", t);
+        });
+        Assert.Equal(1, greetings);
+        // The morning words would be different, but nobody is greeted again at 05:00.
+        Assert.False(log.ShouldGreet("34", At(27, 5)));
+    }
+
+    [Fact]
+    public void Eight_hours_without_the_person_start_a_new_shift()
+    {
+        var log = new GreetingLog();
+        log.Remember("34", At(26, 8));
+        SeenEvery15Minutes(log, "34", At(26, 8, 15), At(26, 17));
+        // Next morning: a new shift.
+        Assert.True(log.ShouldGreet("34", At(27, 8)));
+
+        var short_ = new GreetingLog();
+        short_.Remember("34", At(26, 2));
+        Assert.False(short_.ShouldGreet("34", At(26, 9, 59)));
+        Assert.True(short_.ShouldGreet("34", At(26, 10)));
+        short_.Seen("34", At(26, 10));
+        Assert.True(short_.ShouldGreet("34", At(26, 10)));
+        short_.Remember("34", At(26, 10));
+        Assert.False(short_.ShouldGreet("34", At(26, 10, 15)));
+    }
+
+    [Fact]
+    public void A_person_seen_while_the_server_was_down_is_greeted_once_it_answers()
+    {
+        var log = new GreetingLog();
+        SeenEvery15Minutes(log, "34", At(26, 8), At(26, 8, 45));
+        Assert.True(log.ShouldGreet("34", At(26, 9)));
+        log.Remember("34", At(26, 9));
+        Assert.False(log.ShouldGreet("34", At(26, 9, 15)));
+    }
+
+    [Fact]
+    public void A_restart_keeps_the_shift()
     {
         var log = new GreetingLog();
         log.Remember("34", At(26, 20));
-        Assert.False(log.ShouldGreet("34", At(27, 0, 30)));
-        Assert.False(log.ShouldGreet("34", At(27, 4, 59)));
-        Assert.True(log.ShouldGreet("34", At(27, 5, 0)));
-    }
-
-    [Fact]
-    public void A_restart_does_not_greet_again_the_same_day()
-    {
-        var log = new GreetingLog();
-        log.Remember("34", At(26, 8));
-        log.Remember("35", At(26, 9));
+        SeenEvery15Minutes(log, "34", At(26, 20, 15), At(27, 3));
+        log.Remember("35", At(26, 21));
         log.Save(StatePath);
-        var afterRestart = GreetingLog.Load(StatePath);
-        Assert.False(afterRestart.ShouldGreet("34", At(26, 12)));
-        Assert.False(afterRestart.ShouldGreet("35", At(26, 12)));
-        Assert.True(afterRestart.ShouldGreet("36", At(26, 12)));
-        Assert.True(afterRestart.ShouldGreet("34", At(27, 8)));
+        var afterRestart = GreetingLog.Load(StatePath, null, At(27, 3, 10));
+        Assert.False(afterRestart.ShouldGreet("34", At(27, 3, 10)));
+        afterRestart.Seen("34", At(27, 3, 10));
+        Assert.False(afterRestart.ShouldGreet("34", At(27, 6)));
+        Assert.False(afterRestart.ShouldGreet("35", At(27, 4)));
+        Assert.True(afterRestart.ShouldGreet("36", At(27, 4)));
     }
 
     [Fact]
-    public void The_1_0_96_file_still_counts_for_today()
+    public void The_1_0_96_file_still_counts_for_its_day()
     {
         Directory.CreateDirectory(_dir);
         var legacy = Path.Combine(_dir, "welcome-state.json");
         File.WriteAllText(legacy, """{"user":"34","day":"2026-11-26"}""");
-        var log = GreetingLog.Load(StatePath, legacy);
-        Assert.False(log.ShouldGreet("34", At(26, 15)));
-        Assert.True(log.ShouldGreet("35", At(26, 15)));
-        Assert.True(log.ShouldGreet("34", At(27, 8)));
+        var today = GreetingLog.Load(StatePath, legacy, At(26, 15));
+        Assert.False(today.ShouldGreet("34", At(26, 15)));
+        Assert.True(today.ShouldGreet("35", At(26, 15)));
+        var nextDay = GreetingLog.Load(StatePath, legacy, At(27, 8));
+        Assert.True(nextDay.ShouldGreet("34", At(27, 8)));
     }
 
     [Fact]
@@ -130,9 +172,23 @@ public sealed class PharmacistGreetingTests : IDisposable
     {
         Directory.CreateDirectory(_dir);
         File.WriteAllText(StatePath, "{not json");
-        Assert.True(GreetingLog.Load(StatePath).ShouldGreet("34", At(26, 8)));
-        Assert.True(GreetingLog.Load(Path.Combine(_dir, "missing.json")).ShouldGreet("34", At(26, 8)));
+        Assert.True(GreetingLog.Load(StatePath, null, At(26, 8)).ShouldGreet("34", At(26, 8)));
+        Assert.True(GreetingLog.Load(Path.Combine(_dir, "missing.json"), null, At(26, 8)).ShouldGreet("34", At(26, 8)));
         Assert.False(new GreetingLog().ShouldGreet(" ", At(26, 8)));
+    }
+
+    [Fact]
+    public void The_log_keeps_a_week_and_at_most_two_hundred_people()
+    {
+        var log = new GreetingLog();
+        log.Remember("old", At(1, 8));
+        for (var i = 0; i < 205; i++) log.Remember("p" + i, At(26, 8).AddMinutes(i));
+        log.Save(StatePath);
+        var loaded = GreetingLog.Load(StatePath, null, At(26, 12));
+        // The oldest are dropped first; the most recent people are still remembered.
+        Assert.True(loaded.ShouldGreet("old", At(26, 12)));
+        Assert.True(loaded.ShouldGreet("p0", At(26, 12)));
+        Assert.False(loaded.ShouldGreet("p204", At(26, 12)));
     }
 
     [Fact]
