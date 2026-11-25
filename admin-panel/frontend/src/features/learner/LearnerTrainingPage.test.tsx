@@ -555,15 +555,12 @@ describe('learner training portal', () => {
     renderPortal('/learn')
 
     expect(await screen.findByRole('heading', { name: 'Айжан' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Текущий курс' })).toBeInTheDocument()
-    expect(screen.getByText('Ваш рейтинг ePharm')).toBeInTheDocument()
-    expect(screen.getByRole('meter', { name: 'Ваш рейтинг ePharm' })).toHaveAttribute(
-      'aria-valuenow',
-      '25',
-    )
-    expect(screen.getByText('№ 4 из 27 в городе Алматы')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Ваши курсы' })).toBeInTheDocument()
+    // Grigoriy, 25.11.2026: no «Ваш рейтинг ePharm» on the home page.
+    expect(screen.queryByText('Ваш рейтинг ePharm')).not.toBeInTheDocument()
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Современная фармация' })).toBeInTheDocument()
-    expect(screen.getByText('Что вы получите')).toBeInTheDocument()
+    expect(screen.queryByText('Что вы получите')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Продолжить обучение' })).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Каталог' })).not.toBeInTheDocument()
@@ -625,9 +622,9 @@ describe('learner training portal', () => {
     renderPortal()
 
     expect(await screen.findByText('42 000 ₸')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Активные рекомендации' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Рекомендации' }))
-    expect(screen.getByRole('heading', { name: 'Активные рекомендации' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Что предлагать покупателю' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Советы' }))
+    expect(screen.getByRole('heading', { name: 'Что предлагать покупателю' })).toBeInTheDocument()
     expect(screen.getByText('Пример кампании')).toBeInTheDocument()
     expect(screen.getByText(/Название группы/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Товар-пример' })).toBeInTheDocument()
@@ -694,14 +691,14 @@ describe('learner training portal', () => {
   it.each([
     {
       language: 'ru' as const,
-      tab: 'Рекомендации',
+      tab: 'Советы',
       and: 'И',
       mnn: 'МНН АСС',
       sameItem: 'Все условия должны совпасть у одного сканируемого товара.',
     },
     {
       language: 'kk' as const,
-      tab: 'Ұсынымдар',
+      tab: 'Кеңестер',
       and: 'ЖӘНЕ',
       mnn: 'АСС ХПА',
       sameItem: 'Барлық шарт бір сканерленген тауарға сәйкес келуі керек.',
@@ -788,7 +785,7 @@ describe('learner training portal', () => {
 
     expect(await screen.findByText('Баланс временно недоступен')).toBeInTheDocument()
     expect(screen.queryByText('Активных рекомендаций сейчас нет.')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Рекомендации' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Советы' }))
     expect(screen.getByText('Активных рекомендаций сейчас нет.')).toBeInTheDocument()
     expect(screen.queryByText('0 ₸')).not.toBeInTheDocument()
   })
@@ -1469,8 +1466,8 @@ describe('learner training portal', () => {
     expect(screen.queryByText('Ближайшие события')).not.toBeInTheDocument()
     expect(screen.queryByText('Препараты и бонусы')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Каталог' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Активные рекомендации' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Рекомендации' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Что предлагать покупателю' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Советы' })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Сертификаты' }))
     expect(await screen.findByRole('link', { name: /Завершённый курс/ })).toHaveAttribute(
@@ -1541,8 +1538,8 @@ describe('learner training portal', () => {
     })
     renderPortal('/learn/training')
     expect(await screen.findByRole('heading', { name: active.programName })).toBeInTheDocument()
-    expect(screen.getByText('Материалов: 1 · Тестов: 1')).toBeInTheDocument()
-    expect(screen.getByText('Следующий урок: Практический пример')).toBeInTheDocument()
+    expect(screen.getByText('0 из 2 уроков')).toBeInTheDocument()
+    expect(screen.getByText('Дальше: Практический пример')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: completed.programName })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'История обучения 2' }))
     expect(screen.getByRole('button', { name: 'История обучения 2' })).toHaveAttribute(
@@ -1553,7 +1550,6 @@ describe('learner training portal', () => {
     const scoredCard = screen
       .getByRole('heading', { name: completed.programName })
       .closest('article')!
-    expect(within(scoredCard).getByText('Прогресс: 100%')).toBeInTheDocument()
     expect(within(scoredCard).getByText('Результат: 80%')).toBeInTheDocument()
     expect(within(scoredCard).getByRole('link', { name: 'Скачать сертификат' })).toHaveAttribute(
       'href',
@@ -1562,7 +1558,6 @@ describe('learner training portal', () => {
     expect(
       within(scoredCard).getByRole('button', { name: 'Повторить материалы' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Результат теста не сохранён')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Мои курсы 1' }))
     expect(screen.getByRole('heading', { name: active.programName })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Профиль' }))

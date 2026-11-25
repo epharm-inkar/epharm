@@ -168,6 +168,16 @@ const test = base.extend<{ learnerApi: LearnerApi; learnerSession: boolean }>({
             )?.assignments?.find((item) => path === `/api/mobile/training/assignments/${item.id}`)
             if (assignment) return json(route, assignment)
           }
+          if (path === '/api/mobile/me/top-products') {
+            // «Вы чаще всего продаёте» on «Советы» (25.11.2026): personal data like the wallet.
+            if (api.personalFailure)
+              return json(
+                route,
+                { code: api.personalFailure.code, message: 'Личные данные недоступны' },
+                api.personalFailure.status,
+              )
+            return json(route, { items: [], days: 30 })
+          }
           if (path === '/api/mobile/me/balance' || path === '/api/mobile/me/recommendations') {
             if (api.personalFailure)
               return json(
@@ -209,7 +219,7 @@ const test = base.extend<{ learnerApi: LearnerApi; learnerSession: boolean }>({
 
 async function expectOffers(page: Page) {
   await expect(
-    page.getByRole('heading', { name: 'Активные рекомендации', exact: true }),
+    page.getByRole('heading', { name: 'Что предлагать покупателю', exact: true }),
   ).toBeVisible()
   await expect(page.getByText('Действующая группа', { exact: true })).toBeVisible()
   await expect(page.getByText('И МНН АСС: Выбранная МНН', { exact: true })).toBeVisible()
@@ -270,13 +280,14 @@ for (const viewport of [
         assignments,
       }
       await page.goto('/learn')
-      await expect(page.getByRole('heading', { name: 'Текущий курс', exact: true })).toBeVisible()
-      await expect(
-        page.getByRole('heading', { name: 'Текущий учебный курс', exact: true }),
-      ).toBeVisible()
-      await expect(page.getByRole('heading', { name: 'Следующий курс', exact: true })).toHaveCount(
-        0,
+      // Home lists every course to take now, the started one first (25.11.2026), not one card.
+      await expect(page.getByRole('heading', { name: 'Ваши курсы', exact: true })).toBeVisible()
+      await expect(page.locator('article.learner-course-card h3').first()).toHaveText(
+        'Текущий учебный курс',
       )
+      await expect(page.getByRole('heading', { name: 'Следующий курс', exact: true })).toBeVisible()
+      for (const hidden of ['Завершённый учебный курс', 'Отменённый учебный курс'])
+        await expect(page.getByRole('heading', { name: hidden, exact: true })).toHaveCount(0)
       await page.screenshot({
         path: testInfo.outputPath(`${viewport.name}-current-course.png`),
         fullPage: true,
@@ -306,7 +317,6 @@ for (const viewport of [
       await expect(
         page.getByRole('heading', { name: 'Завершённый учебный курс', exact: true }),
       ).toBeVisible()
-      await expect(page.getByText('Прогресс: 100%', { exact: true })).toBeVisible()
       await expect(page.getByText('Результат: 80%', { exact: true })).toBeVisible()
       await expect(
         page.getByRole('button', { name: 'Повторить материалы', exact: true }),
@@ -378,9 +388,9 @@ for (const viewport of [
         fullPage: true,
         animations: 'disabled',
       })
-      await page.getByRole('button', { name: 'Рекомендации', exact: true }).click()
+      await page.getByRole('button', { name: 'Советы', exact: true }).click()
       await expect(page).toHaveURL(/\/learn\/recommendations$/)
-      await expect(page.getByRole('button', { name: 'Рекомендации', exact: true })).toHaveAttribute(
+      await expect(page.getByRole('button', { name: 'Советы', exact: true })).toHaveAttribute(
         'aria-current',
         'page',
       )
@@ -462,7 +472,7 @@ for (const failure of [
     await expect(page.getByText(failure.message, { exact: true }).first()).toBeVisible()
     await expect(page.getByText(/889\s*999\s*₸/)).toHaveCount(0)
     await expect(page.getByText(/36\s*941\s*₸/)).toHaveCount(0)
-    await page.getByRole('button', { name: 'Рекомендации', exact: true }).click()
+    await page.getByRole('button', { name: 'Советы', exact: true }).click()
     await expect(page).toHaveURL(/\/learn\/recommendations$/)
     await expect(page.getByText(failure.message, { exact: true }).first()).toBeVisible()
     await expect(page.getByText('Активных рекомендаций сейчас нет.', { exact: true })).toHaveCount(

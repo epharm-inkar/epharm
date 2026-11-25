@@ -140,6 +140,22 @@ type PersonalRecommendation = {
   offers: RecommendationOffer[]
 }
 
+type TopProductOffer = {
+  ruleId: string
+  type: 'substitution' | 'crosssell'
+  product: RecommendationProduct
+  script: string
+}
+
+type TopProduct = {
+  productId: string
+  name: string
+  receipts: number
+  offers: TopProductOffer[]
+}
+
+type TopProductsPage = { items: TopProduct[]; days: number }
+
 type PersonalRecommendationsPage = {
   items: PersonalRecommendation[]
   page: number
@@ -1442,7 +1458,7 @@ export default function LearnerTrainingPage() {
   const sectionTitle: Record<PortalSection, string> = {
     home: pharmacist?.name || t('Фармацевт'),
     training: t('Обучение'),
-    recommendations: t('Рекомендации'),
+    recommendations: t('Что предлагать'),
     certificates: t('Сертификаты'),
     profile: t('Профиль'),
   }
@@ -1579,6 +1595,8 @@ export default function LearnerTrainingPage() {
               loading={personalDataLoading}
               error={recommendationsError}
               onRetry={refreshPortal}
+              tokens={tokens}
+              lifecycle={tokenLifecycle}
             />
           ) : portalSection === 'certificates' ? (
             <CertificatesView certificates={overview?.certificates ?? []} />
@@ -1740,7 +1758,7 @@ function PortalNavigation({
   const items = [
     { id: 'home' as const, label: t('Главная'), icon: Home },
     { id: 'training' as const, label: t('Обучение'), icon: GraduationCap },
-    { id: 'recommendations' as const, label: t('Рекомендации'), icon: Sparkles },
+    { id: 'recommendations' as const, label: t('Советы'), icon: Sparkles },
     { id: 'certificates' as const, label: t('Сертификаты'), icon: Award },
     { id: 'profile' as const, label: t('Профиль'), icon: UserRound },
   ]
@@ -2290,8 +2308,8 @@ function ProfileView({
   const t = useLearnerT()
   const [showCardInfo, setShowCardInfo] = useState(false)
   return (
-    <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-      <div className="rounded-3xl bg-white p-6 text-center shadow-card">
+    <section className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+      <div className="min-w-0 rounded-3xl bg-white p-6 text-center shadow-card">
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-brand-green-100 text-3xl font-extrabold text-brand-green-700">
           {(pharmacist?.name || 'Ф').slice(0, 1)}
         </div>
@@ -2327,7 +2345,7 @@ function ProfileView({
           )}
         </div>
       </div>
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         <div className="rounded-2xl bg-white p-5 shadow-card">
           <h2 className="flex items-center gap-2 text-lg font-extrabold text-ink-900">
             <BadgeCheck size={21} /> {t('Данные фармацевта')}
@@ -2727,14 +2745,15 @@ function OverviewView({
       ? trainingFilter === 'history'
         ? completedAssignments
         : activeAssignments
-      : assignments.filter(availableNow).slice(0, 1)
+      : assignments.filter(
+          (assignment) => assignment.status !== 'completed' && availableNow(assignment),
+        )
 
   return (
     <section>
       {section === 'home' && (
         <BalanceOverview
           balance={balance}
-          overview={overview}
           loading={personalDataLoading}
           balanceError={balanceError}
           onRetry={onRetryPersonalData}
@@ -2747,11 +2766,11 @@ function OverviewView({
             {t('Обучение')}
           </div>
           <h2 className="mt-1 text-xl font-extrabold text-ink-900">
-            {section === 'home' ? t('Текущий курс') : t('Все доступные курсы')}
+            {section === 'home' ? t('Ваши курсы') : t('Все доступные курсы')}
           </h2>
           <p className="mt-1 text-sm text-ink-500">
             {section === 'home'
-              ? t('Продолжите обучение с того места, где остановились')
+              ? t('Пройдите их по порядку: прогресс сохраняется сам')
               : t('Ваши назначенные и завершённые курсы')}
           </p>
         </div>
@@ -2796,7 +2815,7 @@ function OverviewView({
           <BookOpen className="mx-auto text-ink-300" size={36} />
           <p className="mt-3 font-bold text-ink-700">
             {section === 'home'
-              ? t('Нет текущего курса')
+              ? t('Сейчас нет курсов к прохождению')
               : trainingFilter === 'history'
                 ? t('Завершённых курсов пока нет')
                 : t('Новых курсов пока нет')}
@@ -2806,15 +2825,12 @@ function OverviewView({
         <div
           className={
             section === 'home'
-              ? 'grid max-w-2xl gap-4'
-              : 'grid gap-4 sm:grid-cols-2 2xl:grid-cols-3'
+              ? 'grid gap-3 sm:grid-cols-2'
+              : 'grid gap-3 sm:grid-cols-2 2xl:grid-cols-3'
           }
         >
           {visibleAssignments.map((assignment) => {
             const lessons = assignment.stages.flatMap((stage) => stage.course?.lessons ?? [])
-            const testsCount = lessons.filter(
-              (lesson) => lesson.kind === 'quiz' || lesson.kind === 'test',
-            ).length
             const resultScore = assignment.score ?? assignment.certificate?.score
             const completed = assignment.status === 'completed'
             const firstLesson = assignment.stages
@@ -2826,78 +2842,71 @@ function OverviewView({
             return (
               <article
                 key={assignment.id}
-                className="learner-course-card flex min-h-64 flex-col rounded-3xl bg-white p-5 shadow-card sm:p-6"
+                className="learner-course-card flex flex-col rounded-2xl bg-white p-4 shadow-card sm:p-5"
               >
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-green-50 text-brand-green-700">
-                    <BookOpen size={19} />
-                  </span>
-                  {assignment.required && (
-                    <span className="rounded-full bg-paper-hover px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.08em] text-ink-400">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="line-clamp-3 text-base font-extrabold leading-6 text-ink-900 sm:text-lg">
+                    {assignment.programName}
+                  </h3>
+                  {assignment.required && !completed && (
+                    <span className="shrink-0 rounded-full bg-paper-hover px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-ink-400">
                       {t('Обязательно')}
                     </span>
                   )}
                 </div>
-                <h3 className="text-xl font-extrabold leading-7 text-ink-900">
-                  {assignment.programName}
-                </h3>
-                {lessons.length > 0 && (
-                  <p className="mt-2 text-xs font-semibold text-ink-500">
-                    {t('Материалов: {count}', { count: lessons.length - testsCount })}
-                    {' · '}
-                    {t('Тестов: {count}', { count: testsCount })}
-                  </p>
-                )}
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-ink-500">
-                  <span>{statusText(assignment.status)}</span>
-                  <span>{t('Прогресс: {value}%', { value: assignment.progressPct })}</span>
-                </div>
-                <div
-                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-brand-green-50"
-                  aria-hidden="true"
-                >
+                <div className="mt-3 flex items-center gap-3">
                   <div
-                    className="h-full rounded-full bg-brand-green-500"
-                    style={{ width: `${Math.max(0, Math.min(100, assignment.progressPct))}%` }}
-                  />
-                </div>
-                {completed && (
-                  <p className="mt-3 text-sm font-bold text-brand-green-700">
-                    {resultScore != null
-                      ? t('Результат: {score}%', { score: resultScore })
-                      : testsCount > 0
-                        ? t('Результат теста не сохранён')
-                        : t('Курс без итогового теста')}
-                  </p>
-                )}
-                {completed && assignment.completedAt && (
-                  <p className="mt-2 text-xs text-ink-500">
-                    {t('Завершено {date}', { date: formatDate(assignment.completedAt) })}
-                  </p>
-                )}
-                {!completed && assignment.dueAt && (
-                  <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-500">
-                    <CalendarDays size={14} />{' '}
-                    {t('До {date}', { date: formatDate(assignment.dueAt) })}
-                  </p>
-                )}
-                <div className="mt-4 rounded-2xl bg-brand-green-50 p-4">
-                  <div className="text-xs font-extrabold uppercase tracking-[0.1em] text-brand-green-700">
-                    {t('Что вы получите')}
+                    className="h-1.5 flex-1 overflow-hidden rounded-full bg-brand-green-50"
+                    aria-hidden="true"
+                  >
+                    <div
+                      className="h-full rounded-full bg-brand-green-500"
+                      style={{ width: `${Math.max(0, Math.min(100, assignment.progressPct))}%` }}
+                    />
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-ink-600">
-                    {assignment.programShortDescription ||
-                      t('Знания и практические навыки по теме курса.')}
-                  </p>
+                  <span className="shrink-0 text-xs font-bold text-ink-500">
+                    {lessons.length > 0
+                      ? t('{done} из {total} уроков', {
+                          done: lessons.filter(lessonCompleted).length,
+                          total: lessons.length,
+                        })
+                      : `${assignment.progressPct}%`}
+                  </span>
                 </div>
-                {!completed && availableNow(assignment) && firstLesson && (
-                  <p className="mt-4 text-sm leading-5 text-ink-600">
-                    {t('Следующий урок: {title}', { title: firstLesson.title })}
-                  </p>
-                )}
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-500">
+                  {completed ? (
+                    <>
+                      {resultScore != null && (
+                        <span className="font-bold text-brand-green-700">
+                          {t('Результат: {score}%', { score: resultScore })}
+                        </span>
+                      )}
+                      {assignment.completedAt && (
+                        <span>
+                          {t('Завершено {date}', { date: formatDate(assignment.completedAt) })}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-ink-600">{statusText(assignment.status)}</span>
+                      {assignment.dueAt && (
+                        <span className="flex items-center gap-1">
+                          <CalendarDays size={13} />{' '}
+                          {t('До {date}', { date: formatDate(assignment.dueAt) })}
+                        </span>
+                      )}
+                      {availableNow(assignment) && firstLesson && (
+                        <span className="min-w-0 truncate">
+                          {t('Дальше: {title}', { title: firstLesson.title })}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
                 <button
                   type="button"
-                  className="btn btn-primary btn-md mt-5 w-full"
+                  className="btn btn-primary btn-md mt-4 w-full"
                   disabled={busy}
                   onClick={() =>
                     availableNow(assignment) && firstLesson
@@ -2937,130 +2946,125 @@ function OverviewView({
 
 function BalanceOverview({
   balance,
-  overview,
   loading,
   balanceError,
   onRetry,
 }: {
   balance: PersonalBalance | null
-  overview: Overview | null
   loading: boolean
   balanceError: string
   onRetry: () => void | Promise<void>
 }) {
   const t = useLearnerT()
-  const rating = overview?.cityRanking?.score ?? calculateEpharmRating(overview)
-  const ratingLevel =
-    rating >= 80
-      ? { label: t('Отличный'), color: 'text-[#2f9e63]' }
-      : rating >= 60
-        ? { label: t('Хороший'), color: 'text-[#0d918a]' }
-        : rating >= 40
-          ? { label: t('Развивающийся'), color: 'text-[#397f91]' }
-          : { label: t('Начальный'), color: 'text-[#647a80]' }
-  const markerPosition = Math.min(98, Math.max(2, rating))
   return (
-    <section
-      className="learner-metrics mb-8 grid gap-4 md:grid-cols-2"
-      aria-label={t('Баланс и рейтинг')}
-    >
-      <article className="learner-balance-card rounded-3xl p-5 text-white sm:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
-            <CircleDollarSign size={21} />
-          </span>
-          <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-white/80">
-            ePharm
-          </span>
-        </div>
-        <div id="balance-heading" className="mt-5 text-xs font-bold text-white/70">
-          {t('Личный баланс')}
-        </div>
-        {loading ? (
-          <div className="mt-3 flex items-center gap-2 text-sm font-bold text-white/80">
-            <Loader2 className="animate-spin" size={18} /> {t('Загружаем…')}
+    <section className="learner-metrics mb-6" aria-label={t('Баланс')}>
+      <article className="learner-balance-card flex items-center justify-between gap-4 rounded-3xl p-4 text-white sm:p-5">
+        <div className="min-w-0">
+          <div id="balance-heading" className="text-xs font-bold text-white/70">
+            {t('Личный баланс')}
           </div>
-        ) : balance ? (
-          <div className="mt-1 text-3xl font-extrabold tracking-tight">
-            {formatKzt(balance.balanceKzt)}
-          </div>
-        ) : (
-          <PersonalDataError
-            message={balanceError || t('Баланс временно недоступен')}
-            onRetry={onRetry}
-            inverted
-          />
-        )}
-        <p className="mt-3 text-xs leading-5 text-white/65">
-          {t('Доступный денежный баланс вашей учётной записи.')}
-        </p>
-      </article>
-
-      <article className="learner-rating-card rounded-3xl border border-ink-100 bg-white p-5 shadow-card sm:p-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-bold text-ink-500">{t('Ваш рейтинг ePharm')}</div>
-            <div className="mt-2 flex items-end gap-2">
-              <span className="text-3xl font-extrabold tracking-tight text-ink-900">{rating}</span>
-              <span className="pb-0.5 text-lg font-bold text-ink-300">/ 100</span>
+          {loading ? (
+            <div className="mt-2 flex items-center gap-2 text-sm font-bold text-white/80">
+              <Loader2 className="animate-spin" size={18} /> {t('Загружаем…')}
             </div>
-          </div>
-          <span className={`pt-1 text-sm font-extrabold ${ratingLevel.color}`}>
-            {ratingLevel.label}
-          </span>
+          ) : balance ? (
+            <div className="mt-0.5 text-3xl font-extrabold tracking-tight">
+              {formatKzt(balance.balanceKzt)}
+            </div>
+          ) : (
+            <PersonalDataError
+              message={balanceError || t('Баланс временно недоступен')}
+              onRetry={onRetry}
+              inverted
+            />
+          )}
         </div>
-
-        <div
-          className="relative mt-4 pt-3"
-          role="meter"
-          aria-label={t('Ваш рейтинг ePharm')}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={rating}
-        >
-          <span
-            className="absolute top-0 h-0 w-0 -translate-x-1/2 border-x-[7px] border-t-[9px] border-x-transparent border-t-ink-700"
-            style={{ left: `${markerPosition}%` }}
-            aria-hidden="true"
-          />
-          <div className="grid grid-cols-4 gap-2" aria-hidden="true">
-            <span className="h-3 rounded-full bg-gradient-to-r from-[#c6ece8] to-[#9edfd9]" />
-            <span className="h-3 rounded-full bg-gradient-to-r from-[#86d4cd] to-[#62c3ba]" />
-            <span className="h-3 rounded-full bg-gradient-to-r from-[#46b8ae] to-[#1fa194]" />
-            <span className="h-3 rounded-full bg-gradient-to-r from-[#159785] to-[#2f9e63]" />
-          </div>
-          <div
-            className="mt-2 flex justify-between text-[10px] font-bold text-ink-300"
-            aria-hidden="true"
-          >
-            <span>0</span>
-            <span>100</span>
-          </div>
-        </div>
-        {overview?.cityRanking ? (
-          <p className="mt-2 text-[11px] font-semibold leading-5 text-ink-400">
-            {t('№ {position} из {total} в городе {city}', overview.cityRanking)}
-          </p>
-        ) : (
-          <p className="mt-2 text-[11px] leading-5 text-ink-400">
-            {t('Место в городе появится после синхронизации рейтинга.')}
-          </p>
-        )}
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10">
+          <CircleDollarSign size={22} />
+        </span>
       </article>
     </section>
   )
 }
 
-function calculateEpharmRating(overview: Overview | null) {
-  const assignments = (overview?.assignments ?? []).filter(
-    (assignment) => assignment.status !== 'cancelled',
+function TopProductsBlock({ tokens, lifecycle }: { tokens: Tokens; lifecycle: TokenLifecycle }) {
+  const t = useLearnerT()
+  const [state, setState] = useState<{
+    data: TopProductsPage | null
+    error: string
+    loading: boolean
+  }>({
+    data: null,
+    error: '',
+    loading: true,
+  })
+  useEffect(() => {
+    let alive = true
+    requestPersonalData<TopProductsPage>('/api/mobile/me/top-products?days=30', tokens, lifecycle)
+      .then((data) => alive && setState({ data, error: '', loading: false }))
+      .catch(
+        (error) => alive && setState({ data: null, error: messageFrom(error), loading: false }),
+      )
+    return () => {
+      alive = false
+    }
+  }, [tokens, lifecycle])
+
+  if (state.loading)
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm font-bold text-ink-500">
+        <Loader2 className="animate-spin" size={18} /> {t('Загружаем ваши продажи…')}
+      </div>
+    )
+  if (state.error || !state.data) return null
+  if (state.data.items.length === 0)
+    return (
+      <p className="rounded-xl bg-paper-hover p-4 text-sm text-ink-500">
+        {t(
+          'Когда вы будете продавать через кассу с ePharm, здесь появятся ваши частые товары и что к ним предложить.',
+        )}
+      </p>
+    )
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {state.data.items.map((item) => (
+        <article key={item.productId} className="rounded-2xl border border-ink-100 bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="min-w-0 text-[15px] font-extrabold leading-5 text-ink-900">
+              {item.name}
+            </h4>
+            <span className="shrink-0 rounded-full bg-paper-hover px-2 py-0.5 text-[11px] font-bold text-ink-500">
+              {t('в {count} чеках', { count: item.receipts })}
+            </span>
+          </div>
+          {item.offers.length === 0 ? (
+            <p className="mt-2 text-xs text-ink-400">{t('Подсказок к этому товару пока нет')}</p>
+          ) : (
+            <ul className="mt-3 grid gap-2">
+              {item.offers.map((offer) => (
+                <li key={offer.ruleId} className="rounded-xl bg-brand-green-50 p-3">
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-brand-green-700">
+                    {offer.type === 'substitution'
+                      ? t('Предложите вместо')
+                      : t('Предложите вместе')}
+                  </div>
+                  <div className="mt-0.5 text-sm font-bold text-ink-900">{offer.product.name}</div>
+                  {offer.script && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-xs font-bold text-brand-green-700">
+                        {t('Как сказать покупателю')}
+                      </summary>
+                      <p className="mt-1 text-sm leading-6 text-ink-700">{offer.script}</p>
+                    </details>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+      ))}
+    </div>
   )
-  if (assignments.length === 0) return 0
-  const total = assignments.reduce(
-    (sum, assignment) => sum + (assignment.score ?? assignment.progressPct ?? 0),
-    0,
-  )
-  return Math.max(0, Math.min(100, Math.round(total / assignments.length)))
 }
 
 function RecommendationsView({
@@ -3068,23 +3072,38 @@ function RecommendationsView({
   loading,
   error,
   onRetry,
+  tokens,
+  lifecycle,
 }: {
   recommendations: PersonalRecommendationsPage | null
   loading: boolean
   error: string
   onRetry: () => void | Promise<void>
+  tokens: Tokens
+  lifecycle: TokenLifecycle
 }) {
   const t = useLearnerT()
   return (
     <section className="rounded-2xl bg-white p-5 shadow-card sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-100 pb-5">
+      <div className="border-b border-ink-100 pb-5">
+        <h2 className="flex items-center gap-2 text-lg font-extrabold text-ink-900">
+          <Sparkles size={20} className="text-brand-green-600" /> {t('Что предлагать покупателю')}
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-ink-500">
+          {t(
+            'Касса подсказывает это во время продажи. Выучите заранее и советуйте сами, ещё до подсказки.',
+          )}
+        </p>
+      </div>
+
+      <h3 className="mt-5 text-base font-extrabold text-ink-900">{t('Вы чаще всего продаёте')}</h3>
+      <p className="mb-3 mt-0.5 text-xs text-ink-500">{t('По вашим чекам за 30 дней')}</p>
+      <TopProductsBlock tokens={tokens} lifecycle={lifecycle} />
+
+      <div className="mt-7 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-lg font-extrabold text-ink-900">
-            <Sparkles size={20} className="text-brand-green-600" /> {t('Активные рекомендации')}
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-ink-500">
-            {t('Подсказки и предложения из центральной системы ePharm')}
-          </p>
+          <h3 className="text-base font-extrabold text-ink-900">{t('Все подсказки кассы')}</h3>
+          <p className="mt-0.5 text-xs text-ink-500">{t('Какой товар предложить к какому')}</p>
         </div>
         {recommendations && (
           <span className="chip chip-green">
