@@ -271,6 +271,12 @@ services:
     # Наружу не публикуем — доступ только через Caddy (TLS). Внутри сети backend:8080.
     expose:
       - '8080'
+    # Проверка здоровья из Dockerfile (раз в 15 с), но пока backend стартует, Docker спрашивает каждые 2 с: frontend
+    # ждёт здоровый backend, и выпуск больше не теряет до 15 с после готовности приложения (INK-199, 25.11.2026).
+    # start_interval Compose принимает только вместе с start_period: он тот же, что в Dockerfile.
+    healthcheck:
+      start_period: 90s
+      start_interval: 2s
 
   frontend:
     image: epharm/frontend:${FRONTEND_RELEASE_ID:-${RELEASE_ID:-dev}}

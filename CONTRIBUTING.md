@@ -124,6 +124,11 @@ Production images must be built from reviewed main source, never from a develope
 server directory. A higher release number or OCI label alone does not establish source provenance.
 Do not perform manual Compose image swaps outside the audited release transaction.
 
+After a merge into `main` that changes `admin-panel/backend`, `admin-panel/frontend`, `docker-compose.prod.yml`
+or `tools/`, start the host's build of `main` at once (it needs the VPN and returns immediately):
+`git fetch -q origin && git show origin/main:tools/release/fast-release.sh | bash -s -- --prebuild`. The release
+is then about a minute; see `docs/06-deployment-and-ops.md`, «Fast release of the server and admin».
+
 Do not merge with known red checks unless the failure is explicitly triaged and accepted.
 
 ## Secrets

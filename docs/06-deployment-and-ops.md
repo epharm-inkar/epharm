@@ -204,6 +204,41 @@ the separately audited component-only archive transactions persist each componen
 Use
 `./tools/release/rollback.sh <previous-tag>` for application rollback.
 
+### Fast release of the server and admin
+
+Since 2026-11-25 the backend and the admin (with `/learn`) go live from `main` with one command, in about a
+minute once the host has built `main`. Run main's own copy from a clone of this repository, on a computer with
+the VPN to the host:
+
+```bash
+git fetch -q origin && git show origin/main:tools/release/fast-release.sh | bash -s -- --check '/learn|<text>'
+```
+
+- **Right after a merge into `main`**, the session that merged starts the host's build:
+  `git fetch -q origin && git show origin/main:tools/release/fast-release.sh | bash -s -- --prebuild`. It
+  returns at once. The host unpacks the exact commit into a new directory, builds both images at the same time
+  and, when the candidate keeps the live Compose file, makes the rollback package of the running release. The job
+  runs detached from the connection, one build at a time. The backend image keeps Gradle in a BuildKit cache, so
+  a change of the build files downloads only what is new. A release that finds no build makes it first (3-6
+  minutes).
+- **The release** stops when production runs a commit `main` does not hold. It switches nothing when `main`
+  changed none of `admin-panel/backend`, `admin-panel/frontend`, `docker-compose.prod.yml` or `tools/`. It waits
+  for the `P0 / merge gate` of the exact commit: the reuse job makes it green within a minute of the merge, about
+  three when the merge touched the till. Then it stages the candidate's Compose file and tools root-owned (the
+  nightly backup refuses rollback packages with other owners) and runs `deploy-archive-two-image.sh` once, with
+  the prebuild's rollback package when that package is under an hour old and the configuration is unchanged. A
+  release with new migrations always takes a fresh package, with its database dump, right before the switch. The
+  transaction makes every check of its dry run before it switches, so no separate dry run is made. Last come the
+  public `/api/health`, `/release.json` and each `--check` path.
+- Output: one `RELEASE_STEP <step> <seconds>` line per step (precheck, build, gate, switch, checks), then
+  `RELEASE_LIVE …` or `RELEASE_STOP: <reason>`. `--dry-run` stops before the switch; `--checks-only` checks what
+  is live. The laptop's log is `night-env/release-logs/epharm-release-*.log` next to the clone; the host's logs
+  are under `/home/adm-quasar/epharm-ops/fast/`.
+- The nightly encrypted backup and the weekly restore drill stay with their timers. The release prints
+  `RELEASE_NOTE` when the last run failed or is old; it does not wait for them.
+- Not covered: POSM packages (their pilot is in `05-posm-client.md`), the Caddyfile, `.env.prod`, monitoring.
+  Rolling back a finished release is unchanged: `rollback-archive-two-image.sh` with its saved transaction.
+
 ### Two-image release on an archive-based host
 
 The generic `deploy.sh` requires a Git checkout and assumes that the old backend and frontend have
