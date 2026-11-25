@@ -262,6 +262,13 @@
   }
 
   /* ── Thin scrollbar (panes / lists) ───────────────────────────── */
+  /* Tab bars scroll sideways on a phone without a visible scrollbar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgba(28, 27, 25, 0.2) transparent;
@@ -412,6 +419,27 @@ body.learner-portal {
 
 .learner-portal .border-brand-green-400 {
   border-color: var(--learner-accent-400);
+}
+
+/* Course redesign (25.11.2026): answer states and the path keep the teal family too. */
+.learner-portal .border-brand-green-500 {
+  border-color: var(--learner-accent-500);
+}
+
+.learner-portal .hover\:border-brand-green-300:hover {
+  border-color: var(--learner-accent-300);
+}
+
+.learner-portal .ring-brand-green-200 {
+  --tw-ring-color: var(--learner-accent-200);
+}
+
+.learner-portal .ring-brand-green-500 {
+  --tw-ring-color: var(--learner-accent-500);
+}
+
+.learner-portal .text-brand-green-900 {
+  color: #064946;
 }
 
 .learner-portal .to-brand-green-50 {
@@ -602,6 +630,46 @@ body.learner-portal {
 
 .lesson-section-reader {
   min-width: 0;
+}
+
+/* Lesson text read one part at a time (course redesign, 25.11.2026): big type, short lines. */
+.lesson-reader {
+  min-width: 0;
+}
+
+.lesson-text {
+  max-width: 68ch;
+  color: #2b4148;
+  font-size: 16px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .lesson-text {
+    font-size: 17px;
+  }
+}
+
+.lesson-reader-part {
+  animation: lesson-part-in 260ms ease-out;
+}
+
+@keyframes lesson-part-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lesson-reader-part {
+    animation: none;
+  }
 }
 
 .lesson-section-tabs {

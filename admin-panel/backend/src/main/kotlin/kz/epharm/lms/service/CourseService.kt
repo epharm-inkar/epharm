@@ -137,6 +137,7 @@ class CourseService(
         }
         val quizQuestions = normalizeQuizQuestions(req.kind, req.quizQuestions)
         val livePolls = normalizeLivePolls(req.kind, req.livePolls)
+        val quizDrawCount = req.quizDrawCount.takeIf { req.kind in QUIZ_KINDS }
         if (req.kind == CourseLessonKind.live && req.liveStatus !in setOf(null, CourseLiveStatus.scheduled)) {
             invalid("Новый эфир должен быть запланирован; запуск и завершение доступны в комнате эфира")
         }
@@ -147,6 +148,7 @@ class CourseService(
             req.externalUrl,
             quizQuestions,
             req.quizPassingScore,
+            quizDrawCount,
             req.liveProvider ?: CourseLiveProvider.custom,
             req.liveStatus,
             req.liveStartAt,
@@ -175,6 +177,7 @@ class CourseService(
                 ?: if (req.kind == CourseLessonKind.video) 80 else null,
             quizQuestions = quizQuestions,
             quizPassingScore = req.quizPassingScore,
+            quizDrawCount = quizDrawCount,
             durationMin = req.durationMin,
             order = current.size,
         ).also { it.kind = req.kind }
@@ -207,6 +210,7 @@ class CourseService(
             req.minimumWatchPct?.let { lesson.minimumWatchPct = it }
         }
 
+        val previousKind = lesson.kind
         val nextKind = req.kind ?: lesson.kind
         if (lesson.kind == CourseLessonKind.live && nextKind != CourseLessonKind.live &&
             (liveMessageRepository.existsByLessonId(lessonId) ||
@@ -281,12 +285,16 @@ class CourseService(
                 lesson.liveStatus = lesson.liveStatus ?: CourseLiveStatus.scheduled
             }
         }
-        if (req.clearQuiz || nextKind !in QUIZ_KINDS) {
+        // A text or video lesson may keep self-check questions; only a graded test switching to
+        // another kind loses its question bank (the old behaviour for tests).
+        if (req.clearQuiz || (previousKind in QUIZ_KINDS && nextKind !in QUIZ_KINDS)) {
             lesson.quizQuestions = emptyList()
         } else {
-            req.quizQuestions?.let { lesson.quizQuestions = normalizeQuizQuestions(nextKind, it) }
+            req.quizQuestions?.let { lesson.quizQuestions = normalizeQuizQuestions(nextKind, it, lesson.quizQuestions) }
         }
         req.quizPassingScore?.let { lesson.quizPassingScore = it }
+        req.quizDrawCount?.let { lesson.quizDrawCount = it.takeIf { count -> count > 0 } }
+        if (nextKind !in QUIZ_KINDS) lesson.quizDrawCount = null
         validateLessonPayload(
             lesson.kind,
             lesson.durationMin,
@@ -294,6 +302,7 @@ class CourseService(
             lesson.externalUrl,
             lesson.quizQuestions,
             lesson.quizPassingScore,
+            lesson.quizDrawCount,
             lesson.liveProvider ?: CourseLiveProvider.custom,
             lesson.liveStatus,
             lesson.liveStartAt,
@@ -508,6 +517,7 @@ class CourseService(
         externalUrl: String?,
         quizQuestions: List<CourseQuizQuestion>,
         quizPassingScore: Int,
+        quizDrawCount: Int?,
         liveProvider: CourseLiveProvider,
         liveStatus: CourseLiveStatus?,
         liveStartAt: java.time.Instant?,
@@ -548,6 +558,11 @@ class CourseService(
         if (kind in QUIZ_KINDS) {
             if (quizQuestions.isEmpty()) invalid("Добавьте хотя бы один вопрос теста")
             if (quizPassingScore !in 1..100) invalid("Проходной балл должен быть от 1 до 100")
+            if (quizDrawCount != null && quizDrawCount !in 1..quizQuestions.size) {
+                invalid("Вопросов в попытке должно быть от 1 до ${quizQuestions.size}: столько вопросов в тесте")
+            }
+        }
+        if (quizQuestions.isNotEmpty()) {
             quizQuestions.forEachIndexed { index, question ->
                 if (question.prompt.isBlank()) invalid("Введите текст вопроса ${index + 1}")
                 if (question.options.size !in 2..8) {
@@ -566,16 +581,21 @@ class CourseService(
     private fun normalizeQuizQuestions(
         kind: CourseLessonKind,
         questions: List<CourseQuizQuestionRequest>,
+        existing: List<CourseQuizQuestion> = emptyList(),
     ): List<CourseQuizQuestion> {
-        if (kind !in QUIZ_KINDS) return emptyList()
+        if (kind !in QUIZ_KINDS && kind !in SELF_CHECK_KINDS) return emptyList()
+        val existingById = existing.associateBy(CourseQuizQuestion::id)
         return questions.map { question ->
+            val id = question.id?.trim()?.takeIf(String::isNotBlank)
+                ?: "q_${UUID.randomUUID().toString().replace("-", "").take(12)}"
             CourseQuizQuestion(
-                id = question.id?.trim()?.takeIf(String::isNotBlank)
-                    ?: "q_${UUID.randomUUID().toString().replace("-", "").take(12)}",
+                id = id,
                 prompt = question.prompt.trim(),
                 options = question.options.map(String::trim),
                 correctOption = question.correctOption,
                 explanation = question.explanation.trim(),
+                // An editor that does not know the field keeps the stored link to the lesson.
+                lessonId = question.lessonId?.trim() ?: existingById[id]?.lessonId.orEmpty(),
             )
         }
     }
@@ -646,6 +666,8 @@ class CourseService(
         const val MAX_LESSONS_PER_COURSE = 100
         const val MAX_ATTACHMENTS_PER_LESSON = 10
         val QUIZ_KINDS = setOf(CourseLessonKind.quiz, CourseLessonKind.test)
+        /** Lessons that may end with self-check questions (answers shown to the learner). */
+        val SELF_CHECK_KINDS = setOf(CourseLessonKind.text, CourseLessonKind.video)
         val SUPPORTED_VIDEO_TYPES = setOf("video/mp4", "video/webm")
         val SUPPORTED_VIDEO_EXTENSIONS = setOf("mp4", "webm")
         val SUPPORTED_ATTACHMENT_EXTENSIONS = setOf(

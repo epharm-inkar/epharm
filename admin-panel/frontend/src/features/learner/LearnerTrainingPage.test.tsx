@@ -823,7 +823,6 @@ describe('learner training portal', () => {
   })
 
   it('shows a text lesson of the fire-safety course without a borrowed video', async () => {
-    const user = userEvent.setup()
     localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
     const scrollTo = vi.fn()
     vi.stubGlobal('scrollTo', scrollTo)
@@ -889,11 +888,14 @@ describe('learner training portal', () => {
 
     await screen.findByRole('heading', { name: '2.1. Торговый зал аптеки' })
     expect(screen.queryByLabelText('Видео урока')).not.toBeInTheDocument()
-    expect(screen.getByRole('list')).toHaveTextContent('свободны ли проходы;')
+    expect(screen.getByRole('list')).toHaveTextContent('свободны ли проходы')
     expect(screen.getByRole('list')).toHaveTextContent('доступны ли указатели эвакуации.')
+    // One part at a time: the next part is not on the screen, and on the first reading
+    // «Дальше» waits a few seconds so the part is actually read.
     expect(screen.queryByText('Сообщите руководителю и вызовите 112.')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('tab', { name: /2.2. Действия при пожаре/ }))
-    expect(screen.getByText('Сообщите руководителю и вызовите 112.')).toBeInTheDocument()
+    expect(screen.getByText(/Часть 1 из 2/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Читайте ещё \d+ с/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Дочитайте урок/ })).toBeDisabled()
     await waitFor(() =>
       expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: 'auto' }),
     )
@@ -1244,18 +1246,14 @@ describe('learner training portal', () => {
       const portal = renderPortal('/learn/course/assignment-quiz/lesson/quiz-1')
       expect(await screen.findByRole('heading', { name: 'Итоговый тест' })).toBeInTheDocument()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Завершить тест' }))
-      await waitFor(() =>
-        expect(document.activeElement).toHaveAttribute('id', 'quiz-question-card-q-1'),
-      )
+      // One question per screen: rules first, then the questions in a shuffled answer order.
+      await userEvent.click(screen.getByRole('button', { name: /Начать тест/ }))
+      expect(screen.getByRole('button', { name: /Дальше/ })).toBeDisabled()
       await userEvent.click(screen.getByRole('radio', { name: 'До еды' }))
-
-      await userEvent.click(screen.getByRole('button', { name: 'Завершить тест' }))
-      await waitFor(() =>
-        expect(document.activeElement).toHaveAttribute('id', 'quiz-question-card-q-2'),
-      )
+      await userEvent.click(screen.getByRole('button', { name: /Дальше/ }))
       await userEvent.click(screen.getByRole('radio', { name: 'Две' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Завершить тест' }))
+      await userEvent.click(screen.getByRole('button', { name: /К отправке/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Отправить ответы/ }))
 
       await waitFor(() => {
         expect(fetchMock).toHaveBeenCalledWith(
@@ -1266,48 +1264,40 @@ describe('learner training portal', () => {
           }),
         )
       })
+      if (!passed) releaseOverview()
       expect(
-        await screen.findByText(passed ? 'Тест пройден' : 'Тест не пройден'),
+        await screen.findByText(passed ? 'Тест пройден!' : 'Пока не получилось'),
       ).toBeInTheDocument()
-      if (!passed) {
-        const retry = screen.getByRole('button', { name: 'Повторить тест' })
-        expect(retry).toBeDisabled()
-        await userEvent.click(retry)
-        expect(screen.queryByRole('radio')).not.toBeInTheDocument()
-        releaseOverview()
-        await waitFor(() => expect(retry).toBeEnabled())
-      }
-      expect(await screen.findByText(new RegExp(`Результат: ${score}%`))).toBeInTheDocument()
-      expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+      expect(screen.getByText(new RegExp(`Верно ${passed ? 2 : 1} из 2`))).toBeInTheDocument()
+      // Answers are never revealed: no per-question review, only the score.
       expect(screen.queryByText('Скрытый разбор ответа')).not.toBeInTheDocument()
-      expect(
-        document.querySelector('[data-answer-state="correct"], [data-answer-state="incorrect"]'),
-      ).toBeNull()
+      expect(screen.queryByRole('radio')).not.toBeInTheDocument()
       if (!passed) {
-        await userEvent.click(screen.getByRole('button', { name: 'Повторить тест' }))
+        await userEvent.click(screen.getByRole('button', { name: /Пройти тест снова/ }))
+        expect(screen.getByText(/Попытка 2/)).toBeInTheDocument()
+        await userEvent.click(screen.getByRole('button', { name: /Начать тест/ }))
         expect(
-          screen.getAllByRole('radio').every((radio) => !(radio as HTMLInputElement).checked),
+          screen
+            .getAllByRole('radio')
+            .every((radio) => radio.getAttribute('aria-checked') === 'false'),
         ).toBe(true)
-        await userEvent.click(screen.getByRole('radio', { name: 'До еды' }))
-        await userEvent.click(screen.getByRole('radio', { name: 'Две' }))
-        await userEvent.click(screen.getByRole('button', { name: 'Завершить тест' }))
-        expect(await screen.findByText(/Попытка 2/)).toBeInTheDocument()
-        expect(screen.queryByRole('radio')).not.toBeInTheDocument()
       } else {
         await userEvent.click(screen.getByRole('button', { name: 'Следующий урок' }))
         expect(
           await screen.findByRole('heading', { name: 'Следующая проверка' }),
         ).toBeInTheDocument()
-        expect(screen.queryByText('Тест пройден')).not.toBeInTheDocument()
-        expect(
-          screen.getAllByRole('radio').every((radio) => !(radio as HTMLInputElement).checked),
-        ).toBe(true)
+        expect(screen.queryByText('Тест пройден!')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Начать тест/ })).toBeInTheDocument()
       }
       portal.unmount()
       renderPortal('/learn/course/assignment-quiz/lesson/quiz-1')
-      expect(
-        await screen.findByText(passed ? 'Тест пройден' : 'Тест не пройден'),
-      ).toBeInTheDocument()
+      if (passed) {
+        expect(await screen.findByText('Тест пройден')).toBeInTheDocument()
+        expect(screen.getByText('Результат: 100%')).toBeInTheDocument()
+      } else {
+        expect(await screen.findByText(/Попытка 2/)).toBeInTheDocument()
+        expect(screen.getByText(/лучший результат 50%/)).toBeInTheDocument()
+      }
       expect(screen.queryByRole('radio')).not.toBeInTheDocument()
       expect(
         screen.queryByText(/Правильный ответ|Неправильный ответ|Скрытый разбор/),
@@ -1369,11 +1359,11 @@ describe('learner training portal', () => {
       return json({ items: [] })
     })
     renderPortal('/learn/course/saved-quiz/lesson/quiz')
-    expect(await screen.findByText('Тест не пройден')).toBeInTheDocument()
-    expect(screen.getByText('Лучший результат: 60% · Попыток: 2')).toBeInTheDocument()
-    expect(screen.queryByText(/Попытка 2/)).not.toBeInTheDocument()
+    // Two attempts used: the start card offers the third and shows the best score apart from it.
+    expect(await screen.findByText(/Попытка 3/)).toBeInTheDocument()
+    expect(screen.getByText(/лучший результат 60%/)).toBeInTheDocument()
     expect(screen.queryByRole('radio')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Повторить тест' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Начать тест/ })).toBeEnabled()
   })
 
   it('keeps the home page focused on active training and puts certificates in a separate tab', async () => {

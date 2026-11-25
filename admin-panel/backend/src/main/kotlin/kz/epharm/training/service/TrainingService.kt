@@ -1543,21 +1543,38 @@ class TrainingService(
         }
         if (blockedBy != null) conflict("Сначала завершите урок «${blockedBy.title}»")
 
-        val questionIds = lesson.quizQuestions.map { it.id }.toSet()
-        if (req.answers.keys != questionIds) badRequest("Ответьте на все вопросы теста")
-        lesson.quizQuestions.forEach { question ->
+        val existingProgress = lessonProgressRepository.findByAssignmentStageIdAndLessonId(stageId, lessonId)
+        // With a question bank every attempt asks its own draw; the server grades exactly that draw.
+        val askedIds = QuizDraw.questionIds(
+            lesson.quizQuestions.map { it.id },
+            lesson.quizDrawCount,
+            stageId,
+            lesson.id,
+            existingProgress?.quizAttempts ?: 0,
+        )
+        val questionsById = lesson.quizQuestions.associateBy { it.id }
+        val asked = askedIds.mapNotNull(questionsById::get)
+        if (req.answers.keys != askedIds.toSet()) badRequest("Ответьте на все вопросы теста")
+        asked.forEach { question ->
             val answer = req.answers.getValue(question.id)
             if (answer !in question.options.indices) badRequest("Некорректный вариант ответа")
         }
 
-        val correctAnswers = lesson.quizQuestions.count { question ->
+        val correctAnswers = asked.count { question ->
             req.answers.getValue(question.id) == question.correctOption
         }
-        val score = ((correctAnswers * 100.0) / lesson.quizQuestions.size).roundToInt()
+        val score = ((correctAnswers * 100.0) / asked.size).roundToInt()
         // Compare the exact ratio: display rounding must never turn a failure into a pass.
-        val passed = correctAnswers.toLong() * 100L >= lesson.quizPassingScore.toLong() * lesson.quizQuestions.size.toLong()
+        val passed = correctAnswers.toLong() * 100L >= lesson.quizPassingScore.toLong() * asked.size.toLong()
+        // Which lessons to repeat: named by lesson, never by question, so answers stay hidden.
+        val lessonOrder = lessons.associate { it.id to it.order }
+        val weakLessonIds = asked
+            .filter { req.answers.getValue(it.id) != it.correctOption && it.lessonId.isNotBlank() }
+            .map { it.lessonId }
+            .distinct()
+            .sortedBy { lessonOrder[it] ?: Int.MAX_VALUE }
         val now = Instant.now()
-        val progress = lessonProgressRepository.findByAssignmentStageIdAndLessonId(stageId, lessonId)
+        val progress = existingProgress
             ?: TrainingLessonProgressEntity(
                 assignmentId = assignment.id,
                 assignmentStageId = assignmentStage.id,
@@ -1599,9 +1616,10 @@ class TrainingService(
             score = score,
             passed = passed,
             correctAnswers = correctAnswers,
-            totalQuestions = lesson.quizQuestions.size,
+            totalQuestions = asked.size,
             attempt = progress.quizAttempts,
             assignment = updatedAssignment,
+            weakLessonIds = if (passed) emptyList() else weakLessonIds,
         )
     }
 
@@ -2466,6 +2484,15 @@ class TrainingService(
                         base.copy(
                             lessons = base.lessons.map { lesson ->
                                 val progress = progressByLesson[lesson.id]
+                                // A test with a question bank shows only this attempt's draw.
+                                val askedIds = QuizDraw.questionIds(
+                                    lesson.quizQuestions.map { it.id },
+                                    lesson.quizDrawCount.takeIf { lesson.kind in kz.epharm.lms.dto.GRADED_QUIZ_KINDS },
+                                    row.id,
+                                    lesson.id,
+                                    progress?.quizAttempts ?: 0,
+                                )
+                                val questionsById = lesson.quizQuestions.associateBy { it.id }
                                 lesson.copy(
                                     progressPct = progress?.progressPct ?: if (completedLegacyStage) 100 else 0,
                                     lastPositionSeconds = progress?.lastPositionSeconds ?: 0,
@@ -2473,6 +2500,7 @@ class TrainingService(
                                     completedAt = progress?.completedAt ?: if (completedLegacyStage) row.completedAt ?: row.updatedAt else null,
                                     quizScore = progress?.quizScore,
                                     quizAttempts = progress?.quizAttempts ?: 0,
+                                    quizQuestions = askedIds.mapNotNull(questionsById::get),
                                 )
                             },
                         )
