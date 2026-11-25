@@ -47,6 +47,23 @@ describe('Menu', () => {
     expect(onHidden).not.toHaveBeenCalled()
   })
 
+  it('follows its trigger on scroll and closes only when the trigger leaves the screen', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    const trigger = screen.getByRole('button', { name: 'Ещё' })
+    await user.click(trigger)
+    // The late scroll event of bringing the trigger into view must not close the menu just opened.
+    fireEvent.scroll(window)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent(window, new Event('resize'))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      top: 2000, bottom: 2030, left: 10, right: 60, width: 50, height: 30, x: 10, y: 2000, toJSON: () => ({}),
+    } as DOMRect)
+    fireEvent.scroll(window)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
   it('closes on Escape, on a click outside and on arrow navigation keeps focus inside', async () => {
     const user = userEvent.setup()
     renderMenu()

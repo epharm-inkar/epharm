@@ -36,6 +36,20 @@ const GAP = 4
 const ITEM = 34
 const ITEM_WITH_HINT = 50
 
+/** Under the trigger (above it when there is no room below); null when the trigger has left the screen. */
+function placeMenu(trigger: HTMLElement | null, height: number, width: number): Position | null {
+  if (!trigger) return null
+  const rect = trigger.getBoundingClientRect()
+  const viewportWidth = window.innerWidth || 1024
+  const viewportHeight = window.innerHeight || 768
+  if (rect.bottom < 0 || rect.top > viewportHeight) return null
+  const left = Math.max(8, Math.min(rect.right - width, viewportWidth - width - 8))
+  const below = rect.bottom + GAP
+  const top = below + height > viewportHeight && rect.top > height + GAP ? rect.top - height - GAP : below
+  // A list longer than the room left scrolls inside itself instead of leaving the screen.
+  return { top, left, maxHeight: Math.max(120, viewportHeight - top - 8) }
+}
+
 export function Menu({ trigger, ariaLabel, items, triggerClassName = '', width = 248, testId }: MenuProps) {
   const [position, setPosition] = useState<Position | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -49,17 +63,8 @@ export function Menu({ trigger, ariaLabel, items, triggerClassName = '', width =
   }
 
   const openMenu = () => {
-    const rect = triggerRef.current?.getBoundingClientRect()
-    const viewportWidth = window.innerWidth || 1024
-    const viewportHeight = window.innerHeight || 768
     const estimated = items.reduce((sum, item) => sum + (item.hint ? ITEM_WITH_HINT : ITEM), 8)
-    const left = Math.max(8, Math.min((rect?.right ?? 0) - width, viewportWidth - width - 8))
-    const below = (rect?.bottom ?? 0) + GAP
-    const top = below + estimated > viewportHeight && (rect?.top ?? 0) > estimated + GAP
-      ? (rect?.top ?? 0) - estimated - GAP
-      : below
-    // A list longer than the room left scrolls inside itself instead of leaving the screen.
-    setPosition({ top, left, maxHeight: Math.max(120, viewportHeight - top - 8) })
+    setPosition(placeMenu(triggerRef.current, estimated, width))
   }
 
   useEffect(() => {
@@ -87,10 +92,13 @@ export function Menu({ trigger, ariaLabel, items, triggerClassName = '', width =
       const step = event.key === 'ArrowDown' ? 1 : -1
       entries[(current + step + entries.length) % entries.length].focus()
     }
-    // A fixed list would drift away from its trigger when anything scrolls or resizes.
+    // A fixed list follows its trigger when anything scrolls or resizes. Scroll events arrive a frame
+    // late, so the scroll that brought the trigger into view must not close the menu it just opened.
     const onMove = (event: Event) => {
-      if (listRef.current?.contains(event.target as Node)) return
-      setPosition(null)
+      const list = listRef.current
+      // A window resize or scroll has the window as target, which is not a Node.
+      if (event.target instanceof Node && list?.contains(event.target)) return
+      setPosition(placeMenu(triggerRef.current, list?.offsetHeight ?? 0, list?.offsetWidth ?? 0))
     }
     document.addEventListener('mousedown', onPointer)
     document.addEventListener('keydown', onKey)
