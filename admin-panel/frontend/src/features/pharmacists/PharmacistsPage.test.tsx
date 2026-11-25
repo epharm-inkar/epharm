@@ -646,7 +646,8 @@ describe('PharmacistsPage — список и actions', () => {
     expect(within(row).getByRole('cell', { name: /^0\s*₸\s*на счёте 0\s*₸$/ })).toBeInTheDocument()
     const salesMetric = screen.getByText('Продажи за 30 дней').closest('.card') as HTMLElement
     expect(within(salesMetric).getByText('0 ₸')).toBeInTheDocument()
-    expect(within(salesMetric).getByText('0 чеков · заработали 0 ₸')).toBeInTheDocument()
+    expect(within(salesMetric).getByText('0 чеков')).toBeInTheDocument()
+    expect(within(salesMetric).getByText('фармацевты заработали 0 ₸')).toBeInTheDocument()
   })
 
   it('сортирует по продажам и заработку за 30 дней, повторный клик возвращает порядок по имени', async () => {

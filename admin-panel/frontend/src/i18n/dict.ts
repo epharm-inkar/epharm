@@ -145,7 +145,7 @@ export const ru: Dict = {
     'Аптечная сеть Inkar — управление точками, группы pilot / control / rolled, lift по точкам.',
   'page.pharmacists.title': 'Фармацевты',
   'page.pharmacists.subtitle':
-    'Реестр фармацевтов — баланс, тир, статус. Балансы пополняются за принятые рекомендации (Этап 4).',
+    'Кто сколько продал и заработал за 30 дней, когда был в ePharm, тир и статус.',
   'page.reconcile.title': 'Сверка чеков',
   'page.reconcile.subtitle':
     'Доказательная база для начисления бонусов. Авто-одобрение, ручная модерация, анти-фрод — три ветки потока.',
@@ -703,7 +703,7 @@ export const ru: Dict = {
   'phc.receiptsN': '{n} чеков',
   'phc.onAccount': 'на счёте {v}',
   'phc.mSales': 'Продажи за 30 дней',
-  'phc.mSalesSub': '{receipts} чеков · заработали {earned}',
+  'phc.mEarnedMeta': 'фармацевты заработали {v}',
   'phc.mln': 'млн',
   'phc.thousand': 'тыс.',
   'phc.sortBy': 'Сортировать: {c}',
@@ -1559,7 +1559,7 @@ export const kk: Dict = {
     'Inkar дәріхана желісі — нүктелерді басқару, pilot / control / rolled топтары, нүктелер бойынша lift.',
   'page.pharmacists.title': 'Фармацевттер',
   'page.pharmacists.subtitle':
-    'Фармацевттер тізілімі — баланс, тир, мәртебе. Баланстар қабылданған ұсыныстар үшін толтырылады (4-кезең).',
+    'Кім 30 күнде қанша сатып, қанша тапты, ePharm-да қашан болды, тир және мәртебе.',
   'page.reconcile.title': 'Чектерді салыстыру',
   'page.reconcile.subtitle':
     'Бонус есептеуге арналған дәлелдік база. Авто-бекіту, қолмен модерация, анти-фрод — ағынның үш тармағы.',
@@ -2115,7 +2115,7 @@ export const kk: Dict = {
   'phc.receiptsN': '{n} чек',
   'phc.onAccount': 'шотта {v}',
   'phc.mSales': 'Соңғы 30 күндегі сатылым',
-  'phc.mSalesSub': '{receipts} чек · табыс {earned}',
+  'phc.mEarnedMeta': 'фармацевттердің табысы {v}',
   'phc.mln': 'млн',
   'phc.thousand': 'мың',
   'phc.sortBy': 'Сұрыптау: {c}',

@@ -364,12 +364,14 @@ export default function PharmacistsPage() {
               }
               accent="purple"
               sub={
-                totals.receipts == null || totals.earned == null
+                totals.receipts == null
                   ? undefined
-                  : t('phc.mSalesSub', {
-                      receipts: formatNum(totals.receipts),
-                      earned: formatKzt(totals.earned),
-                    })
+                  : t('phc.receiptsN', { n: formatNum(totals.receipts) })
+              }
+              meta={
+                totals.earned == null
+                  ? undefined
+                  : t('phc.mEarnedMeta', { v: formatKzt(totals.earned) })
               }
             />
           </div>
