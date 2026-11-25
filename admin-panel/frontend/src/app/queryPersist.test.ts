@@ -11,6 +11,8 @@ import { QueryClient } from '@tanstack/react-query'
 import {
   configureQueryPersistence as configurePersistence,
   clearPersistedCache,
+  MAX_ENTRY_CHARS,
+  MAX_TOTAL_CHARS,
 } from './queryPersist'
 
 const disposers: Array<() => void> = []
@@ -196,5 +198,49 @@ describe('Permission cache and principal boundary', () => {
     client.setQueryData(['promo'], 'anonymous')
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(storage.getItem('epharm.query.cache')).toBeNull()
+  })
+})
+
+describe('Persistence stays cheap on big admin pages (admin froze, 25.11.2026)', () => {
+  it('skips a response larger than the per-entry limit and keeps the small ones', async () => {
+    const client = new QueryClient()
+    const stop = configureQueryPersistence(client, storage, { principal: 'demo-a', debounceMs: 1 })
+    const huge = Array.from({ length: 4000 }, (_, i) => ({ id: `row-${i}`, name: 'x'.repeat(80) }))
+    client.setQueryData(['training', 'assignments'], huge)
+    client.setQueryData(['promo', 'list'], [{ id: 'small-entry' }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const stored = storage.getItem('epharm.query.cache') ?? ''
+    expect(stored).toContain('small-entry')
+    expect(stored).not.toContain('row-3999')
+    expect(stored.length).toBeLessThan(MAX_ENTRY_CHARS)
+    expect(JSON.parse(stored).entries).toHaveLength(1)
+    stop()
+  })
+
+  it('does not rewrite storage when nothing changed (refetch with equal data, invalidation)', async () => {
+    const client = new QueryClient()
+    const stop = configureQueryPersistence(client, storage, { principal: 'demo-a', debounceMs: 1 })
+    client.setQueryData(['promo', 'list'], [{ id: 'same' }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const writes = storage.setItem.mock.calls.length
+    await client.invalidateQueries()
+    client.setQueryData(['promo', 'list'], [{ id: 'same' }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(storage.setItem.mock.calls.length).toBe(writes)
+    client.setQueryData(['promo', 'list'], [{ id: 'changed' }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(storage.setItem.mock.calls.length).toBe(writes + 1)
+    expect(storage.getItem('epharm.query.cache')).toContain('changed')
+    stop()
+  })
+
+  it('keeps the whole stored cache under the total limit', async () => {
+    const client = new QueryClient()
+    const stop = configureQueryPersistence(client, storage, { principal: 'demo-a', debounceMs: 1 })
+    const chunk = 'y'.repeat(Math.floor(MAX_ENTRY_CHARS * 0.8))
+    for (let i = 0; i < 12; i++) client.setQueryData(['big', i], chunk)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((storage.getItem('epharm.query.cache') ?? '').length).toBeLessThan(MAX_TOTAL_CHARS + 1_000)
+    stop()
   })
 })

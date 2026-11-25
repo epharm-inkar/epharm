@@ -57,6 +57,7 @@ import { useUiStore } from '@/app/store'
 import { currentLearnerTranslate, learnerTranslate, useLearnerT } from './learner-i18n'
 import type { CourseLiveRoomDto } from '@/lib/api-types'
 import { parseLoginIdentifier } from './login-identifier'
+import { GuardedVideo, type GuardedVideoProgress } from './GuardedVideo'
 
 type Tokens = {
   accessToken: string
@@ -1241,6 +1242,7 @@ export default function LearnerTrainingPage() {
     progressPct: number,
     positionSeconds: number,
     refreshOverview = false,
+    mediaDurationSeconds?: number,
   ) {
     if (!tokens || !selected) return null
     try {
@@ -1251,6 +1253,9 @@ export default function LearnerTrainingPage() {
           body: JSON.stringify({
             progressPct: Math.min(100, Math.max(0, Math.round(progressPct))),
             positionSeconds: Math.max(0, Math.round(positionSeconds)),
+            ...(mediaDurationSeconds && mediaDurationSeconds > 0
+              ? { mediaDurationSeconds: Math.round(mediaDurationSeconds) }
+              : {}),
           }),
         },
         tokens,
@@ -4048,6 +4053,7 @@ function LessonPage({
     progressPct: number,
     positionSeconds: number,
     refreshOverview?: boolean,
+    mediaDurationSeconds?: number,
   ) => Promise<Assignment | null>
   onSubmitQuiz: (
     stage: Stage,
@@ -4073,6 +4079,7 @@ function LessonPage({
   const currentPositions = useRef<Record<string, number>>({})
   const lastSyncedProgress = useRef<Record<string, number>>({})
   const progressInFlight = useRef<Set<string>>(new Set())
+  const mediaDurations = useRef<Record<string, number>>({})
 
   const handleLiveEndedChange = useCallback(
     (ended: boolean) => {
@@ -4103,12 +4110,9 @@ function LessonPage({
   const promotedVideoAttachment = lesson.videoUrl
     ? null
     : (allAttachments.find((attachment) => attachment.kind === 'video') ?? null)
-  const isFireSafetyIntro =
-    index === 0 && /пожарн/i.test(`${assignment.programName} ${stage.course?.title ?? ''}`)
-  const primaryVideoUrl =
-    lesson.videoUrl ||
-    promotedVideoAttachment?.mediaUrl ||
-    (isFireSafetyIntro ? '/training/fire-safety-training-video.mp4' : null)
+  // Only the lesson's own video plays: the fire-safety course no longer borrows its single clip for
+  // the first text lesson, which showed the same video twice (lessons 1 and 10, 25.11.2026).
+  const primaryVideoUrl = lesson.videoUrl || promotedVideoAttachment?.mediaUrl || null
   const attachments = promotedVideoAttachment
     ? allAttachments.filter((attachment) => attachment.id !== promotedVideoAttachment.id)
     : allAttachments
@@ -4144,11 +4148,22 @@ function LessonPage({
     )
   }
 
-  async function persistVideoProgress(progressPct: number, positionSeconds: number) {
+  async function persistVideoProgress(
+    progressPct: number,
+    positionSeconds: number,
+    mediaDurationSeconds?: number,
+  ) {
     if (progressInFlight.current.has(lesson.id) || read) return
     progressInFlight.current.add(lesson.id)
     try {
-      const saved = await onSaveProgress(currentStage, lesson, progressPct, positionSeconds)
+      const saved = await onSaveProgress(
+        currentStage,
+        lesson,
+        progressPct,
+        positionSeconds,
+        false,
+        mediaDurationSeconds,
+      )
       if (saved) {
         lastSyncedProgress.current[lesson.id] = Math.max(
           lastSyncedProgress.current[lesson.id] ?? lesson.progressPct ?? 0,
@@ -4160,10 +4175,12 @@ function LessonPage({
     }
   }
 
-  function updateVideoProgress(element: HTMLVideoElement) {
-    if (!Number.isFinite(element.duration) || element.duration <= 0) return
-    const progressPct = Math.min(100, Math.floor((element.currentTime / element.duration) * 100))
-    const positionSeconds = Math.floor(element.currentTime)
+  function updateVideoProgress(progress: GuardedVideoProgress) {
+    if (progress.durationSeconds <= 0) return
+    mediaDurations.current[lesson.id] = progress.durationSeconds
+    // Progress counts what was actually watched, not where the playhead was dragged to.
+    const progressPct = progress.watchedPct
+    const positionSeconds = Math.floor(progress.watchedSeconds)
     currentPositions.current[lesson.id] = positionSeconds
     setWatchedProgress((current) => ({
       ...current,
@@ -4171,7 +4188,7 @@ function LessonPage({
     }))
     const lastSynced = Math.max(lastSyncedProgress.current[lesson.id] ?? 0, lesson.progressPct ?? 0)
     if (progressPct >= lastSynced + 5 || progressPct >= threshold) {
-      void persistVideoProgress(progressPct, positionSeconds)
+      void persistVideoProgress(progressPct, positionSeconds, progress.durationSeconds)
     }
   }
 
@@ -4187,6 +4204,7 @@ function LessonPage({
         videoLesson ? effectiveProgress : 100,
         Math.max(currentPositions.current[lesson.id] ?? 0, lesson.lastPositionSeconds ?? 0),
         !next,
+        mediaDurations.current[lesson.id],
       )
       setSaving(false)
       if (!saved) return
@@ -4255,27 +4273,21 @@ function LessonPage({
                 </span>
               </div>
               <div className="overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl shadow-black/25">
-                <video
-                  controls
-                  playsInline
-                  preload="metadata"
-                  aria-label={t('Видео урока')}
+                <GuardedVideo
+                  key={`${lesson.id}:${primaryVideoUrl}`}
+                  ariaLabel={t('Видео урока')}
                   className="aspect-video max-h-[70vh] w-full bg-black object-contain"
                   src={primaryVideoUrl}
-                  onLoadedMetadata={(event) => {
-                    const resumeAt = lesson.lastPositionSeconds ?? 0
-                    if (resumeAt > 0 && resumeAt < event.currentTarget.duration) {
-                      event.currentTarget.currentTime = resumeAt
-                    }
-                  }}
-                  onPlay={(event) => {
+                  resumeAtSeconds={lesson.lastPositionSeconds ?? 0}
+                  unrestricted={read}
+                  onPlay={(progress) => {
                     void persistVideoProgress(
                       Math.max(lastSyncedProgress.current[lesson.id] ?? 0, lesson.progressPct ?? 0),
-                      Math.floor(event.currentTarget.currentTime),
+                      Math.floor(progress.watchedSeconds),
+                      progress.durationSeconds,
                     )
                   }}
-                  onTimeUpdate={(event) => updateVideoProgress(event.currentTarget)}
-                  onPause={(event) => updateVideoProgress(event.currentTarget)}
+                  onProgress={updateVideoProgress}
                 />
               </div>
               <div className="mt-3 flex items-center gap-3 text-xs font-semibold text-white/75">

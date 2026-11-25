@@ -93,12 +93,17 @@ class TrainingCertificatePdfService(
                     emphasizedText(canvas, boldFont, 27f, "ePharm", 48f, height - 91f, Color.WHITE)
                     emphasizedText(canvas, boldFont, 7.2f, "ОБУЧЕНИЕ ДЛЯ ФАРМАЦЕВТОВ", 49f, height - 111f, Color.WHITE)
                 }
+                val partnerLogo = certificate.partnerLogoUrl?.let(::loadImage)
+                val partnerName = partnerNameOrNull(certificate.partnerCompanyName)
                 canvas.setStrokingColor(Color(89, 196, 190))
                 canvas.setLineWidth(1.2f)
                 canvas.moveTo(208f, height - 137f)
                 canvas.lineTo(208f, height - 43f)
-                canvas.moveTo(width - 208f, height - 137f)
-                canvas.lineTo(width - 208f, height - 43f)
+                // Without a partner the right column stays empty, so its divider is not drawn either.
+                if (partnerLogo != null || partnerName != null) {
+                    canvas.moveTo(width - 208f, height - 137f)
+                    canvas.lineTo(width - 208f, height - 43f)
+                }
                 canvas.stroke()
 
                 canvas.setNonStrokingColor(Color.WHITE)
@@ -114,16 +119,15 @@ class TrainingCertificatePdfService(
                     0.18f,
                 )
 
-                val partnerLogo = certificate.partnerLogoUrl?.let(::loadImage)
                 if (partnerLogo != null) {
                     drawImageContained(document, canvas, partnerLogo, width - 194f, height - 136f, 154f, 91f)
-                } else {
+                } else if (partnerName != null) {
                     canvas.setNonStrokingColor(Color.WHITE)
                     centeredEmphasizedInBox(
                         canvas,
                         boldFont,
                         20f,
-                        certificate.partnerCompanyName.uppercase(),
+                        partnerName.uppercase(),
                         width - 199f,
                         166f,
                         height - 91f,
@@ -132,48 +136,41 @@ class TrainingCertificatePdfService(
                     centeredInBox(canvas, font, 7.3f, "КОМПАНИЯ-ПАРТНЁР", width - 199f, 166f, height - 111f)
                 }
 
+                // The certificate states completion only: the test score is not printed (Grigoriy, 25.11.2026).
                 canvas.setNonStrokingColor(muted)
-                text(canvas, font, 11.5f, "Настоящим подтверждается, что", 42f, height - 196f)
+                text(canvas, font, 11.5f, "Настоящим подтверждается, что", 42f, height - 232f)
                 canvas.setNonStrokingColor(ink)
-                fittedEmphasizedText(canvas, boldFont, 31f, 19f, certificate.pharmacistName, 42f, height - 239f, 535f, ink)
+                fittedEmphasizedText(canvas, boldFont, 31f, 19f, certificate.pharmacistName, 42f, height - 275f, 535f, ink)
                 canvas.setNonStrokingColor(muted)
-                text(canvas, font, 11.5f, "завершил программу обучения", 42f, height - 273f)
+                text(canvas, font, 11.5f, CertificateWording.completedProgram(certificate.pharmacistName), 42f, height - 309f)
 
-                canvas.setNonStrokingColor(teal)
-                roundedRect(canvas, 42f, height - 335f, 5f, 55f, 2.5f)
-                canvas.fill()
-                canvas.setNonStrokingColor(teal)
                 val courseLines = wrappedFittedLines(boldFont, certificate.programName, 27f, 18f, 510f, 2)
+                val courseSize = courseLines.first
+                val firstBaseline = height - 346f
+                val lastBaseline = firstBaseline - (courseLines.second.size - 1) * (courseSize + 5f)
+                val barTop = firstBaseline + capHeight(boldFont, courseSize) + 5f
+                val barBottom = lastBaseline - courseSize * 0.22f
+                canvas.setNonStrokingColor(teal)
+                roundedRect(canvas, 42f, barBottom, 5f, barTop - barBottom, 2.5f)
+                canvas.fill()
                 courseLines.second.forEachIndexed { index, line ->
-                    emphasizedText(canvas, boldFont, courseLines.first, line, 57f, height - 310f - index * (courseLines.first + 5f), teal)
+                    emphasizedText(canvas, boldFont, courseSize, line, 57f, firstBaseline - index * (courseSize + 5f), teal)
                 }
 
                 val format = when (certificate.format) {
                     TrainingFormat.online -> "Онлайн-формат"
                     TrainingFormat.hybrid -> "Гибридный формат"
                     TrainingFormat.offline -> "Очный формат"
-                }
+                }.uppercase()
+                val pillTextSize = 9.5f
+                val pillHeight = 24f
+                val pillWidth = textWidth(boldFont, pillTextSize, format) + 2f * PILL_PADDING_X
+                val pillY = barBottom - 22f - pillHeight
                 canvas.setNonStrokingColor(mint)
-                roundedRect(canvas, 42f, 137f, 106f, 27f, 13.5f)
+                roundedRect(canvas, 42f, pillY, pillWidth, pillHeight, pillHeight / 2f)
                 canvas.fill()
-                canvas.setNonStrokingColor(tealDark)
-                emphasizedText(canvas, boldFont, 9.5f, format.uppercase(), 55f, 146f, tealDark)
-                canvas.setNonStrokingColor(muted)
-                text(canvas, font, 10f, "Результат", 42f, 103f)
-                canvas.setNonStrokingColor(teal)
-                if (certificate.score == null) {
-                    emphasizedText(canvas, boldFont, 14f, "Без оценки", 42f, 72f, teal)
-                } else {
-                    emphasizedText(canvas, boldFont, 33f, "${certificate.score}%", 42f, 67f, teal)
-                }
-
-                canvas.saveGraphicsState()
-                canvas.setGraphicsStateParameters(alpha(0.11f))
-                canvas.setNonStrokingColor(teal)
-                certificate.score?.let { score ->
-                    emphasizedText(canvas, boldFont, 105f, "$score%", 250f, 65f, teal)
-                }
-                canvas.restoreGraphicsState()
+                val pillBaseline = pillY + (pillHeight - capHeight(boldFont, pillTextSize)) / 2f
+                emphasizedText(canvas, boldFont, pillTextSize, format, 42f + PILL_PADDING_X, pillBaseline, tealDark)
 
                 canvas.setStrokingColor(Color(198, 218, 218))
                 canvas.setLineWidth(1f)
@@ -482,7 +479,21 @@ class TrainingCertificatePdfService(
     private fun textWidth(font: PDFont, size: Float, value: String): Float =
         font.getStringWidth(value) / 1_000f * size
 
+    /** Height of capital letters, for centring a line of capitals vertically. */
+    private fun capHeight(font: PDFont, size: Float): Float {
+        val units = (font as? PDType0Font)?.fontDescriptor?.capHeight?.takeIf { it > 0f } ?: DEFAULT_CAP_HEIGHT_UNITS
+        return units / 1_000f * size
+    }
+
     companion object {
+        private const val PILL_PADDING_X = 14f
+        private const val DEFAULT_CAP_HEIGHT_UNITS = 714f
+        private const val PARTNER_PLACEHOLDER = "Компания-партнёр"
+
+        /** A real partner name, or null for a program without one (the placeholder is not printed). */
+        fun partnerNameOrNull(value: String?): String? =
+            value?.trim()?.takeUnless { it.isEmpty() || it.equals(PARTNER_PLACEHOLDER, ignoreCase = true) }
+
         private const val MAX_CERTIFICATE_ASSET_BYTES = 5 * 1024 * 1024
         private const val MAX_IMAGE_SIDE = 6_000
         private const val MAX_IMAGE_PIXELS = 8_000_000L

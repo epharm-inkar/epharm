@@ -822,7 +822,7 @@ describe('learner training portal', () => {
     expect(screen.queryByText('17 500 ₸')).not.toBeInTheDocument()
   })
 
-  it('shows the fire-safety video as the first lesson block', async () => {
+  it('shows a text lesson of the fire-safety course without a borrowed video', async () => {
     const user = userEvent.setup()
     localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
     const scrollTo = vi.fn()
@@ -887,10 +887,8 @@ describe('learner training portal', () => {
 
     renderPortal('/learn/course/assignment-fire/lesson/lesson-fire-1')
 
-    const video = await screen.findByLabelText('Видео урока')
-    const material = screen.getByRole('heading', { name: '2.1. Торговый зал аптеки' })
-    expect(video).toHaveAttribute('src', '/training/fire-safety-training-video.mp4')
-    expect(video.compareDocumentPosition(material) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await screen.findByRole('heading', { name: '2.1. Торговый зал аптеки' })
+    expect(screen.queryByLabelText('Видео урока')).not.toBeInTheDocument()
     expect(screen.getByRole('list')).toHaveTextContent('свободны ли проходы;')
     expect(screen.getByRole('list')).toHaveTextContent('доступны ли указатели эвакуации.')
     expect(screen.queryByText('Сообщите руководителю и вызовите 112.')).not.toBeInTheDocument()
