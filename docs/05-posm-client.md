@@ -992,6 +992,22 @@ Corrupt encrypted data is quarantined before a fresh queue is created, without l
 Overlay updates preserve this state and pharmacy configuration. A signed current manifest alone
 does not prove that offline or broken legacy Windows updaters applied the package.
 
+## Remote commands without AnyDesk (server contract, 25.11.2026)
+
+HQ presses «Диагностика» or «Перезапуск» in «Все кассы»; the backend keeps the command (`till_commands`, V117).
+The client is written against this contract (see `docs/02-backend.md`, «Remote till commands»):
+
+| Step | Request | Answer |
+| --- | --- | --- |
+| Ask for work, at most once a minute (with the heartbeat) | `POST /api/posm/commands/next`, header `X-Posm-Key` (own key), no body | 200 `{"id":"<uuid>","action":"diagnostics"\|"restart","expiresAt":"<ISO-8601>"}`; 204 nothing to do; 401 fleet or unknown key |
+| Report | `POST /api/posm/commands/{id}/result`, multipart/form-data: `status` = `done`\|`failed`, `message` (text, cut to 2000 characters), `file` (optional, ZIP, at most 5 MB, diagnostics only) | 200 `{"id","status","finishedAt"}`; 400 bad status, not a ZIP or a file for restart; 404 not this till's command; 409 not taken, already answered or past `expiresAt` (final, do not retry); 413 archive above 5 MB; 503 archive storage down (retry before `expiresAt`) |
+
+- Run only actions compiled into the client; an unknown `action` is answered `failed` with a message, never run.
+- `expiresAt` from `next` is the answer deadline (10 minutes after taking). A taken command is not given again.
+- Restart: answer `done` first, then restart through the `EpharmPOSM-Watchdog` scheduler task.
+- Diagnostics archive: no device key, passwords or full IIN (mask it), 3 days of logs; above 5 MB send `failed`
+  with a message instead of the file.
+
 ## Operations
 
 Useful docs:

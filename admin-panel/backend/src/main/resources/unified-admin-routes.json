@@ -1188,6 +1188,26 @@
     "mode": "ALL_ONLY"
   },
   {
+    "api": "GET /api/admin/tills/commands",
+    "permission": {
+      "module": "pharmacies_products",
+      "subsection": "registers",
+      "action": "view",
+      "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "GET /api/admin/tills/commands/{id}/artifact",
+    "permission": {
+      "module": "pharmacies_products",
+      "subsection": "registers",
+      "action": "download_diagnostics",
+      "kind": "POSM_TECHNICAL"
+    },
+    "mode": "NOT_READY"
+  },
+  {
     "api": "GET /api/admin/training/assignments",
     "permission": {
       "module": "training",
@@ -2554,6 +2574,16 @@
       "subsection": "media",
       "action": "assign",
       "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "POST /api/admin/tills/commands",
+    "permission": {
+      "module": "pharmacies_products",
+      "subsection": "registers",
+      "action": "remote_command",
+      "kind": "POSM_TECHNICAL"
     },
     "mode": "NOT_READY"
   },

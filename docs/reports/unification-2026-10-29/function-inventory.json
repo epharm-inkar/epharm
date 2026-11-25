@@ -1995,6 +1995,62 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H09.06",
+    "group": "H09",
+    "name": "Диагностика и перезапуск кассы без AnyDesk: задание кассе, его статус и архив диагностики",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/till-remote-commands",
+      "ui": [
+        "admin-panel/frontend/src/features/screens/FleetPanel.tsx",
+        "admin-panel/frontend/src/features/screens/TillCommandCell.tsx",
+        "admin-panel/frontend/src/features/screens/tillCommands.ts",
+        "admin-panel/frontend/src/lib/queries/tillCommands.ts"
+      ],
+      "api": [
+        "POST /api/admin/tills/commands",
+        "GET /api/admin/tills/commands",
+        "GET /api/admin/tills/commands/{id}/artifact"
+      ],
+      "jobs": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/TillCommandCleanup.kt"
+      ],
+      "data": [
+        "till_commands",
+        "fulfillment_devices",
+        "pharmacies",
+        "private MinIO bucket epharm-private, prefix till-diagnostics"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/AdminTillCommandController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/TillCommandService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/TillCommandRules.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/S3TillArtifactStorage.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V117__till_commands.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/commands/TillCommandIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "Кассы и экраны",
+      "actions": [
+        "Диагностика и перезапуск кассы без AnyDesk: задание кассе, его статус и архив диагностики"
+      ],
+      "scope": "Только SYSTEM_ADMIN и HQ_HEAD; касса со своим действующим ключом в активной аптеке; managed-аккаунтам NOT_READY, как и «Все кассы»"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Только действия из списка (diagnostics, restart), без параметров; одно задание в работе на кассу, второе получает 409",
+      "Задание ждёт кассу 30 минут, взятое ждёт ответа 10 минут, потом истекает; HQ видит истёкшее сразу",
+      "Архив диагностики (zip до 5 МБ) лежит в закрытом бакете, скачивается только HQ, удаляется через 14 дней; размер остаётся в истории",
+      "Роли вне HQ получают 403; неизвестная касса или отозванный ключ дают 404"
+    ],
+    "risks": [
+      "Клиент кассы пишется отдельно; до его выпуска задания истекают без исполнения"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H10.01",
     "group": "H10",
     "name": "Совместимый реестр плейлистов",
@@ -4102,6 +4158,50 @@
     "risks": [
       "Список появится на кассах только с новой сборкой POSM, которая читает этот ответ"
     ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H15.17",
+    "group": "H15",
+    "name": "Задания кассе без AnyDesk: касса берёт задание своим ключом и отвечает результатом с архивом диагностики",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/till-remote-commands",
+      "ui": [],
+      "api": [
+        "POST /api/posm/commands/next",
+        "POST /api/posm/commands/{id}/result"
+      ],
+      "jobs": [],
+      "data": [
+        "till_commands",
+        "fulfillment_devices",
+        "private MinIO bucket epharm-private, prefix till-diagnostics"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/PosmTillCommandController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/TillCommandService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/commands/TillCommandRules.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/service/PosmDeviceAuthenticationService.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V117__till_commands.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/commands/TillCommandIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "POSM / совместимость устройств",
+      "actions": [
+        "Задания кассе без AnyDesk: касса берёт задание своим ключом и отвечает результатом с архивом диагностики"
+      ],
+      "scope": "Device-auth кассы (X-Posm-Key, только индивидуальный ключ); касса = аутентифицированное устройство, не id из запроса"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "next отдаёт самое старое ждущее задание этой кассы и помечает его взятым, иначе 204; общий ключ сети получает 401",
+      "Касса не видит и не может ответить на задание другой кассы (404); ответ только на взятое задание до срока, иначе 409",
+      "Архив только у диагностики, только zip, до 5 МБ включительно; больше получает 413, задание остаётся взятым"
+    ],
+    "risks": [],
     "owner": "ePharm unification integration owner"
   },
   {
