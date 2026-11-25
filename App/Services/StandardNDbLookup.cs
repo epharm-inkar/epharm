@@ -77,6 +77,7 @@ namespace CustomerDisplay.Services
         private string? _optionsDbUser;
         private string? _optionsDbPassword;
         private string? _successfulConnectionKey;
+        private readonly HashSet<string> _loggedFallbackFailures = new(StringComparer.Ordinal);
         private string? _rewardSourceNamespace;
         // Only the digest of the successfully opened source is exposed; never credentials or paths.
         public string? RewardSourceNamespace => _rewardSourceNamespace;
@@ -1211,14 +1212,6 @@ namespace CustomerDisplay.Services
             string? WorkstationName,
             bool CanConfirmEmptyReceipt);
 
-        private sealed record DbConnectionCandidate(
-            string Source,
-            string Host,
-            int Port,
-            string User,
-            string Password,
-            string Key);
-
         public StandardNProductInfo? GetProduct(int partId, string? barcode)
         {
             if (!_cfg.StandardNDbEnabled || partId <= 0) return null;
@@ -1445,7 +1438,8 @@ namespace CustomerDisplay.Services
                 catch (Exception ex)
                 {
                     conn.Dispose();
-                    authoritativeError ??= ex;
+                    if (authoritativeError == null) authoritativeError = ex;
+                    else LogFallbackFailureOnce(candidate, ex);
                 }
             }
 
@@ -1455,49 +1449,35 @@ namespace CustomerDisplay.Services
             throw authoritativeError ?? new InvalidOperationException("нет вариантов подключения к ztrade");
         }
 
-        private List<DbConnectionCandidate> BuildConnectionCandidates(string dbPath)
+        /// <summary>Why a later login did not open the database, once per distinct reason (no secrets in it).</summary>
+        private void LogFallbackFailureOnce(StandardNDbCandidates.Candidate candidate, Exception error)
+        {
+            var text = $"БД Стандарт-Н: вход «{candidate.Source}» на {candidate.Host}:{candidate.Port} не подошёл: {error.Message}";
+            lock (_loggedFallbackFailures)
+            {
+                if (_loggedFallbackFailures.Count >= 16 || !_loggedFallbackFailures.Add(text)) return;
+            }
+            _log(text);
+        }
+
+        private List<StandardNDbCandidates.Candidate> BuildConnectionCandidates(string dbPath)
         {
             _ = dbPath;
-            var candidates = new List<DbConnectionCandidate>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            void Add(string source, string? host, string? user, string? password, int? port = null)
-            {
-                var normalizedHost = string.IsNullOrWhiteSpace(host) ? "localhost" : host.Trim();
-                var normalizedUser = string.IsNullOrWhiteSpace(user) ? "SYSDBA" : user.Trim();
-                var normalizedPassword = password ?? "";
-                var normalizedPort = port ?? _cfg.StandardNDbPort;
-                var key = $"{normalizedHost}|{normalizedPort}|{normalizedUser}|{normalizedPassword}";
-                if (!seen.Add(key)) return;
-                candidates.Add(new DbConnectionCandidate(
-                    source,
-                    normalizedHost,
-                    normalizedPort,
-                    normalizedUser,
-                    normalizedPassword,
-                    key));
-            }
-
             // When the database path came from the running cashier's options.ini, that same file is
-            // the authoritative source for host and credentials. This deliberately outranks stale
+            // the authoritative source for the server. This deliberately outranks stale
             // machine/user EPHARM_STANDARDN_DB_* variables left by older POSM installations.
-            if (_resolvedFromOptionsIni)
-            {
-                Add(
-                    "running Standard-N options.ini",
-                    _optionsDbHost,
-                    _optionsDbUser,
-                    _optionsDbPassword,
-                    _optionsDbPort);
-            }
-
-            Add(
-                "posm.json/environment fallback",
+            // A second cash desk also tries the main computer with the posm.json login (25.11.2026).
+            return StandardNDbCandidates.Build(
+                _resolvedFromOptionsIni,
+                _optionsDbHost,
+                _optionsDbPort,
+                _optionsDbUser,
+                _optionsDbPassword,
                 _cfg.StandardNDbHost,
+                _cfg.StandardNDbPort,
                 _cfg.StandardNDbUser,
-                _cfg.StandardNDbPassword);
-
-            return candidates;
+                _cfg.StandardNDbPassword,
+                _machineName);
         }
 
         private string? ResolveDbPath(bool logIfMissing)
