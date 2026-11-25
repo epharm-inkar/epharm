@@ -11,6 +11,8 @@ import kz.epharm.auth.repository.AdminUserRepository
 import kz.epharm.auth.service.JwtService
 import kz.epharm.mobile.auth.reset.*
 import kz.epharm.mobile.auth.service.*
+import kz.epharm.posm.self.PosmSelfRequest
+import kz.epharm.posm.self.PosmSelfService
 import kz.epharm.posm.service.PosmDeviceIdentity
 import kz.epharm.posm.staff.*
 import org.apache.poi.ss.usermodel.CellType
@@ -83,6 +85,7 @@ class LearnerCredentialIntegrationTest {
     @Autowired lateinit var vault:LearnerPasswordVault
     @Autowired lateinit var crypto:LearnerCredentialCrypto
     @Autowired lateinit var exports:LearnerCredentialExportService
+    @Autowired lateinit var self:PosmSelfService
     @Autowired lateinit var txManager:PlatformTransactionManager
     @MockkBean lateinit var provider:OtpProvider
     @MockkBean(relaxed=true) lateinit var scheduledCleanup:CredentialExportCleanup
@@ -259,6 +262,18 @@ class LearnerCredentialIntegrationTest {
         assertTrue(TransactionTemplate(txManager).execute{vault.read(id,currentHash(id)).password==changed}==true)
         assertEquals(1,count("learner_password_vault"))
         assertEquals(0,jdbc.queryForObject("SELECT count(*) FROM learner_password_vault WHERE pharmacist_id=?",Int::class.java,admin.id.toString()))
+    }
+    @Test fun `phone login and a password changed at the till capture the effective credential`() {
+        mobile.loginByPhone("8 700 222 33 44",LEARNER_PASSWORD)
+        assertTrue(TransactionTemplate(txManager).execute{vault.read("credential-person",currentHash()).password==LEARNER_PASSWORD}==true)
+        jdbc.update("UPDATE pharmacies SET standardn_profile_id=7301,standardn_profile_source='manual' WHERE id='credential-pharmacy'")
+        jdbc.update("DELETE FROM standardn_pharmacist_directory WHERE source_profile_id=7301")
+        jdbc.update("""INSERT INTO standardn_pharmacist_directory(directory_key,source_profile_id,source_user_id,iin,full_name,source_status,profile_name)
+            VALUES('7301:61',7301,61,?,'Synthetic learner',0,'credential-pharmacy')""",IIN)
+        val changed="Till synthetic 0011"
+        self.saveContact(device,PosmSelfRequest(pharmacyId="credential-pharmacy",standardNUserId="61",password=changed,link=false))
+        assertTrue(TransactionTemplate(txManager).execute{vault.read("credential-person",currentHash()).password==changed}==true)
+        assertEquals(1,count("learner_password_vault"))
     }
     @Test fun `key unavailable does not break login and cannot return an older captured credential`() {
         capture();Files.delete(keyFile)

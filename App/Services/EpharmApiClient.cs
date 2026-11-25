@@ -99,6 +99,10 @@ namespace CustomerDisplay.Services
         public Task<PosmSelfResult<PosmSelfDto>> SaveSelfContactAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
             PostSelfAsync<PosmSelfDto>("/api/posm/self/contact", req, ct);
 
+        /// <summary>HQ tasks of the person at this till (training assignments with status), 1.0.96.</summary>
+        public Task<PosmSelfResult<PosmSelfTasksDto>> GetSelfTasksAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
+            PostSelfAsync<PosmSelfTasksDto>("/api/posm/self/tasks", req, ct);
+
         /// <summary>A fresh one-time link that opens the web cabinet signed in (for the «Мой кабинет» button).</summary>
         public Task<PosmSelfResult<PosmCabinetLinkDto>> GetCabinetLinkAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
             PostSelfAsync<PosmCabinetLinkDto>("/api/posm/self/cabinet-link", req, ct);
@@ -130,6 +134,68 @@ namespace CustomerDisplay.Services
             {
                 if (ShouldLog(ref _noticeLogAt, ref _noticeLogKey, "error", 900)) _log?.Invoke($"notice: {Describe(ex)}");
                 return null;
+            }
+        }
+
+        private DateTime _commandLogAt;
+        private string? _commandLogKey;
+
+        /// <summary>The next command HQ gave this till (diagnostics or restart); null when there is none or no answer.</summary>
+        public async Task<TillCommandDto?> NextCommandAsync(CancellationToken ct = default)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
+            try
+            {
+                using var resp = await _http.PostAsync("/api/posm/commands/next", null, cts.Token).ConfigureAwait(false);
+                if (resp.StatusCode == HttpStatusCode.NoContent) return null;
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (ShouldLog(ref _commandLogAt, ref _commandLogKey, "http" + (int)resp.StatusCode, 3600))
+                        _log?.Invoke($"commands: HTTP {(int)resp.StatusCode}");
+                    return null;
+                }
+                return await resp.Content.ReadFromJsonAsync<TillCommandDto>(JsonOpts, cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                if (ShouldLog(ref _commandLogAt, ref _commandLogKey, "error", 3600)) _log?.Invoke($"commands: {Describe(ex)}");
+                return null;
+            }
+        }
+
+        /// <summary>Answers a command: done or failed, a short message and, for diagnostics, the zip (at most 5 MB).</summary>
+        public async Task<bool> SendCommandResultAsync(string id, string status, string message, byte[]? zip, CancellationToken ct = default)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(zip == null ? 15 : 120));
+            try
+            {
+                using var form = new MultipartFormDataContent();
+                form.Add(new StringContent(status), "status");
+                form.Add(new StringContent(message.Length <= 2000 ? message : message[..2000]), "message");
+                if (zip != null)
+                {
+                    var file = new ByteArrayContent(zip);
+                    file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
+                    form.Add(file, "file", "diagnostics.zip");
+                }
+                using var resp = await _http.PostAsync("/api/posm/commands/" + Uri.EscapeDataString(id) + "/result", form, cts.Token).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode) _log?.Invoke($"commands result: HTTP {(int)resp.StatusCode}");
+                return resp.IsSuccessStatusCode;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _log?.Invoke($"commands result: {Describe(ex)}");
+                return false;
             }
         }
 

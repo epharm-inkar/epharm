@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ScreenFleetDto, ScreenFleetRegisterDto } from '@/lib/api-types'
+import type { AdminRole, ScreenFleetDto, ScreenFleetRegisterDto, TillCommandDto } from '@/lib/api-types'
+import { useUiStore } from '@/app/store'
 import { FleetPanel } from './FleetPanel'
 
 const screenHooks = vi.hoisted(() => ({ useScreenFleet: vi.fn() }))
 vi.mock('@/lib/queries/screens', () => screenHooks)
+const tillHooks = vi.hoisted(() => ({ useTillCommands: vi.fn(), useCreateTillCommand: vi.fn() }))
+vi.mock('@/lib/queries/tillCommands', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/queries/tillCommands')>()),
+  ...tillHooks,
+}))
 
 const OBSERVED = '2026-11-24T09:00:00Z'
 
@@ -100,6 +106,31 @@ function fleet(overrides: Partial<ScreenFleetDto> = {}): ScreenFleetDto {
   }
 }
 
+function signIn(role: AdminRole | null) {
+  useUiStore.setState({
+    authedUser: role ? { id: 'u1', email: 'hq@example.test', name: 'HQ', role, company: 'INKAR' } : null,
+  })
+}
+
+function tillCommand(overrides: Partial<TillCommandDto>): TillCommandDto {
+  return {
+    id: 'cmd-1',
+    pharmacyId: 'ph_a',
+    deviceId: 'KASSA1',
+    action: 'diagnostics',
+    status: 'pending',
+    requestedBy: 'hq@example.test',
+    createdAt: '2026-11-24T08:55:00Z',
+    expiresAt: '2026-11-24T09:25:00Z',
+    deliveredAt: null,
+    finishedAt: null,
+    resultMessage: null,
+    artifactAvailable: false,
+    artifactBytes: null,
+    ...overrides,
+  }
+}
+
 function mockFleet(data: ScreenFleetDto | undefined, extra: Record<string, unknown> = {}) {
   screenHooks.useScreenFleet.mockReturnValue({
     data,
@@ -112,8 +143,16 @@ function mockFleet(data: ScreenFleetDto | undefined, extra: Record<string, unkno
 }
 
 describe('FleetPanel', () => {
-  beforeEach(() => mockFleet(fleet()))
-  afterEach(() => vi.unstubAllGlobals())
+  beforeEach(() => {
+    mockFleet(fleet())
+    signIn(null)
+    tillHooks.useTillCommands.mockReturnValue({ data: undefined })
+    tillHooks.useCreateTillCommand.mockReturnValue({ mutate: vi.fn(), isPending: false })
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    signIn(null)
+  })
 
   it('показывает плитки и все кассы таблицей', () => {
     render(<FleetPanel />)
@@ -195,5 +234,51 @@ describe('FleetPanel', () => {
     expect(block).toHaveTextContent('Эфир касс')
     expect(block).toHaveTextContent('касс на связи: 2')
     expect(block).toHaveTextContent('1. Скидочный четверг')
+  })
+  it('без роли HQ колонки «Управление» нет и задания не запрашиваются', () => {
+    signIn('CATEGORY_LEAD')
+    render(<FleetPanel />)
+    expect(within(screen.getByTestId('fleet-table')).queryByText('Управление')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('till-commands-ph_a-KASSA1')).not.toBeInTheDocument()
+    expect(tillHooks.useTillCommands).toHaveBeenCalledWith(false)
+  })
+
+  it('HQ видит «Диагностика» и «Перезапуск» у каждой кассы и последнее задание кассы', () => {
+    signIn('HQ_HEAD')
+    tillHooks.useTillCommands.mockReturnValue({
+      data: [
+        tillCommand({ id: 'new', status: 'delivered', deliveredAt: '2026-11-24T08:56:00Z', createdAt: '2026-11-24T08:55:00Z' }),
+        tillCommand({ id: 'old', status: 'done', createdAt: '2026-11-23T08:55:00Z', finishedAt: '2026-11-23T09:00:00Z' }),
+        tillCommand({ id: 'b', pharmacyId: 'ph_b', deviceId: 'KASSA2', status: 'failed', action: 'restart', resultMessage: 'Нет планировщика', finishedAt: '2026-11-24T08:00:00Z' }),
+      ],
+    })
+    render(<FleetPanel />)
+    expect(tillHooks.useTillCommands).toHaveBeenCalledWith(true)
+    const table = screen.getByTestId('fleet-table')
+    expect(within(table).getByText('Управление')).toBeInTheDocument()
+    const first = screen.getByTestId('fleet-row-ph_a-KASSA1')
+    expect(within(first).getByTestId('till-command-status')).toHaveTextContent('выполняется')
+    expect(within(first).getByRole('button', { name: 'Диагностика' })).toBeDisabled()
+    const second = within(screen.getByTestId('fleet-row-ph_b-KASSA2')).getByTestId('till-command-status')
+    expect(second).toHaveTextContent('ошибка')
+    expect(second).toHaveAttribute('title', expect.stringContaining('Перезапуск: ошибка'))
+    expect(second).toHaveAttribute('title', expect.stringContaining('Нет планировщика'))
+    // Касса без заданий: кнопки есть, статуса нет.
+    const third = screen.getByTestId('fleet-row-ph_a-KASSA3')
+    expect(within(third).getByRole('button', { name: 'Перезапуск' })).toBeEnabled()
+    expect(within(third).queryByTestId('till-command-status')).not.toBeInTheDocument()
+  })
+
+  it('на телефоне HQ видит те же действия в карточке кассы', () => {
+    signIn('SYSTEM_ADMIN')
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width'),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    render(<FleetPanel />)
+    const card = screen.getByTestId('fleet-card-ph_b-KASSA2')
+    expect(within(card).getByRole('button', { name: 'Диагностика' })).toBeEnabled()
+    expect(within(card).getByRole('button', { name: 'Перезапуск' })).toBeEnabled()
   })
 })

@@ -99,7 +99,9 @@ data class TrainingProgramDto(
     val maxAttempts: Int,
     val completionBonus: Long,
     val stages: List<TrainingProgramStageDto>,
+    /** Assignments of the current version, and how many of them are completed («выполнили N из M»). */
     val assignments: Long,
+    val completedAssignments: Long,
     val createdAt: Instant,
     val updatedAt: Instant,
 )

@@ -124,9 +124,6 @@ const test = base.extend<{ learnerApi: LearnerApi; learnerSession: boolean }>({
         if (!path.startsWith('/api/')) return route.continue()
         const authorization = request.headers().authorization ?? ''
         api.requests.push({ path, authorization })
-        if (method === 'POST' && path === '/api/mobile/auth/activation/status') {
-          return json(route, { passwordSet: true, phoneMasked: '+7 (***) ***-**-12' })
-        }
         if (method === 'POST' && path === '/api/mobile/auth/login') {
           const id = request.postDataJSON().iin === accounts.b.iin ? 'b' : 'a'
           return json(route, { tokens: tokens(id), pharmacist: accounts[id] })
@@ -428,7 +425,11 @@ test.describe('signed out learner', () => {
     await expect(
       page.getByRole('heading', { name: 'Вход для фармацевта', exact: true }),
     ).toBeVisible()
-    await expect(page.getByRole('textbox', { name: 'ИИН', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('textbox', { name: 'ИИН или номер телефона', exact: true }),
+    ).toBeVisible()
+    await expect(page.getByRole('note')).toContainText('Задайте его в программе ePharm на кассе')
+    await expect(page.getByRole('button', { name: 'Забыли пароль?', exact: true })).toHaveCount(0)
     await expect(page).toHaveURL(/\/learn\/recommendations$/)
     await expect(page.getByRole('textbox', { name: 'Email', exact: true })).toHaveCount(0)
     expect(learnerApi.requests).toEqual([])
@@ -506,8 +507,9 @@ for (const delayed of ['balance', 'refresh', 'logout'] as const) {
         ),
       ).toEqual([null, null])
       await expect(page.getByText(/36\s*941\s*₸/)).toHaveCount(0)
-      await page.getByRole('textbox', { name: 'ИИН', exact: true }).fill(accounts.b.iin)
-      await page.getByRole('button', { name: 'Продолжить', exact: true }).click()
+      await page
+        .getByRole('textbox', { name: 'ИИН или номер телефона', exact: true })
+        .fill(accounts.b.iin)
       await page.getByLabel('Пароль', { exact: true }).fill('SyntheticFarm123!')
       await page.getByRole('button', { name: 'Войти', exact: true }).click()
       await expect(page.getByText(/94\s*126\s*₸/).first()).toBeVisible()

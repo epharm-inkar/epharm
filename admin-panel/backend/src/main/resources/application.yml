@@ -201,6 +201,8 @@ app:
       device-allowlist: ${POSM_SALE_BONUS_DEVICE_ALLOWLIST:}
       eligible-after: ${POSM_SALE_BONUS_ELIGIBLE_AFTER:}
     staff-auth-enabled: ${POSM_STAFF_AUTH_ENABLED:false}
+    # Cross-sells at the till (owner 25.11.2026: replacements only for now).
+    crosssell-enabled: ${POSM_CROSSSELL_ENABLED:false}
     staff-registration-sms-required: ${POSM_STAFF_REGISTRATION_SMS_REQUIRED:true}
     # Ключ устройства кассы (Module 2). POSM-клиент шлёт его в заголовке X-Posm-Key.
     # Переходный fleet-key; production POSM endpoints используют индивидуальные tokens.
@@ -221,6 +223,12 @@ app:
     fiscal-artifact-trusted-sources: ${POSM_FISCAL_ARTIFACT_TRUSTED_SOURCES:standardn-kkm-sdk,ofd-api}
     # Сколько секунд пульс кассы считается «живым» (T4, GET /screens/connected).
     heartbeat-ttl-seconds: ${POSM_HEARTBEAT_TTL:150}
+    commands:
+      # Diagnostics archives from tills (V117): private bucket in the same MinIO, created on first upload.
+      # Never the public media bucket (bucket-receipts is anonymous-readable through /s3).
+      bucket: ${POSM_COMMANDS_BUCKET:epharm-private}
+      # Expire elapsed commands and remove archives older than 14 days.
+      cleanup-cron: ${POSM_COMMANDS_CLEANUP_CRON:0 23 * * * *}
   unified-admin:
     primary-owner-id: ${UNIFIED_ADMIN_PRIMARY_OWNER_ID:}
   learner-credentials:

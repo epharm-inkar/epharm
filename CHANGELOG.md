@@ -7,6 +7,57 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- POSM 1.0.96 (Grigoriy, 25.11.2026): «Вход в ePharm выполнен». When the person signed in to Standard-N is known,
+  a card in the corner greets them once a day by name («Доброе утро, …!»), says that replacement tips will appear
+  here and opens the personal window on a click; it never takes the focus and stays silent during the works.
+  The personal window sets or changes the password with two fields («Сменить пароль»), shows a bound phone with a
+  tick, calls the tasks row «Задания» and its «?» says when a bonus is credited (minutes after the till sends the
+  receipt, after a review when one is needed) and that the month is paid by statement.
+- Tasks from HQ in the till's personal window (1.0.96): «Задания» lists the person's courses to take
+  (`POST /api/posm/self/tasks`, training assignments) with «Новое», «В процессе · N%», «Просрочено» or «Выполнено ✓»,
+  what to do, by when and the reward, and a «Пройти в кабинете» button; a new or overdue task lights the red dot.
+  An older server without the feed shows none.
+- Till management without AnyDesk, till side (1.0.96): about once a minute the till asks
+  `POST /api/posm/commands/next` and does one of two fixed actions HQ gave from the admin: «diagnostics» (a zip of at
+  most 5 MB with the tail of the program journal, the receipt journal listing and groups, versions, monitors and
+  processes; IINs, phone numbers, keys and tokens masked) or «restart» (answers first, then starts a new copy and
+  exits, as after a key change), and answers `POST /api/posm/commands/{id}/result`. No other action exists.
+- The recommendation popup is compact (1.0.96): one-line header with the bonus, the asked product on one line,
+  each offer in three short lines (name and bonus, maker with price, «Почему»), goal and confirmed stock in one
+  small line; five replacements fit where 1.0.91 showed two and a half.
+- Cabinet sign-in by phone (owner's decision 25.11.2026): `/learn` has one field «ИИН или номер телефона» and a
+  password. `POST /api/mobile/auth/login` accepts `{phone, password}` besides the old `{iin, password}` (the cabinet
+  still sends an IIN that way, so an older server keeps working). The number is normalized with `PhoneUtil`
+  (`+7 7XX…`, `87XX…`, `7XX…`) and must belong to exactly one card, in any stored format; a number two cards share
+  signs in nobody. Phone attempts spend the 10-per-5-minutes budget of the card's IIN, unknown numbers have their
+  own. The SMS activation, registration and password reset screens are gone from the cabinet (their endpoints
+  stay); a hint says the password is set at the till: ePharm icon by the clock, then «Мой профиль».
+- The till changes a password that is already set: `POST /api/posm/self/contact` no longer answers 409 for the
+  password (the till asks for it twice and sends the final one). A changed password ends the person's cabinet
+  sessions (`mobile_refresh_tokens`); POSM staff sessions end through the existing `password_hash` triggers; the
+  credential vault keeps the new password as on first set. The same password sent again changes nothing. A bound
+  phone is still never replaced from the till (409). Till passwords follow the POSM minimum of 4 characters (6
+  before). `passwordSet` and `phoneBound` in `/api/posm/self` are unchanged.
+- Pharmacist tasks for the till (Grigoriy, 25.11.2026: a task is an active training assignment, no separate task
+  system): `POST /api/posm/self/tasks` (device key, same body as `/api/posm/self`) lists the courses HQ assigned to
+  the person signed in to Standard-N at the till, with how to take them («Откройте «Мой кабинет», раздел «Обучение»,
+  курс «…».» plus the program's short description), the completion bonus (`rewardKzt`, the version's
+  `completion_bonus`, null without one), due date, progress and state `new` / `in_progress` / `overdue` / `done`, plus
+  `newCount` and `openCount`. Finished courses stay 14 days; cancelled ones and those HQ has not started yet are
+  hidden. The state follows the training module, so a course completed in the cabinet turns the task done.
+  Read-only: no task was created and nothing is sent; tills show the list once a POSM build reads it.
+- Training admin, «Программы»: «выполнили N из M» under each program's assignment count
+  (`TrainingProgramDto.completedAssignments`, current version), so HQ sees per program how many finished it.
+- Tills managed without AnyDesk (Grigoriy, 25.11.2026): in «Все кассы» HQ (SYSTEM_ADMIN, HQ_HEAD) presses
+  «Диагностика» or «Перезапуск» (restart asks for confirmation) and sees the latest command of every till, polled
+  every 10 s while one is in work. A command is one of a fixed list (`diagnostics`, `restart`) without parameters;
+  one command in work per till (409 otherwise). The till takes it with its own device key
+  (`POST /api/posm/commands/next`, 204 when there is nothing) and answers with `POST /api/posm/commands/{id}/result`
+  (multipart `status` done|failed, `message`, optional `file`: ZIP up to 5 MB, 413 above). A waiting command
+  expires after 30 minutes, a taken one after 10 minutes without an answer. Diagnostics archives go to a private
+  MinIO bucket (`POSM_COMMANDS_BUCKET`, default `epharm-private`, created on first upload; never the public
+  `epharm-receipts`) under `till-diagnostics/`, are downloaded only by HQ and removed after 14 days. Table
+  `till_commands` (V117). The till side ships with a later POSM release.
 - «ePharm на технических работах» (Grigoriy, 25.11.2026): HQ switches it in `posm_notice` (`PUT
   /api/admin/posm-notice`, HQ roles); the till reads its view about once a minute (`GET /api/posm/notice`, device
   key). POSM 1.0.95 then opens a notice from the ePharm icon instead of the personal window, puts an amber dot on the
@@ -112,6 +163,12 @@ All notable production changes to Epharm are recorded here. The format follows
   with a working device key) are retried hourly and archived locally after 5 refusals.
 - Backend writes `fulfillment_devices.last_seen_at` at most once a minute and the pharmacist IIN
   observation only on change (at most hourly otherwise); presence TTL default is 150 s.
+### Changed
+
+- POSM recommendation popup leads with the pharmacist's reward: a header with the largest
+  bonus, a large `+N ₸` badge on each paid offer, the server's personal goal line and an
+  auto-close note; ePharm colours and Manrope replace the red section titles. Offers, order,
+  limits and focus behaviour are unchanged. Needs a signed POSM release to reach the tills.
 
 ### Fixed
 

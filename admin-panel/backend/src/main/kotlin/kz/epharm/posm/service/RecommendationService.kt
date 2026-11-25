@@ -1,5 +1,6 @@
 package kz.epharm.posm.service
 
+import org.springframework.beans.factory.annotation.Value
 import jakarta.persistence.EntityManager
 import kz.epharm.catalog.entity.ProductEntity
 import kz.epharm.catalog.repository.ProductRepository
@@ -53,6 +54,11 @@ class RecommendationService(
     private val merchTaskClient: MerchTaskClient,
     private val productRepository: ProductRepository,
     private val saleBonuses: RecommendationSaleBonusService,
+    /**
+     * Owner's decision of 25.11.2026: only replacements were agreed, cross-sells wait. The application default is
+     * off (POSM_CROSSSELL_ENABLED); a direct construction (tests) keeps the previous behaviour.
+     */
+    @Value("\${app.posm.crosssell-enabled:false}") private val crossSellEnabled: Boolean = true,
 ) {
 
     private val log = LoggerFactory.getLogger(RecommendationService::class.java)
@@ -91,7 +97,9 @@ class RecommendationService(
             .toSet()
 
         val matchResult = rulesEngine.match(req.cart, req.scannedBarcode, pilotTill)
-        val eligible = matchResult.matches.filter { it.recommend.id !in decidedSkus }
+        val eligible = matchResult.matches.filter {
+            it.recommend.id !in decidedSkus && (crossSellEnabled || it.rule.type != kz.epharm.rules.entity.RuleType.crosssell)
+        }
         val ranked = rankForTill(eligible, req.scannedBarcode)
 
         // The optional call carries only pharmacy/product context. Pharmacist identity and the
@@ -173,7 +181,7 @@ class RecommendationService(
         // CRM cannot remove authoritative local rules. Conflicting external pairs are suppressed.
         val external = externalInStock.filterNot { it.pairKey() in externalContradictions }
 
-        val externalDtos = listOf("substitution", "crosssell").flatMap { kind ->
+        val externalDtos = offeredKinds().flatMap { kind ->
             val remaining = MAX_RECOMMENDATIONS_PER_KIND - localDtos.count { it.kind == kind }
             external.asSequence()
                 .filter { it.candidate.kind == kind }
@@ -211,7 +219,7 @@ class RecommendationService(
                     offers.map { "merch:${it.candidate.id}" },
             )
         }
-        val ordered = listOf("substitution", "crosssell").flatMap { kind ->
+        val ordered = offeredKinds().flatMap { kind ->
             (localDtos + externalDtos).filter { it.kind == kind }
         }
         return RecommendResponse(
@@ -220,6 +228,9 @@ class RecommendationService(
             conflicts = conflicts,
         )
     }
+
+    private fun offeredKinds(): List<String> =
+        if (crossSellEnabled) listOf("substitution", "crosssell") else listOf("substitution")
 
     private data class ExternalRecommendation(
         val candidate: MerchRecommendationCandidate,

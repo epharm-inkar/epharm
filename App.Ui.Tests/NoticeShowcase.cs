@@ -36,6 +36,16 @@ internal static partial class Program
                 Console.WriteLine(Path.Combine(Output, "notice-2-live-toast.png"));
                 toast.Close();
 
+                var welcome = new EpharmToastWindow(MainWindow.Greeting(new DateTime(2026, 11, 26, 8, 5, 0)) + ", Нұрсая Әбдіқалық!",
+                    "Вход в ePharm выполнен. Подсказки по заменам будут появляться здесь. Нажмите, чтобы открыть свой кабинет. Хорошего дня!",
+                    _screen, TimeSpan.FromMinutes(5));
+                welcome.Show();
+                await System.Threading.Tasks.Task.Delay(400);
+                await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                SaveOwnWindow(welcome, "notice-4-welcome");
+                Console.WriteLine(Path.Combine(Output, "notice-4-welcome.png"));
+                welcome.Close();
+
                 SaveIcons(Path.Combine(Output, "notice-3-icons.png"));
                 Console.WriteLine(Path.Combine(Output, "notice-3-icons.png"));
             }

@@ -14,6 +14,7 @@ import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.entity.PharmacistTier
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.pharmacists.repository.StandardNPharmacistRepository
+import kz.epharm.pharmacists.service.PharmacistPhoneOwners
 import kz.epharm.shared.PhoneUtil
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
@@ -44,6 +45,7 @@ class MobileAuthService(
     private val jwtService: JwtService,
     private val mobileRefreshTokenService: MobileRefreshTokenService,
     private val credentialVault: kz.epharm.learnercredentials.LearnerPasswordVault,
+    private val phoneOwners: PharmacistPhoneOwners,
     private val cabinetLinks: CabinetLinkService? = null,
     /** A cabinet opened from a till (shared computer) stays signed in for one shift at most. */
     @org.springframework.beans.factory.annotation.Value("\${app.posm.cabinet-session-hours:12}")
@@ -65,21 +67,29 @@ class MobileAuthService(
     }
 
     @Transactional
-    fun login(rawIin: String, password: String): MobileAuthResponse {
-        val pharmacist = pharmacistRepository.findByIinForUpdate(rawIin.trim())
-            ?: throw AppException(
-                ErrorCode.INVALID_CREDENTIALS,
-                "Неверный ИИН или пароль",
-                HttpStatus.UNAUTHORIZED,
-            )
+    fun login(rawIin: String, password: String): MobileAuthResponse =
+        passwordLogin(pharmacistRepository.findByIinForUpdate(rawIin.trim()), password, "Неверный ИИН или пароль")
+
+    /**
+     * Sign-in by the phone the pharmacist saved at the till (owner's decision 25.11.2026), with the same password
+     * checks as by IIN. The number must belong to exactly one card: a number two cards share signs in nobody, with
+     * the same refusal as a wrong password. The card is locked like the IIN login and its number checked again.
+     */
+    @Transactional
+    fun loginByPhone(rawPhone: String, password: String): MobileAuthResponse {
+        val phone = PhoneUtil.canonicalOrNull(rawPhone)
+        val ownerId = phone?.let { phoneOwners.owners(it).singleOrNull()?.id }
+        val pharmacist = ownerId?.let(pharmacistRepository::findByIdForUpdate)
+            ?.takeIf { PhoneUtil.normalize(it.phone) == phone }
+        return passwordLogin(pharmacist, password, "Неверный номер телефона или пароль")
+    }
+
+    private fun passwordLogin(pharmacist: PharmacistEntity?, password: String, refusal: String): MobileAuthResponse {
+        if (pharmacist == null) throw AppException(ErrorCode.INVALID_CREDENTIALS, refusal, HttpStatus.UNAUTHORIZED)
         ensureNotBlocked(pharmacist)
         val passwordHash = pharmacist.passwordHash
         if (passwordHash.isNullOrBlank() || !passwordEncoder.matches(password, passwordHash)) {
-            throw AppException(
-                ErrorCode.INVALID_CREDENTIALS,
-                "Неверный ИИН или пароль",
-                HttpStatus.UNAUTHORIZED,
-            )
+            throw AppException(ErrorCode.INVALID_CREDENTIALS, refusal, HttpStatus.UNAUTHORIZED)
         }
         credentialVault.capture(pharmacist.id,passwordHash,password)
         return MobileAuthResponse(tokens = issueTokens(pharmacist), pharmacist = MeDto.of(pharmacist))
