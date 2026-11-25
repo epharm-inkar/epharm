@@ -103,6 +103,36 @@ namespace CustomerDisplay.Services
         public Task<PosmSelfResult<PosmCabinetLinkDto>> GetCabinetLinkAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
             PostSelfAsync<PosmCabinetLinkDto>("/api/posm/self/cabinet-link", req, ct);
 
+        private DateTime _noticeLogAt;
+        private string? _noticeLogKey;
+
+        /// <summary>«ePharm на технических работах» for this till; null when the server did not answer (keep the last state).</summary>
+        public async Task<PosmNoticeDto?> GetNoticeAsync(CancellationToken ct = default)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            try
+            {
+                using var resp = await _http.GetAsync("/api/posm/notice", cts.Token).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    if (ShouldLog(ref _noticeLogAt, ref _noticeLogKey, "http" + (int)resp.StatusCode, 900))
+                        _log?.Invoke($"notice: HTTP {(int)resp.StatusCode}");
+                    return null;
+                }
+                return await resp.Content.ReadFromJsonAsync<PosmNoticeDto>(JsonOpts, cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                if (ShouldLog(ref _noticeLogAt, ref _noticeLogKey, "error", 900)) _log?.Invoke($"notice: {Describe(ex)}");
+                return null;
+            }
+        }
+
         private async Task<PosmSelfResult<T>> PostSelfAsync<T>(string path, PosmSelfRequestDto req, CancellationToken ct) where T : class
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);

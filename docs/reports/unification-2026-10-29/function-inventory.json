@@ -4010,6 +4010,52 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H15.15",
+    "group": "H15",
+    "name": "ePharm на технических работах: уведомление на кассах и выключатель HQ",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/posm-maintenance-notice",
+      "ui": [],
+      "api": [
+        "GET /api/posm/notice",
+        "GET /api/admin/posm-notice",
+        "PUT /api/admin/posm-notice"
+      ],
+      "jobs": [],
+      "data": [
+        "posm_notice"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/notice/PosmNoticeController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/notice/PosmNoticeService.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V116__posm_notice.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/PosmNoticeTillViewTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/PosmNoticeIntegrationTest.kt",
+        "App/MainWindow.Notice.cs",
+        "App/EpharmNoticeWindows.cs"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "POSM / совместимость устройств",
+      "actions": [
+        "Включить и выключить «ePharm на технических работах» на всех кассах, пилотные кассы оставить рабочими"
+      ],
+      "scope": "Касса читает своё состояние по ключу устройства (X-Posm-Key); переключает HQ под /api/admin"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "После миграции все кассы видят технические работы, пилотные кассы при pilot_live остаются рабочими",
+      "Во время работ значок ePharm открывает окно с текстом HQ, подсказки по чеку не всплывают",
+      "После выключения каждая касса один раз показывает «ePharm снова работает», в том числе касса, выключенная в момент переключения"
+    ],
+    "risks": [
+      "Касса без связи с сервером остаётся в последнем известном состоянии"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H16.01",
     "group": "H16",
     "name": "Открыть контекст подписанного QR challenge",

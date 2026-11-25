@@ -1,7 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -22,14 +20,15 @@ public partial class MainWindow
     private readonly DispatcherTimer _selfWindowRefresh = new() { Interval = TimeSpan.FromMinutes(8) };
     private bool? _selfProfileComplete;
     private string _selfStatusUser = "";
-    private System.Drawing.Icon? _selfIconPlain, _selfIconAlert;
+    private System.Drawing.Icon? _selfIconPlain, _selfIconAlert, _selfIconPaused;
 
     /// <summary>Called once the POSM client is up (InitPosm). Does nothing when the integration is off.</summary>
     private void InitStaffSelfTray()
     {
         if (_epharm == null || _posmConfig == null || !_posmConfig.Enabled || _selfTray != null) return;
-        _selfIconPlain = SelfIcon(alert: false);
-        _selfIconAlert = SelfIcon(alert: true);
+        _selfIconPlain = EpharmMark.TrayIcon(EpharmMark.Dot.None);
+        _selfIconAlert = EpharmMark.TrayIcon(EpharmMark.Dot.Alert);
+        _selfIconPaused = EpharmMark.TrayIcon(EpharmMark.Dot.Paused);
         _selfTray = new System.Windows.Forms.NotifyIcon
         {
             Icon = _selfIconPlain,
@@ -55,6 +54,7 @@ public partial class MainWindow
         Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _ = RefreshSelfStatusAsync()));
         // The tasks icon started first: one icon is enough.
         if (_taskKioskTray != null) { _taskKioskTray.Visible = false; _taskKioskTray.Dispose(); _taskKioskTray = null; }
+        InitEpharmNotice();
     }
 
     private void DisposeStaffSelfTray()
@@ -65,6 +65,7 @@ public partial class MainWindow
         if (_selfTray != null) { _selfTray.Visible = false; _selfTray.Dispose(); _selfTray = null; }
         _selfIconPlain?.Dispose();
         _selfIconAlert?.Dispose();
+        _selfIconPaused?.Dispose();
     }
 
     /// <summary>A new cashier signed in at this till: refresh the red dot for them.</summary>
@@ -99,9 +100,21 @@ public partial class MainWindow
         if (_selfTray == null) return;
         _selfProfileComplete = complete;
         _selfTrayName = RecommendationWindow.ShortName(name);
-        _selfTray.Icon = complete == false ? _selfIconAlert : _selfIconPlain;
+        ApplyNoticeToTray();
+    }
+
+    /// <summary>
+    /// Icon and tooltip: amber dot during the works (the red dot waits); red dot while something waits for the
+    /// person: the profile is not filled or there is a task (Grigoriy, 25.11: «уведомление или задание новое»).
+    /// </summary>
+    private void ApplyNoticeToTray()
+    {
+        if (_selfTray == null) return;
+        _selfTray.Icon = EpharmPaused ? _selfIconPaused : NeedsAttention() ? _selfIconAlert : _selfIconPlain;
         UpdateSelfTrayText();
     }
+
+    private bool NeedsAttention() => _selfProfileComplete == false || (TasksCountForSelf() ?? 0) > 0;
 
     private string _selfTrayName = "";
 
@@ -109,6 +122,7 @@ public partial class MainWindow
     private void UpdateSelfTrayText()
     {
         if (_selfTray == null) return;
+        if (EpharmPaused) { _selfTray.Text = "ePharm: технические работы"; return; }
         var text = _selfProfileComplete == false ? "ePharm: заполните профиль"
             : _selfTrayName.Length > 0 ? "ePharm: " + _selfTrayName : "ePharm: мой кабинет";
         var tasks = TasksCountForSelf() ?? 0;
@@ -119,6 +133,7 @@ public partial class MainWindow
     private async Task OpenStaffSelfAsync()
     {
         if (_epharm == null) return;
+        if (EpharmPaused) { ShowMaintenanceWindow(); return; }
         var model = await LoadSelfModelAsync();
         if (_selfWindow != null && _selfWindow.IsLoaded)
         {
@@ -174,7 +189,7 @@ public partial class MainWindow
     /// <summary>The task feed changed: the tooltip and an open personal window show the new count.</summary>
     private void OnTasksChangedForSelf()
     {
-        UpdateSelfTrayText();
+        ApplyNoticeToTray();
         if (_selfWindow != null && _selfWindow.IsLoaded) _selfWindow.UpdateTasks(TasksCountForSelf(), _taskKioskOnline);
     }
 
@@ -208,6 +223,7 @@ public partial class MainWindow
     private async Task OpenCabinetAsync()
     {
         if (_epharm == null) return;
+        if (EpharmPaused) { ShowMaintenanceWindow(); return; }
         var request = SelfRequest(link: true);
         if (request == null) { _selfWindow?.ShowStatus("Войдите в Стандарт-Н, чтобы открыть кабинет.", error: true); return; }
         var result = await _epharm.GetCabinetLinkAsync(request);
@@ -221,41 +237,5 @@ public partial class MainWindow
             Log("ePharm: не удалось открыть браузер: " + error.Message);
             _selfWindow?.ShowStatus("Не удалось открыть браузер на этом компьютере.", error: true);
         }
-    }
-
-    /// <summary>Teal round ePharm mark; with a red dot in the corner while the profile is not filled.</summary>
-    private static System.Drawing.Icon SelfIcon(bool alert)
-    {
-        using var bitmap = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bitmap))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using var teal = new SolidBrush(Color.FromArgb(0x11, 0x2B, 0x33));
-            g.FillEllipse(teal, 1, 1, 30, 30);
-            using var font = new Font("Segoe UI", 15, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
-            using var white = new SolidBrush(Color.White);
-            var size = g.MeasureString("e", font);
-            g.DrawString("e", font, white, (32 - size.Width) / 2, (32 - size.Height) / 2 - 1);
-            if (alert)
-            {
-                using var red = new SolidBrush(Color.FromArgb(0xE0, 0x39, 0x2B));
-                using var ring = new Pen(Color.White, 2);
-                g.FillEllipse(red, 19, 1, 12, 12);
-                g.DrawEllipse(ring, 19, 1, 12, 12);
-            }
-        }
-        var handle = bitmap.GetHicon();
-        using var temp = System.Drawing.Icon.FromHandle(handle);
-        var icon = (System.Drawing.Icon)temp.Clone();
-        SelfNative.DestroyIcon(handle);
-        return icon;
-    }
-
-    private static class SelfNative
-    {
-        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
-        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-        internal static extern bool DestroyIcon(IntPtr handle);
     }
 }

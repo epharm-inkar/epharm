@@ -613,6 +613,7 @@ namespace CustomerDisplay
             Models.ReceiptItem? scannedItem = null)
         {
             if (recs == null || recs.Count == 0) return;
+            if (SkipRecommendationsForNotice()) return;
             _displayScannedItem = scannedItem;
             BeginRecommendationNotice();
             var previous = _recoWindow;
@@ -837,6 +838,7 @@ namespace CustomerDisplay
         /// </summary>
         private void ReopenReceiptRecommendations()
         {
+            if (EpharmPaused) { ShowMaintenanceWindow(); return; }
             if (_recoWindow != null) { _recoWindow.Activate(); return; }
             var offers = RecommendationPopupModelBuilder.LimitPerTrigger(_receiptOffers);
             if (offers.Count == 0 || ReceiptItems.Count == 0)
