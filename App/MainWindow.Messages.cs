@@ -110,7 +110,8 @@ public partial class MainWindow
         var user = CurrentSelfUserId();
         if (_messageWindow != null && !string.Equals(_messageWindowUser, user, StringComparison.OrdinalIgnoreCase)) CloseHqMessageQuietly();
         if (_hqMessagesDisposed || _messageWindow != null || user.Length == 0 || _messageInbox == null) return;
-        if (EpharmPaused || _recoWindow != null || _greetingWindow != null) return;
+        // The corner is busy: the greeting or «ePharm снова работает» goes first.
+        if (EpharmPaused || _recoWindow != null || _greetingWindow != null || _liveToast != null) return;
         var pending = _messageInbox.Pending(user);
         if (pending.Count == 0)
         {

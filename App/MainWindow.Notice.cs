@@ -102,7 +102,13 @@ public partial class MainWindow
             name + "нажмите, чтобы открыть свой кабинет ePharm. Подсказки по чеку снова будут появляться здесь.",
             PharmacistScreen());
         toast.Clicked += () => Dispatcher.BeginInvoke(new Action(() => _ = OpenStaffSelfAsync()));
-        toast.Closed += (_, _) => { if (ReferenceEquals(_liveToast, toast)) _liveToast = null; };
+        toast.Closed += (_, _) =>
+        {
+            if (!ReferenceEquals(_liveToast, toast)) return;
+            _liveToast = null;
+            // A notice from HQ waited for the corner (1.0.99).
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ShowNextHqMessage));
+        };
         _liveToast = toast;
         toast.Show();
         CountLiveToastAsWelcome();
