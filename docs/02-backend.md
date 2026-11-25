@@ -1101,7 +1101,7 @@ rehearsal database. `MERCH_STAFF_ACCESS_ENABLED` defaults to false.
 ## Notices to pharmacists at the till (POSM 1.0.99)
 
 HQ writes a notice to pharmacists (25.11.2026, package `posm.messages`, tables `posm_messages`,
-`posm_message_targets`, `posm_message_receipts`, V121). Rules: `PosmMessageRules` (pure, `PosmMessageRulesTest`).
+`posm_message_targets`, `posm_message_receipts`, V122). Rules: `PosmMessageRules` (pure, `PosmMessageRulesTest`).
 
 - `POST /api/admin/posm-messages` `{title, text, audience: all|pharmacies|pharmacists, pharmacyIds?, pharmacistIds?,
   days?}` -> 201. SYSTEM_ADMIN and HQ_HEAD only (`@PreAuthorize`). Title up to 120 characters (one line), text up to

@@ -128,7 +128,7 @@ POSM:
 - Cabinet `/learn` signs in by IIN or phone + password (`/api/mobile/auth/login` with `{iin}` or `{phone}`); the
   phone must match exactly one card in any stored format (`PharmacistPhoneOwners`) and spends that card's IIN
   attempt budget. No SMS activation, registration or reset in the cabinet UI; those endpoints stay for old clients.
-- Уведомления фармацевтам на кассах (25.11.2026, POSM 1.0.99): `posm.messages`, V121, вкладка «Экраны» →
+- Уведомления фармацевтам на кассах (25.11.2026, POSM 1.0.99): `posm.messages`, V122, вкладка «Экраны» →
   «Уведомления на кассах» (только SYSTEM_ADMIN/HQ_HEAD). Адресаты: все, аптеки (касса аптеки и её сотрудники на любой
   кассе) или выбранные сотрудники; касса держит уведомление до ×, отметки shown/closed идут в `posm_message_receipts`.
   Касса узнаёт о новом через `messagesAt` в `GET /api/posm/notice` (минутная проверка).

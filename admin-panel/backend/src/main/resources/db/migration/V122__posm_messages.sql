@@ -1,8 +1,13 @@
--- V121: notices from HQ to pharmacists at the till (Grigoriy, 25.11.2026). HQ writes a title and a text, chooses who
+-- V122: notices from HQ to pharmacists at the till (Grigoriy, 25.11.2026). HQ writes a title and a text, chooses who
 -- gets it (everybody, the staff of chosen pharmacies or chosen pharmacists) and for how many days tills show it.
 -- A till (POSM 1.0.99+) shows a notice to the person signed in to Standard-N at it until they close it with ×;
 -- one receipt row per person records when they first saw it and when they closed it. A withdrawn notice leaves
 -- the tills at their next check. Nothing here touches money or the maintenance switch (posm_notice, V116).
+
+-- The foreign keys lock pharmacies and pharmacists briefly: wait at most 5 seconds for them, then fail and retry the
+-- release instead of queueing behind a long transaction while tills write sales.
+SET LOCAL lock_timeout = '5s';
+
 CREATE TABLE posm_messages (
     id               UUID          PRIMARY KEY,
     title            VARCHAR(120)  NOT NULL CHECK (length(btrim(title)) > 0),
