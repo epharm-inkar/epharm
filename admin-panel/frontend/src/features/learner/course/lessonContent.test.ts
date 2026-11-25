@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lessonSections, parseLessonContent, readingSeconds } from './lessonContent'
+import { lessonMinutes, lessonSections, parseLessonContent, readingSeconds } from './lessonContent'
 
 const MODULE_1 = `1.1. Что такое пожарная безопасность
 
@@ -165,5 +165,22 @@ describe('lesson text as readable parts', () => {
     const sections = lessonSections('4.1. Средства\n\nОгнетушители и сигнализация.')
     expect(sections).toHaveLength(1)
     expect(sections[0].title).toBe('4.1. Средства')
+  })
+})
+
+describe('lesson minutes', () => {
+  const longText = Array.from({ length: 600 }, (_, i) => `слово${i}`).join(' ')
+  it('adds the reading of a video lesson text to the clip minutes', () => {
+    expect(lessonMinutes({ kind: 'video', durationMin: 1, content: longText })).toBe(4)
+    expect(
+      lessonMinutes({ kind: 'text', videoUrl: '/v.mp4', durationMin: 1, content: longText }),
+    ).toBe(4)
+  })
+  it('keeps the set minutes for a text lesson, a bare clip and a short note', () => {
+    expect(lessonMinutes({ kind: 'text', durationMin: 5, content: longText })).toBe(5)
+    expect(lessonMinutes({ kind: 'video', durationMin: 2, content: null })).toBe(2)
+    expect(
+      lessonMinutes({ kind: 'video', durationMin: 2, content: 'Короткая подпись к ролику.' }),
+    ).toBe(2)
   })
 })

@@ -61,7 +61,7 @@ import { videoProgressToSave } from './guardedVideoRules'
 import { CoursePath } from './course/CoursePath'
 import { FinalTest } from './course/FinalTest'
 import { LessonBlock, LessonReader } from './course/LessonReader'
-import { lessonSections } from './course/lessonContent'
+import { lessonMinutes, lessonSections } from './course/lessonContent'
 import { SelfCheck, type SelfCheckQuestion } from './course/SelfCheck'
 
 type Tokens = {
@@ -4153,7 +4153,7 @@ function LessonPage({
           )}
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="chip chip-ink">
-              <Clock3 size={14} /> {t('{minutes} мин', { minutes: lesson.durationMin ?? 0 })}
+              <Clock3 size={14} /> {t('{minutes} мин', { minutes: lessonMinutes(lesson) })}
             </span>
             {primaryVideoUrl && (
               <span className="chip chip-green">
