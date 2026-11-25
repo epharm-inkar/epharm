@@ -150,7 +150,9 @@ describe('real AppRouter learner personal data routes', () => {
     expect(
       await screen.findByRole('heading', { name: 'Вход для фармацевта', exact: true }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'ИИН', exact: true })).toBeInTheDocument()
+    expect(
+      screen.getByRole('textbox', { name: 'ИИН или номер телефона', exact: true }),
+    ).toBeInTheDocument()
     expect(screen.getByTestId('current-learner-path')).toHaveTextContent('/learn/recommendations')
     expect(screen.queryByRole('textbox', { name: 'Email', exact: true })).not.toBeInTheDocument()
     expect(globalThis.fetch).not.toHaveBeenCalled()

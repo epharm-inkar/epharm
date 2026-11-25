@@ -56,7 +56,7 @@ import { proxyMedia } from '../../lib/media'
 import { useUiStore } from '@/app/store'
 import { currentLearnerTranslate, learnerTranslate, useLearnerT } from './learner-i18n'
 import type { CourseLiveRoomDto } from '@/lib/api-types'
-import { newLearnerPasswordError } from './password-policy'
+import { parseLoginIdentifier } from './login-identifier'
 
 type Tokens = {
   accessToken: string
@@ -746,24 +746,6 @@ function extractCheckInCode(value: string) {
   return digits.length === 6 ? digits : ''
 }
 
-function formatIinInput(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 12)
-  return digits.length > 6 ? `${digits.slice(0, 6)} ${digits.slice(6)}` : digits
-}
-
-type AuthStep =
-  | 'iin'
-  | 'password'
-  | 'phone'
-  | 'otp'
-  | 'create-password'
-  | 'reset-otp'
-  | 'reset-password'
-
-function normalizePhoneInput(value: string) {
-  return value.replace(/\D/g, '').slice(0, 10)
-}
-
 export default function LearnerTrainingPage() {
   const t = useLearnerT()
   const language = useUiStore((state) => state.language)
@@ -801,19 +783,12 @@ export default function LearnerTrainingPage() {
   const [balanceError, setBalanceError] = useState('')
   const [recommendationsError, setRecommendationsError] = useState('')
   const [selected, setSelected] = useState<Assignment | null>(null)
-  const [authStep, setAuthStep] = useState<AuthStep>('iin')
-  const [iin, setIin] = useState('')
+  // «ИИН или номер телефона» as typed. No SMS activation or reset here since 25.11.2026: the password is set
+  // at the till (ePharm icon by the clock, then «Мой профиль»).
+  const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
-  const [passwordConfirmation, setPasswordConfirmation] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [isNewRegistration, setIsNewRegistration] = useState(false)
-  const [phone, setPhone] = useState('')
-  const [phoneMasked, setPhoneMasked] = useState('')
-  const [otpCode, setOtpCode] = useState('')
-  const recoveryVersion = useRef(0)
-  const recoveryRequest = useRef<AbortController | null>(null)
-  const resetChallenge = useRef<{ iin: string; id: string } | null>(null)
-  const resetGrant = useRef<{ iin: string; token: string; expiresAt: string } | null>(null)
+  const authenticationVersion = useRef(0)
+  const authenticationRequest = useRef<AbortController | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(Boolean(tokens))
@@ -822,30 +797,24 @@ export default function LearnerTrainingPage() {
   const [eventsLoading, setEventsLoading] = useState(false)
   const [attendanceOpen, setAttendanceOpen] = useState(false)
 
-  const clearRecovery = useCallback(() => {
-    recoveryVersion.current += 1
-    recoveryRequest.current?.abort()
-    recoveryRequest.current = null
-    resetChallenge.current = null
-    resetGrant.current = null
-    setOtpCode('')
+  const cancelAuthentication = useCallback(() => {
+    authenticationVersion.current += 1
+    authenticationRequest.current?.abort()
+    authenticationRequest.current = null
     setPassword('')
-    setPasswordConfirmation('')
     setBusy(false)
   }, [])
   useEffect(() => {
     mounted.current = true
     return () => {
       mounted.current = false
-      recoveryVersion.current += 1
-      recoveryRequest.current?.abort()
-      resetChallenge.current = null
-      resetGrant.current = null
+      authenticationVersion.current += 1
+      authenticationRequest.current?.abort()
     }
   }, [])
 
   const clearSession = useCallback(() => {
-    clearRecovery()
+    cancelAuthentication()
     sessionVersion.current += 1
     setSessionEpoch(sessionVersion.current)
     removeTokens()
@@ -859,17 +828,17 @@ export default function LearnerTrainingPage() {
     setRecommendationsError('')
     setSelected(null)
     setAvailableEvents([])
-  }, [clearRecovery])
+  }, [cancelAuthentication])
 
   const persistTokens = useCallback(
     (nextTokens: Tokens) => {
-      clearRecovery()
+      cancelAuthentication()
       sessionVersion.current += 1
       setSessionEpoch(sessionVersion.current)
       storeTokens(nextTokens)
       setTokens(nextTokens)
     },
-    [clearRecovery],
+    [cancelAuthentication],
   )
 
   const tokenLifecycle = useMemo<TokenLifecycle>(
@@ -1102,46 +1071,32 @@ export default function LearnerTrainingPage() {
   }, [assignmentId, loadAssignment, tokens])
 
   function beginAuthenticationRequest() {
-    // Identity/phone changes, navigation and unmount invalidate every authentication
+    // Identity changes, navigation and unmount invalidate every authentication
     // response, including transports that finish after cancellation. Never replay a mutation.
-    const version = ++recoveryVersion.current
-    recoveryRequest.current?.abort()
+    const version = ++authenticationVersion.current
+    authenticationRequest.current?.abort()
     const controller = new AbortController()
-    recoveryRequest.current = controller
+    authenticationRequest.current = controller
     return {
       signal: controller.signal,
-      isCurrent: () => version === recoveryVersion.current && !controller.signal.aborted,
+      isCurrent: () => version === authenticationVersion.current && !controller.signal.aborted,
     }
   }
 
-  async function checkIin(event: React.FormEvent) {
-    event.preventDefault()
-    const attempt = beginAuthenticationRequest()
-    setBusy(true)
-    setError('')
-    try {
-      const status = await request<{
-        passwordSet: boolean
-        phoneMasked: string
-        registrationRequired?: boolean
-      }>('/api/mobile/auth/activation/status', {
-        method: 'POST',
-        body: JSON.stringify({ iin }),
-        signal: attempt.signal,
-      })
-      if (!attempt.isCurrent()) return
-      setPhoneMasked(status.phoneMasked)
-      setIsNewRegistration(Boolean(status.registrationRequired))
-      setAuthStep(status.passwordSet ? 'password' : 'phone')
-    } catch (statusError) {
-      if (attempt.isCurrent()) setError(messageFrom(statusError))
-    } finally {
-      if (attempt.isCurrent()) setBusy(false)
-    }
+  function changeLoginId(value: string) {
+    // A sign-in still in flight belongs to the previous identity: drop it, keep the typed password.
+    authenticationVersion.current += 1
+    authenticationRequest.current?.abort()
+    authenticationRequest.current = null
+    setBusy(false)
+    setLoginId(value.replace(/[^\d\s()+-]/g, '').slice(0, 24))
   }
 
   async function login(event: React.FormEvent) {
     event.preventDefault()
+    // An IIN goes in the old `{iin, password}` body, so an older server still accepts it.
+    const identifier = parseLoginIdentifier(loginId)
+    if (!identifier || password.length < 4) return
     const attempt = beginAuthenticationRequest()
     setBusy(true)
     setError('')
@@ -1151,7 +1106,7 @@ export default function LearnerTrainingPage() {
         pharmacist: Pharmacist
       }>('/api/mobile/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ iin, password }),
+        body: JSON.stringify({ ...identifier, password }),
         signal: attempt.signal,
       })
       if (!attempt.isCurrent()) return
@@ -1166,246 +1121,6 @@ export default function LearnerTrainingPage() {
 
   function openAssignment(assignment: Assignment) {
     navigate(`/learn/course/${assignment.id}`)
-  }
-
-  async function requestActivationCode(event: React.FormEvent) {
-    event.preventDefault()
-    const attempt = beginAuthenticationRequest()
-    setBusy(true)
-    setError('')
-    try {
-      const result = await request<{ phoneMasked: string }>(
-        '/api/mobile/auth/activation/sms/request',
-        {
-          method: 'POST',
-          body: JSON.stringify({ iin, phone: `+7${phone}` }),
-          signal: attempt.signal,
-        },
-      )
-      if (!attempt.isCurrent()) return
-      setPhoneMasked(result.phoneMasked)
-      setOtpCode('')
-      setAuthStep('otp')
-    } catch (requestError) {
-      if (!attempt.isCurrent()) return
-      if (requestError instanceof LearnerApiError && requestError.code === 'CONFLICT') {
-        setPassword('')
-        setPasswordConfirmation('')
-        setAuthStep('password')
-        setError(t('Пароль для этого ИИН уже создан. Введите его для входа.'))
-      } else {
-        setError(messageFrom(requestError))
-      }
-    } finally {
-      if (attempt.isCurrent()) setBusy(false)
-    }
-  }
-
-  async function verifyActivationCode(event: React.FormEvent) {
-    event.preventDefault()
-    const attempt = beginAuthenticationRequest()
-    setBusy(true)
-    setError('')
-    try {
-      await request('/api/mobile/auth/activation/sms/verify', {
-        method: 'POST',
-        body: JSON.stringify({ iin, phone: `+7${phone}`, code: otpCode }),
-        signal: attempt.signal,
-      })
-      if (!attempt.isCurrent()) return
-      setPassword('')
-      setPasswordConfirmation('')
-      setAuthStep('create-password')
-    } catch (verifyError) {
-      if (!attempt.isCurrent()) return
-      if (verifyError instanceof LearnerApiError && verifyError.code === 'CONFLICT') {
-        setPassword('')
-        setPasswordConfirmation('')
-        setAuthStep('password')
-        setError(t('Пароль для этого ИИН уже создан. Введите его для входа.'))
-      } else {
-        setError(messageFrom(verifyError))
-      }
-    } finally {
-      if (attempt.isCurrent()) setBusy(false)
-    }
-  }
-
-  async function createInitialPassword(event: React.FormEvent) {
-    event.preventDefault()
-    if (password !== passwordConfirmation) {
-      setError(t('Пароли не совпадают'))
-      return
-    }
-    const policyError = newLearnerPasswordError(password)
-    if (policyError) {
-      setError(t(policyError))
-      return
-    }
-    const attempt = beginAuthenticationRequest()
-    setBusy(true)
-    setError('')
-    try {
-      const result = await request<{ tokens: Tokens; pharmacist: Pharmacist }>(
-        '/api/mobile/auth/activation/password',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            iin,
-            phone: `+7${phone}`,
-            password,
-            ...(isNewRegistration ? { name: fullName.trim() } : {}),
-          }),
-          signal: attempt.signal,
-        },
-      )
-      if (!attempt.isCurrent()) return
-      persistTokens(result.tokens)
-      setPharmacist(result.pharmacist)
-    } catch (passwordError) {
-      if (!attempt.isCurrent()) return
-      if (passwordError instanceof LearnerApiError && passwordError.code === 'CONFLICT') {
-        setPassword('')
-        setPasswordConfirmation('')
-        setAuthStep('password')
-        setError(t('Пароль уже был создан и сохранён. Введите его для входа.'))
-      } else {
-        setError(messageFrom(passwordError))
-      }
-    } finally {
-      if (attempt.isCurrent()) setBusy(false)
-    }
-  }
-
-  async function requestPasswordReset() {
-    clearRecovery()
-    const version = recoveryVersion.current
-    const subject = iin
-    const controller = new AbortController()
-    recoveryRequest.current = controller
-    setBusy(true)
-    setError('')
-    try {
-      const result = await request<{ challengeId: string; phoneMasked: string }>(
-        '/api/mobile/auth/password-reset/request',
-        { method: 'POST', body: JSON.stringify({ iin: subject }), signal: controller.signal },
-      )
-      if (version !== recoveryVersion.current || controller.signal.aborted) return
-      if (!result.challengeId)
-        throw new Error('Не удалось запросить подтверждение. Повторите позже.')
-      resetChallenge.current = { iin: subject, id: result.challengeId }
-      setPhoneMasked(result.phoneMasked)
-      setOtpCode('')
-      setAuthStep('reset-otp')
-    } catch (resetError) {
-      if (version === recoveryVersion.current && !controller.signal.aborted)
-        setError(messageFrom(resetError))
-    } finally {
-      if (version === recoveryVersion.current) setBusy(false)
-    }
-  }
-
-  async function verifyPasswordReset(event: React.FormEvent) {
-    event.preventDefault()
-    const challenge = resetChallenge.current
-    if (!challenge || challenge.iin !== iin) {
-      returnToPassword('Подтверждение истекло. Запросите новый SMS-код.')
-      return
-    }
-    const version = recoveryVersion.current
-    const controller = new AbortController()
-    recoveryRequest.current = controller
-    setBusy(true)
-    setError('')
-    try {
-      const result = await request<{ resetToken: string; expiresAt: string }>(
-        '/api/mobile/auth/password-reset/verify',
-        {
-          method: 'POST',
-          body: JSON.stringify({ iin, challengeId: challenge.id, code: otpCode }),
-          signal: controller.signal,
-        },
-      )
-      if (version !== recoveryVersion.current || controller.signal.aborted) return
-      if (
-        !/^[A-Za-z0-9_-]{43}$/.test(result.resetToken) ||
-        !(Date.parse(result.expiresAt) > Date.now())
-      ) {
-        returnToPassword('Подтверждение истекло. Запросите новый SMS-код.')
-        return
-      }
-      resetGrant.current = { iin, token: result.resetToken, expiresAt: result.expiresAt }
-      resetChallenge.current = null
-      setOtpCode('')
-      setPassword('')
-      setPasswordConfirmation('')
-      setAuthStep('reset-password')
-    } catch (resetError) {
-      if (version === recoveryVersion.current && !controller.signal.aborted)
-        setError(messageFrom(resetError))
-    } finally {
-      if (version === recoveryVersion.current) setBusy(false)
-    }
-  }
-
-  async function completePasswordReset(event: React.FormEvent) {
-    event.preventDefault()
-    const grant = resetGrant.current
-    if (!grant || grant.iin !== iin || !(Date.parse(grant.expiresAt) > Date.now())) {
-      returnToPassword('Подтверждение истекло. Запросите новый SMS-код.')
-      return
-    }
-    if (password !== passwordConfirmation) {
-      setError(t('Пароли не совпадают'))
-      return
-    }
-    const policyError = newLearnerPasswordError(password)
-    if (policyError) {
-      setError(t(policyError))
-      return
-    }
-    const version = recoveryVersion.current
-    const controller = new AbortController()
-    recoveryRequest.current = controller
-    setBusy(true)
-    setError('')
-    try {
-      const result = await request<{ tokens: Tokens; pharmacist: Pharmacist }>(
-        '/api/mobile/auth/password-reset/complete',
-        {
-          method: 'POST',
-          body: JSON.stringify({ iin, resetToken: grant.token, password }),
-          signal: controller.signal,
-        },
-      )
-      if (version !== recoveryVersion.current || controller.signal.aborted) return
-      persistTokens(result.tokens)
-      setPharmacist(result.pharmacist)
-    } catch (resetError) {
-      if (version === recoveryVersion.current && !controller.signal.aborted)
-        returnToPassword(messageFrom(resetError))
-    } finally {
-      if (version === recoveryVersion.current) setBusy(false)
-    }
-  }
-
-  function returnToPassword(message = '') {
-    clearRecovery()
-    setAuthStep('password')
-    setError(message)
-  }
-
-  function resetActivation() {
-    clearRecovery()
-    setAuthStep('iin')
-    setPassword('')
-    setPasswordConfirmation('')
-    setFullName('')
-    setIsNewRegistration(false)
-    setPhone('')
-    setPhoneMasked('')
-    setOtpCode('')
-    setError('')
   }
 
   async function refreshPortal() {
@@ -1650,309 +1365,54 @@ export default function LearnerTrainingPage() {
                 {t('Личный кабинет')}
               </div>
               <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-ink-900">
-                {authStep === 'iin' && t('Вход для фармацевта')}
-                {authStep === 'password' && t('Введите пароль')}
-                {authStep === 'phone' && t('Подтвердите телефон')}
-                {authStep === 'otp' && t('Введите код из SMS')}
-                {authStep === 'create-password' && t('Создайте пароль')}
-                {authStep === 'reset-otp' && t('Восстановление пароля')}
-                {authStep === 'reset-password' && t('Создайте новый пароль')}
+                {t('Вход для фармацевта')}
               </h1>
               <p className="mt-3 text-sm leading-6 text-ink-500">
-                {authStep === 'iin' &&
-                  t(
-                    'Сначала введите ИИН. При первом входе вы подтвердите телефон и создадите собственный пароль.',
-                  )}
-                {authStep === 'password' && t('Пароль закреплён за указанным ИИН.')}
-                {authStep === 'phone' &&
-                  (isNewRegistration
-                    ? t(
-                        'Новый ИИН. Подтвердите свой номер телефона, затем укажите ФИО и создайте пароль.',
-                      )
-                    : t(
-                        'Введите номер телефона. Мы отправим код и после подтверждения закрепим номер за этим ИИН.',
-                      ))}
-                {authStep === 'otp' && t('Код отправлен на номер {phone}', { phone: phoneMasked })}
-                {authStep === 'create-password' &&
-                  t('Придумайте пароль не короче 8 символов. Он будет закреплён за вашим ИИН.')}
-                {authStep === 'reset-otp' &&
-                  t(
-                    'Код отправлен на привязанный номер {phone}. Изменить номер при восстановлении нельзя.',
-                    { phone: phoneMasked },
-                  )}
-                {authStep === 'reset-password' &&
-                  t(
-                    'Телефон подтверждён. Новый пароль заменит предыдущий и останется привязанным к вашему ИИН.',
-                  )}
+                {t('Введите ИИН или номер телефона и пароль.')}
               </p>
-              {authStep !== 'iin' && (
-                <div className="mt-5 flex items-center justify-between rounded-xl border border-ink-100 bg-paper-hover px-4 py-3">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-ink-400">
-                      {t('ИИН')}
-                    </div>
-                    <div className="mt-0.5 font-mono text-sm font-bold text-ink-800">
-                      {formatIinInput(iin)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="text-sm font-bold text-brand-green-700"
-                    onClick={resetActivation}
-                  >
-                    {t('Изменить')}
-                  </button>
-                </div>
-              )}
               {error && <ErrorMessage text={error} />}
-              {authStep === 'iin' && (
-                <form className="mt-8 space-y-5" onSubmit={checkIin}>
-                  <label className="block text-sm font-bold text-ink-700">
-                    {t('ИИН')}
-                    <input
-                      className="inp mt-2 h-12 font-mono text-base tracking-[0.08em]"
-                      inputMode="numeric"
-                      autoComplete="username"
-                      value={formatIinInput(iin)}
-                      onChange={(event) => {
-                        clearRecovery()
-                        setIin(event.target.value.replace(/\D/g, '').slice(0, 12))
-                      }}
-                      placeholder="000000 000000"
-                      minLength={13}
-                      maxLength={13}
-                      autoFocus
-                      required
-                    />
-                  </label>
-                  <button
-                    className="btn btn-primary h-12 w-full text-base"
-                    disabled={busy || iin.length !== 12}
-                  >
-                    {busy ? t('Проверяем…') : t('Продолжить')}
-                  </button>
-                </form>
-              )}
-              {authStep === 'password' && (
-                <form className="mt-6 space-y-5" onSubmit={login}>
-                  <PasswordInput
-                    label={t('Пароль')}
-                    value={password}
-                    onChange={setPassword}
-                    visible={showPassword}
-                    onToggle={() => setShowPassword((current) => !current)}
-                    autoComplete="current-password"
-                    t={t}
+              <form className="mt-8 space-y-5" onSubmit={login}>
+                <label className="block text-sm font-bold text-ink-700">
+                  {t('ИИН или номер телефона')}
+                  <input
+                    className="inp mt-2 h-12 font-mono text-base tracking-[0.04em]"
+                    inputMode="tel"
+                    autoComplete="username"
+                    value={loginId}
+                    onChange={(event) => changeLoginId(event.target.value)}
+                    placeholder={t('ИИН или +7 7XX XXX XX XX')}
+                    maxLength={24}
+                    autoFocus
+                    required
                   />
-                  <button
-                    className="btn btn-primary h-12 w-full text-base"
-                    disabled={busy || password.length < 4}
-                  >
-                    {busy ? t('Входим…') : t('Войти')}
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-sm font-bold text-brand-green-700"
-                    disabled={busy}
-                    onClick={() => void requestPasswordReset()}
-                  >
-                    {t('Забыли пароль?')}
-                  </button>
-                </form>
-              )}
-              {authStep === 'phone' && (
-                <form className="mt-6 space-y-5" onSubmit={requestActivationCode}>
-                  <label className="block text-sm font-bold text-ink-700">
-                    {t('Номер телефона')}
-                    <span className="relative mt-2 block">
-                      <Phone className="absolute left-4 top-3.5 text-ink-400" size={19} />
-                      <span className="absolute left-11 top-3 font-mono text-base font-bold text-ink-700">
-                        +7
-                      </span>
-                      <input
-                        className="inp h-12 pl-[4.5rem] font-mono text-base tracking-[0.04em]"
-                        aria-label={t('Номер телефона')}
-                        inputMode="tel"
-                        autoComplete="tel"
-                        value={phone}
-                        onChange={(event) => {
-                          clearRecovery()
-                          setPhone(normalizePhoneInput(event.target.value))
-                        }}
-                        placeholder="7470799353"
-                        autoFocus
-                        required
-                      />
-                    </span>
-                  </label>
-                  {phoneMasked && (
-                    <p className="text-xs text-ink-400">
-                      {t('Подсказка: номер в профиле {phone}', { phone: phoneMasked })}
-                    </p>
+                </label>
+                <PasswordInput
+                  label={t('Пароль')}
+                  value={password}
+                  onChange={setPassword}
+                  visible={showPassword}
+                  onToggle={() => setShowPassword((current) => !current)}
+                  autoComplete="current-password"
+                  t={t}
+                />
+                <button
+                  className="btn btn-primary h-12 w-full text-base"
+                  disabled={busy || !parseLoginIdentifier(loginId) || password.length < 4}
+                >
+                  {busy ? t('Входим…') : t('Войти')}
+                </button>
+              </form>
+              <div
+                role="note"
+                className="mt-5 flex items-start gap-3 rounded-xl border border-brand-green-100 bg-brand-green-50 px-4 py-3 text-sm leading-6 text-ink-700"
+              >
+                <Lock className="mt-1 shrink-0 text-brand-green-700" size={16} />
+                <span>
+                  {t(
+                    'Нет пароля? Задайте его в программе ePharm на кассе: значок ePharm у часов, затем «Мой профиль».',
                   )}
-                  <button
-                    className="btn btn-primary h-12 w-full text-base"
-                    disabled={busy || phone.length !== 10}
-                  >
-                    {busy ? t('Отправляем…') : t('Получить код')}
-                  </button>
-                </form>
-              )}
-              {authStep === 'otp' && (
-                <form className="mt-6 space-y-5" onSubmit={verifyActivationCode}>
-                  <label className="block text-sm font-bold text-ink-700">
-                    {t('Код из SMS')}
-                    <input
-                      className="inp mt-2 h-14 text-center font-mono text-2xl font-extrabold tracking-[0.35em]"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      value={otpCode}
-                      onChange={(event) =>
-                        setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 8))
-                      }
-                      placeholder="••••"
-                      minLength={4}
-                      maxLength={8}
-                      autoFocus
-                      required
-                    />
-                  </label>
-                  <button
-                    className="btn btn-primary h-12 w-full text-base"
-                    disabled={busy || otpCode.length < 4}
-                  >
-                    {busy ? t('Проверяем…') : t('Подтвердить код')}
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-sm font-bold text-brand-green-700"
-                    onClick={() => {
-                      clearRecovery()
-                      setAuthStep('phone')
-                    }}
-                  >
-                    {t('Изменить номер')}
-                  </button>
-                </form>
-              )}
-              {authStep === 'create-password' && (
-                <form className="mt-6 space-y-5" onSubmit={createInitialPassword}>
-                  {isNewRegistration && (
-                    <label className="block text-sm font-bold text-ink-700">
-                      {t('ФИО')}
-                      <input
-                        className="inp mt-2 h-12 text-base"
-                        autoComplete="name"
-                        value={fullName}
-                        onChange={(event) => setFullName(event.target.value.slice(0, 255))}
-                        placeholder={t('Введите фамилию, имя и отчество')}
-                        minLength={3}
-                        maxLength={255}
-                        autoFocus
-                        required
-                      />
-                    </label>
-                  )}
-                  <PasswordInput
-                    label={t('Новый пароль')}
-                    value={password}
-                    onChange={setPassword}
-                    visible={showPassword}
-                    onToggle={() => setShowPassword((current) => !current)}
-                    autoComplete="new-password"
-                    t={t}
-                  />
-                  <PasswordInput
-                    label={t('Повторите пароль')}
-                    value={passwordConfirmation}
-                    onChange={setPasswordConfirmation}
-                    visible={showPassword}
-                    onToggle={() => setShowPassword((current) => !current)}
-                    autoComplete="new-password"
-                    t={t}
-                  />
-                  <button
-                    className="btn btn-primary h-12 w-full text-base"
-                    disabled={
-                      busy ||
-                      password.length < 8 ||
-                      passwordConfirmation.length < 8 ||
-                      (isNewRegistration && fullName.trim().length < 3)
-                    }
-                  >
-                    {busy ? t('Сохраняем…') : t('Создать пароль и войти')}
-                  </button>
-                </form>
-              )}
-              {authStep === 'reset-otp' && (
-                <form className="mt-6 space-y-5" onSubmit={verifyPasswordReset}>
-                  <label className="block text-sm font-bold text-ink-700">
-                    {t('Код из SMS')}
-                    <input
-                      className="inp mt-2 h-14 text-center font-mono text-2xl font-extrabold tracking-[0.35em]"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      value={otpCode}
-                      onChange={(event) =>
-                        setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 8))
-                      }
-                      placeholder="••••"
-                      minLength={4}
-                      maxLength={8}
-                      autoFocus
-                      required
-                    />
-                  </label>
-                  <button
-                    className="btn btn-primary h-12 w-full text-base"
-                    disabled={busy || otpCode.length < 4}
-                  >
-                    {busy ? t('Проверяем…') : t('Подтвердить код')}
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-sm font-bold text-brand-green-700"
-                    onClick={() => returnToPassword()}
-                  >
-                    {t('Вернуться ко входу')}
-                  </button>
-                </form>
-              )}
-              {authStep === 'reset-password' && (
-                <form className="mt-6 space-y-5" onSubmit={completePasswordReset}>
-                  <PasswordInput
-                    label={t('Новый пароль')}
-                    value={password}
-                    onChange={setPassword}
-                    visible={showPassword}
-                    onToggle={() => setShowPassword((current) => !current)}
-                    autoComplete="new-password"
-                    t={t}
-                  />
-                  <PasswordInput
-                    label={t('Повторите пароль')}
-                    value={passwordConfirmation}
-                    onChange={setPasswordConfirmation}
-                    visible={showPassword}
-                    onToggle={() => setShowPassword((current) => !current)}
-                    autoComplete="new-password"
-                    t={t}
-                  />
-                  <button
-                    className="btn btn-primary h-12 w-full text-base"
-                    disabled={busy || password.length < 8 || passwordConfirmation.length < 8}
-                  >
-                    {busy ? t('Сохраняем…') : t('Сохранить новый пароль и войти')}
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-sm font-bold text-brand-green-700"
-                    onClick={() => returnToPassword()}
-                  >
-                    {t('Вернуться ко входу')}
-                  </button>
-                </form>
-              )}
+                </span>
+              </div>
               <div className="mt-7 flex items-start gap-2 border-t border-ink-100 pt-5 text-xs leading-5 text-ink-400">
                 <ShieldCheck className="mt-0.5 shrink-0 text-brand-green-600" size={16} />
                 {t('Пароль передаётся по защищённому соединению. Не сообщайте его другим людям.')}
