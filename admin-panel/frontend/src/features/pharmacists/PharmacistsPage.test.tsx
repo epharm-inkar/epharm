@@ -230,13 +230,13 @@ describe('PharmacistsPage — рендер', () => {
     expect(screen.getByRole('button', { name: 'Продавцы Standard-N' })).toBeInTheDocument()
   })
 
-  it('H1 + 4 metrics', () => {
+  it('H1 + 4 metrics: всего, работали за 7 дней, покрытие, балансы; без Pending', () => {
     renderPage()
     expect(screen.getByRole('heading', { level: 1, name: /Фармацевты/i })).toBeInTheDocument()
     expect(screen.getByText('Всего фармацевтов')).toBeInTheDocument()
-    // Активные / Pending встречаются в Metrics + Tabs
-    expect(screen.getAllByText('Активные').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Pending').length).toBeGreaterThan(0)
+    expect(screen.getByText('Работали с ePharm за 7 дней')).toBeInTheDocument()
+    expect(screen.getByText('Покрытие за 7 дней')).toBeInTheDocument()
+    expect(screen.queryByText('Pending')).not.toBeInTheDocument()
     expect(screen.getByText('Текущие балансы')).toBeInTheDocument()
   })
 
@@ -481,8 +481,9 @@ describe('PharmacistsPage — список и actions', () => {
     const row = screen.getByTestId('pharmacist-row-u_1')
     expect(within(table).getByRole('columnheader', { name: 'ИИН' })).toBeInTheDocument()
     expect(within(row).getByRole('cell', { name: '—' })).toBeInTheDocument()
-    expect(within(row).getAllByRole('cell')).toHaveLength(9)
-    expect(within(table).getAllByRole('columnheader')).toHaveLength(9)
+    // + «Был в ePharm» (25.11.2026)
+    expect(within(row).getAllByRole('cell')).toHaveLength(10)
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(10)
     expect(within(table).queryByRole('checkbox')).not.toBeInTheDocument()
   })
 
@@ -677,15 +678,23 @@ describe('PharmacistsPage — список и actions', () => {
     expect(screen.getByRole('checkbox', { name: 'Выбрать Второй' })).toBeChecked()
   })
 
-  it('фильтр active скрывает blocked', async () => {
+  it('«Активные за 7 дней»: работавшие с ePharm за неделю, без давних, молчащих и заблокированных', async () => {
+    const recent = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+    const old = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString()
     setPharmacists([
-      mkPharmacist({ id: 'a', name: 'Active-X', status: 'active' }),
-      mkPharmacist({ id: 'b', name: 'Blocked-X', status: 'blocked' }),
+      mkPharmacist({ id: 'a', name: 'Active-X', status: 'active', lastActiveAt: recent }),
+      mkPharmacist({ id: 'o', name: 'Old-X', status: 'active', lastActiveAt: old }),
+      mkPharmacist({ id: 's', name: 'Silent-X', status: 'active', lastActiveAt: null }),
+      mkPharmacist({ id: 'b', name: 'Blocked-X', status: 'blocked', lastActiveAt: recent }),
     ])
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByRole('button', { name: /Активные/ }))
+    expect(screen.getAllByText('2 дн. назад').length).toBeGreaterThan(0)
+    expect(screen.getByText('нет за 30 дней')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Активные за 7 дней/ }))
     expect(screen.getByText('Active-X')).toBeInTheDocument()
+    expect(screen.queryByText('Old-X')).not.toBeInTheDocument()
+    expect(screen.queryByText('Silent-X')).not.toBeInTheDocument()
     expect(screen.queryByText('Blocked-X')).not.toBeInTheDocument()
   })
 

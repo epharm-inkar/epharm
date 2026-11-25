@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 import { Copy, Eye, QrCode } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Button,
   Empty,
@@ -13,9 +13,7 @@ import {
   ProgressBar,
   SearchInput,
   Select,
-  Tabs,
   useToast,
-  type TabItem,
 } from '@/ui'
 import {
   IconCheck,
@@ -62,18 +60,18 @@ import {
 import { usePharmacies } from '@/lib/queries/pharmacies'
 import { describeError } from '@/lib/describeError'
 import { formatKzt, formatNum } from '@/mocks/fixtures'
-import { isTrainingReadOnlyRole, isTrainingWorkspaceRole } from '@/app/accessPolicy'
+import {
+  canAccessSection,
+  isTrainingReadOnlyRole,
+  isTrainingWorkspaceRole,
+} from '@/app/accessPolicy'
+import { TrainingTabs } from './TrainingTabs'
 import { useUiStore } from '@/app/store'
 import { useAdministrativeCapabilities } from '@/app/useAdministrativeCapabilities'
 import ReportDownloadButton from '@/features/reports/ReportDownloadButton'
 import TrainingLearningExport from './TrainingLearningExport'
 import { trainingAllowed, type TrainingActions } from './training-actions'
-import {
-  TRAINING_NAVIGATION,
-  trainingItem,
-  trainingTabFromSearch,
-  type TrainingTab,
-} from '@/app/trainingNavigation'
+import { trainingItem, trainingTabFromSearch, type TrainingTab } from '@/app/trainingNavigation'
 import {
   AssignTrainingModal,
   AssessmentResultModal,
@@ -97,11 +95,6 @@ import {
 import { CourseEditorDrawer } from './CourseEditorDrawer'
 import { CertificateEditorModal } from './CertificateEditorModal'
 
-const TABS: TabItem<TrainingTab>[] = TRAINING_NAVIGATION.map(({ value, label }) => ({
-  value,
-  label,
-}))
-
 export default function LMSPage() {
   const exportAccess = useAdministrativeCapabilities()
   const legacyCsvAllowed =
@@ -111,6 +104,7 @@ export default function LMSPage() {
     exportAccess.data?.managed === false
   const [searchParams, setSearchParams] = useSearchParams()
   const role = useUiStore((state) => state.authedUser?.role)
+  const navigate = useNavigate()
   const isReadOnly = isTrainingReadOnlyRole(role)
   const trainingWorkspace = role ? isTrainingWorkspaceRole(role) : false
   const requestedPharmacistIds = useMemo(
@@ -294,13 +288,17 @@ export default function LMSPage() {
         }
       />
 
-      {!trainingWorkspace && (
-        <div className="card overflow-x-auto px-5 pt-1">
-          <div className="min-w-max">
-            <Tabs items={TABS} value={tab} onChange={setTab} />
-          </div>
-        </div>
-      )}
+      <div className="card px-3 pt-1 sm:px-5">
+        <TrainingTabs
+          value={tab}
+          onChange={setTab}
+          aiExam={
+            role && canAccessSection(role, 'ai_exam')
+              ? { label: 'AI-экзаменация', onOpen: () => navigate('/ai-exam') }
+              : null
+          }
+        />
+      </div>
 
       {dashboardQuery.isError && !dashboard ? (
         <>
@@ -510,7 +508,7 @@ function OverviewTab({
   if (loading || !dashboard) return <LoadingBlock label="Загружаем показатели обучения…" />
   return (
     <>
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <Metric
           label="Активные программы"
           value={formatNum(dashboard.activePrograms)}
@@ -536,10 +534,10 @@ function OverviewTab({
           icon={<IconPlayCircle size={17} />}
         />
       </div>
-      <div className="grid grid-cols-[1.4fr_1fr] gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
         <section className="card p-5">
           <h2 className="text-[15px] font-extrabold text-ink-900">Состояние назначений</h2>
-          <div className="mt-4 grid grid-cols-4 gap-5">
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-5">
             <CompactMetric label="Не начато" value={dashboard.notStarted} />
             <CompactMetric label="В процессе" value={dashboard.inProgress} />
             <CompactMetric label="Просрочено" value={dashboard.overdue} danger />
@@ -1508,7 +1506,7 @@ function AnalyticsTab({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <Metric label="Назначено" value={formatNum(dashboard.totalAssignments)} accent="blue" />
         <Metric label="Завершено" value={formatNum(dashboard.completed)} accent="green" />
         <Metric label="Просрочено" value={formatNum(dashboard.overdue)} accent="amber" />

@@ -4,7 +4,7 @@
 // На /settings остался один рабочий combobox — язык. Неподключённый timezone
 // отображается disabled input, а не фиктивным редактируемым select.
 
-import { test, expect, openSidebarModule } from './fixtures'
+import { test, expect, moduleTab, openSidebarModule } from './fixtures'
 
 test.describe('i18n — переключение языка ru ↔ kk', () => {
   test('смена на Қазақша переводит заголовок и навигацию', async ({ loggedInPage }) => {
@@ -16,7 +16,7 @@ test.describe('i18n — переключение языка ru ↔ kk', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Баптаулар' })).toBeVisible()
     await openSidebarModule(page, 'Аналитика')
-    await expect(page.getByText('Аналитика дашборды')).toBeVisible() // sidebar nav
+    await expect(moduleTab(page, 'Аналитика', 'Аналитика дашборды')).toBeVisible() // module tabs
     await expect(page.getByRole('heading', { level: 1, name: 'Настройки' })).toHaveCount(0)
   })
 
@@ -46,10 +46,7 @@ test.describe('i18n — переключение языка ru ↔ kk', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Баптаулар' })).toBeVisible()
 
     await openSidebarModule(page, 'Фармацевттерді ынталандыру')
-    await page
-      .getByRole('complementary', { name: 'Основная навигация' })
-      .getByRole('button', { name: 'Промо-науқандар', exact: true })
-      .click()
+    await moduleTab(page, 'Фармацевттерді ынталандыру', 'Промо-науқандар').click()
     await expect(page).toHaveURL(/\/promo$/)
     await expect(page.getByRole('heading', { level: 1, name: 'Промо-науқандар' })).toBeVisible()
   })

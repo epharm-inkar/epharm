@@ -65,16 +65,13 @@ describe('SettingsPage', () => {
     expect(navigate).toHaveBeenCalledWith('/login', { replace: true })
   })
 
-  it('не имитирует серверные настройки безопасности и автоодобрения', () => {
+  it('не показывает неподключённые настройки: 2FA, сессии, часовой пояс, автоматизация сверки', () => {
     renderPage()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
-    for (const field of screen.getAllByPlaceholderText('Не настраивается на этой странице')) {
-      expect(field).toBeDisabled()
-      expect(field).toHaveValue('')
-    }
-    expect(screen.getByText(/Настройки 2FA и уведомлений не подключены/)).toBeVisible()
-    expect(screen.getByText(/Действующие серверные правила эта страница не меняет/)).toBeVisible()
+    expect(screen.queryByText(/2FA/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Часовой пояс/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/автоодобрени|Автоматизац/i)).not.toBeInTheDocument()
   })
 
   it('оставляет рабочим выбор языка', async () => {
