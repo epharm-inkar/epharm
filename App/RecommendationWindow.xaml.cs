@@ -202,12 +202,12 @@ namespace CustomerDisplay
                 var tab = new System.Windows.Controls.Button
                 {
                     Content = new System.Windows.Controls.TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 230 },
-                    Padding = new Thickness(11, 6, 11, 6),
-                    Margin = new Thickness(0, 0, 6, 6),
-                    FontSize = 13.5,
+                    Padding = new Thickness(10, 4, 10, 5),
+                    Margin = new Thickness(0, 0, 6, 0),
+                    FontSize = 13,
                     FontWeight = selected ? FontWeights.Bold : FontWeights.SemiBold,
-                    Foreground = selected ? System.Windows.Media.Brushes.White : (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#171A2F")!,
-                    Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom(selected ? "#171A2F" : "#F1F2F4")!,
+                    Foreground = selected ? System.Windows.Media.Brushes.White : (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#073F46")!,
+                    Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom(selected ? "#073F46" : "#EAF3F3")!,
                     BorderThickness = new Thickness(0),
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Focusable = false,
@@ -238,9 +238,10 @@ namespace CustomerDisplay
                 model.Substitutions.TriggerText,
                 StringComparison.OrdinalIgnoreCase);
 
+            TbHeadline.Text = model.Headline;
             TopTriggerContext.Visibility = topSubstitutionTrigger || topCrossSellTrigger
                 ? Visibility.Visible : Visibility.Collapsed;
-            TbTopTriggerLabel.Text = topSubstitutionTrigger ? "ПОКУПАТЕЛЬ ПОПРОСИЛ" : "УЖЕ В ЧЕКЕ";
+            TbTopTriggerLabel.Text = topSubstitutionTrigger ? "Покупатель попросил" : "Уже в чеке";
             TbTopTrigger.Text = topSubstitutionTrigger
                 ? model.Substitutions.TriggerText : model.CrossSells.TriggerText;
 

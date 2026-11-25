@@ -42,6 +42,11 @@ export function canManagePharmacistCredentials(role: AdminRole | undefined): boo
   return role === 'SYSTEM_ADMIN' || role === 'HQ_HEAD'
 }
 
+/** «Диагностика» и «Перезапуск» касс без AnyDesk: задание уходит на кассу в аптеке, поэтому только HQ. */
+export function canManageTills(role: AdminRole | undefined): boolean {
+  return role === 'SYSTEM_ADMIN' || role === 'HQ_HEAD'
+}
+
 export function isTrainingReadOnlyRole(role: AdminRole | undefined): boolean {
   return role === 'HQ_HEAD'
 }

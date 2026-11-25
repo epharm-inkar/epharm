@@ -776,6 +776,12 @@ class TrainingIntegrationTest {
             .andExpect(jsonPath("$.totalRewards").value(750))
             .andExpect(jsonPath("$.certificates.length()").value(1))
 
+        // HQ sees per program how many of the assigned completed it («выполнили N из M»).
+        mockMvc.perform(get("/api/admin/training/programs/$programId").header("Authorization", adminBearer))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.assignments").value(1))
+            .andExpect(jsonPath("$.completedAssignments").value(1))
+
         mockMvc.perform(get("/api/public/training/certificates/$certificateToken"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.number").isNotEmpty)

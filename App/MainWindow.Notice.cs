@@ -68,6 +68,7 @@ public partial class MainWindow
             ApplyNoticeToTray();
         }
         if (announce) ShowEpharmLiveToast();
+        else FlushPendingWelcome();
     }
 
     /// <summary>The ePharm icon during the works: the notice with the HQ text.</summary>
@@ -97,6 +98,7 @@ public partial class MainWindow
         toast.Closed += (_, _) => { if (ReferenceEquals(_liveToast, toast)) _liveToast = null; };
         _liveToast = toast;
         toast.Show();
+        CountLiveToastAsWelcome();
         Log("ePharm: показано уведомление «ePharm снова работает»");
     }
 

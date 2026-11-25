@@ -4,9 +4,11 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import kz.epharm.learnercredentials.LearnerPasswordVault
 import kz.epharm.mobile.auth.service.CabinetLinkService
+import kz.epharm.mobile.auth.service.MobileRefreshTokenService
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.pharmacists.service.PharmacistPhoneOwners
 import kz.epharm.posm.service.PosmDeviceIdentity
 import kz.epharm.posm.service.StandardNDirectoryIdentityLookup
 import kz.epharm.shared.PhoneUtil
@@ -62,6 +64,8 @@ class PosmSelfService(
     private val jdbc: JdbcTemplate,
     private val passwordEncoder: PasswordEncoder,
     private val credentialVault: LearnerPasswordVault,
+    private val phoneOwners: PharmacistPhoneOwners,
+    private val refreshTokens: MobileRefreshTokenService,
 ) {
     fun view(device: PosmDeviceIdentity, req: PosmSelfRequest): PosmSelfDto {
         val person = person(device, req)
@@ -75,9 +79,12 @@ class PosmSelfService(
     }
 
     /**
-     * The till proves only who is signed in to Standard-N at it, so it may fill an empty profile but never
-     * replace a phone or a password the person already has (a colleague signed in as them could take the
-     * account over). Changes go through the cabinet: SMS reset for the password, support for the phone.
+     * The till proves who is signed in to Standard-N at it. It may fill an empty phone and set or change the
+     * password (owner's decision 25.11.2026: the cabinet has no SMS reset any more; the till asks for the new
+     * password twice and sends the final one). A bound phone is never replaced from the till: a colleague signed
+     * in as the person could move the account to their own number, so that goes through support.
+     * A changed password ends every cabinet session of the person (refresh tokens); the database triggers on
+     * `password_hash` (V061, V097) already revoke their POSM staff sessions.
      */
     @Transactional
     fun saveContact(device: PosmDeviceIdentity, req: PosmSelfRequest): PosmSelfDto {
@@ -88,22 +95,19 @@ class PosmSelfService(
         if (typedPhone == null && typedPassword == null) invalid("Введите номер телефона или пароль")
         val phone = typedPhone?.let(PhoneUtil::normalize)
         if (phone != null && !PHONE.matches(phone)) invalid("Номер в формате +7 7XX XXX XX XX")
-        if (phone != null && card.phone.isNotBlank() && card.phone != phone) {
+        if (phone != null && card.phone.isNotBlank() && PhoneUtil.normalize(card.phone) != phone) {
             conflict("Номер уже привязан. Сменить его можно через поддержку ePharm")
         }
-        if (typedPassword != null && !card.passwordHash.isNullOrBlank()) {
-            conflict("Пароль уже задан. Если забыли, восстановите его в кабинете по SMS")
-        }
+        typedPassword?.let { PharmacistPasswordPolicy.requireValid(it, TILL_PASSWORD_MINIMUM) }
         val phoneIsNew = phone != null && card.phone.isBlank()
         if (phoneIsNew) {
-            val owner = jdbc.query("SELECT id FROM pharmacists WHERE phone = ?", { rs, _ -> rs.getString(1) }, phone).singleOrNull()
-            if (owner != null && owner != card.id) conflict("Этот номер уже привязан к другому сотруднику")
-            card.phone = phone!!
+            if (phoneOwners.owners(phone!!).any { it.id != card.id }) conflict("Этот номер уже привязан к другому сотруднику")
+            card.phone = phone
         }
-        if (typedPassword != null) {
-            PharmacistPasswordPolicy.requireValid(typedPassword, 6)
-            card.passwordHash = passwordEncoder.encode(typedPassword)
-        }
+        val oldHash = card.passwordHash?.takeIf { it.isNotBlank() }
+        // The same password sent again (a retry) keeps the hash and the sessions.
+        val passwordIsNew = typedPassword != null && (oldHash == null || !passwordEncoder.matches(typedPassword, oldHash))
+        if (passwordIsNew) card.passwordHash = passwordEncoder.encode(typedPassword)
         card.updatedAt = Instant.now()
         // Flushed first: the vault seals the password only against the hash already in the table.
         val saved = pharmacists.saveAndFlush(card)
@@ -112,6 +116,7 @@ class PosmSelfService(
             jdbc.update("UPDATE pharmacists SET phone_verification_status = 'self_declared' WHERE id = ?", saved.id)
         }
         if (typedPassword != null) credentialVault.capture(saved.id, saved.passwordHash!!, typedPassword)
+        if (passwordIsNew && oldHash != null) refreshTokens.revokeAllForPharmacist(saved.id)
         return dto(saved, device, issueLink = req.link)
     }
 
@@ -183,6 +188,8 @@ class PosmSelfService(
 
     private companion object {
         val PHONE = Regex("^\\+7[0-9]{10}$")
+        /** The pharmacist password minimum at the till, as for POSM sign-in since #148 (StaffAuthService). */
+        const val TILL_PASSWORD_MINIMUM = 4
         val LABELS = mapOf(
             "receipt_bonus" to "Бонус за рекомендацию",
             "training_bonus" to "Обучение",

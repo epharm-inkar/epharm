@@ -18,7 +18,7 @@ import java.util.UUID
 /** Invalid input must fail before optional vault capture, OTP proof consumption or account writes. */
 class PharmacistPasswordWritersTest {
     @Test fun `learner initial password refuses truncating inputs before contacting any dependency`() {
-        val service = MobileAuthService(mockk(), mockk(), mockk(), mockk(), mockk(), mockk(), mockk(), mockk())
+        val service = MobileAuthService(mockk(), mockk(), mockk(), mockk(), mockk(), mockk(), mockk(), mockk(), mockk())
         for (value in listOf("x".repeat(73), "я".repeat(37), " ".repeat(8))) {
             val failure = assertThrows(AppException::class.java) {
                 service.setInitialPassword("000101500011", "+77000000012", value)

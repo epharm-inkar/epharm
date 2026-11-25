@@ -30,13 +30,19 @@ data class SmsVerifyRequest(
     val code: String,
 )
 
+/**
+ * Password sign-in by IIN (old clients send only `iin`) or by the phone the pharmacist saved at the till
+ * (25.11.2026), in any usual format. Exactly one of `iin` and `phone`; the controller checks that.
+ */
 data class IinPasswordLoginRequest(
-    @field:NotBlank
     @field:Iin
-    val iin: String,
+    val iin: String? = null,
     @field:NotBlank
     @field:Size(min = 4, max = 128)
     val password: String,
+    @field:Size(max = 32)
+    @field:Pattern(regexp = "[+0-9 ()\\-]{6,32}", message = "Некорректный номер телефона")
+    val phone: String? = null,
 )
 
 data class ActivationStatusRequest(

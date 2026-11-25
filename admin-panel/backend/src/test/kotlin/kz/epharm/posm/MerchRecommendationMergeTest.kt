@@ -420,6 +420,23 @@ class MerchRecommendationMergeTest {
 
     private fun product(id: String): ProductEntity = ProductEntity(id = id, name = id, price = 100).also(catalog::add)
 
+    @Test
+    fun `with cross-sells switched off only replacements reach the till`() {
+        val offOnly = RecommendationService(
+            rulesEngine, events, pendingBonusService, jdbc, entityManager, merch, products,
+            mockk<RecommendationSaleBonusService>(relaxed = true), crossSellEnabled = false,
+        )
+        val crossSell = localMatch(kind = RuleType.crosssell)
+        val replacement = localMatch(product = trigger, kind = RuleType.substitution)
+        every { rulesEngine.match(any(), any()) } returns RuleMatchResult(listOf(crossSell, replacement), emptyList())
+        every { merch.recommendationContext(any()) } returns context(pharmacyQty = BigDecimal("4"))
+
+        val response = offOnly.recommend(request())
+
+        assertThat(response.recommendations.map { it.kind }).containsOnly("substitution")
+        assertThat(response.recommendations.map { it.ruleId }).containsExactly(replacement.rule.id)
+    }
+
     private fun localMatch(product: ProductEntity = recommended, kind: RuleType = RuleType.crosssell) = RuleMatch(
         rule = RuleEntity(id = "local-${product.id}-${kind.name}", typeRaw = kind.name, recommend = product.id),
         triggerSku = trigger.id,

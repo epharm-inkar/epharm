@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -13,6 +14,9 @@ using QRCoder;
 
 namespace CustomerDisplay
 {
+    /// <summary>A task from HQ (a course to take): what to do, by when, what the person gets, and its status.</summary>
+    public sealed record StaffSelfTask(string Title, string Instructions, long? RewardKzt, string Status, int ProgressPct, DateTimeOffset? DueAt);
+
     /// <summary>One credited recommendation in the pharmacist's history.</summary>
     public sealed record StaffSelfReward(string Kind, string Product, long BonusKzt, DateTimeOffset At);
 
@@ -37,6 +41,8 @@ namespace CustomerDisplay
         /// <summary>Pharmacy tasks from the CRM (merchandising): null when this till does not receive them.</summary>
         public int? TasksCount { get; init; }
         public bool TasksOnline { get; init; } = true;
+        /// <summary>Tasks from HQ (courses), newest first; done ones stay visible for two weeks.</summary>
+        public IReadOnlyList<StaffSelfTask> HqTasks { get; init; } = Array.Empty<StaffSelfTask>();
     }
 
     /// <summary>
@@ -58,7 +64,12 @@ namespace CustomerDisplay
         private TextBlock? _tasksText;
 
         private readonly TextBox _phone = NewField("+7 ___ ___ __ __");
-        private readonly PasswordBox _password = new()
+        private readonly PasswordBox _password = NewPassword();
+        private readonly PasswordBox _passwordRepeat = NewPassword();
+        /// <summary>«Сменить пароль» pressed: the two fields show although a password is already set.</summary>
+        private bool _changingPassword;
+
+        private static PasswordBox NewPassword() => new()
         {
             FontSize = 15,
             Padding = new Thickness(11, 9, 11, 9),
@@ -150,6 +161,7 @@ namespace CustomerDisplay
                 return card;
             }
             body.Children.Add(BuildEarnings(model));
+            if (model.HqTasks.Count > 0) body.Children.Add(BuildHqTasks(model));
             if (model.TasksCount != null) body.Children.Add(BuildTasks(model));
             if (model.Recent.Count > 0) body.Children.Add(BuildHistory(model));
             body.Children.Add(BuildContact(model));
@@ -251,10 +263,12 @@ namespace CustomerDisplay
         /// <summary>The «?» text. Plain facts only: what shows up, who gets the money and when.</summary>
         internal static readonly string[] HelpLines =
         {
-            "ePharm подсказывает на кассе, что предложить покупателю: замену на товар партнёра или товар в дополнение к покупке.",
+            "ePharm подсказывает на кассе, на какой товар партнёра можно заменить то, что просит покупатель. Подсказка появляется сама, когда вы сканируете товар.",
             "Регистрироваться не нужно: ePharm узнаёт вас по входу в Стандарт-Н.",
-            "За каждую упаковку, проданную по подсказке, вам начисляется бонус. Его сумма видна в самой подсказке.",
-            "Начисления копятся за месяц («Заработано за месяц» и «На балансе» здесь) и в начале следующего месяца выплачиваются вам автоматически.",
+            "За каждую упаковку, проданную по подсказке, вам начисляется бонус. Сумма видна в самой подсказке.",
+            "Когда начисляется: касса отправляет чек на сервер сразу после продажи, бонус появляется здесь через несколько минут. Если продажу нужно проверить, бонус появится после проверки.",
+            "Выплата: начисления копятся за месяц («Заработано за месяц»), в начале следующего месяца по ним составляется ведомость и выплачиваются деньги.",
+            "Задания: просьбы от HQ, например пройти курс. Новое задание отмечается красной точкой на значке ePharm.",
             "Курсы и все начисления: кнопка «Мой кабинет» или QR для телефона.",
         };
 
@@ -265,7 +279,7 @@ namespace CustomerDisplay
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            text.Children.Add(new TextBlock { Text = "Задания аптеки", Foreground = Brush("#6B7280"), FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = model.HqTasks.Count > 0 ? "Задания по выкладке" : "Задания", Foreground = Brush("#6B7280"), FontSize = 12 });
             _tasksText = new TextBlock { FontSize = 15, FontWeight = FontWeights.SemiBold };
             ShowTasks(count, model.TasksOnline);
             text.Children.Add(_tasksText);
@@ -284,6 +298,60 @@ namespace CustomerDisplay
                 Margin = new Thickness(0), Padding = new Thickness(0), Child = row,
             };
         }
+
+        private UIElement BuildHqTasks(StaffSelfModel model)
+        {
+            var stack = new StackPanel { Margin = new Thickness(16, 10, 16, 0) };
+            stack.Children.Add(new TextBlock { Text = "МОИ ЗАДАНИЯ", Foreground = Brush("#9AA2AE"), FontSize = 11, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
+            foreach (var task in model.HqTasks.Take(4))
+            {
+                var box = new Border
+                {
+                    CornerRadius = new CornerRadius(10), Padding = new Thickness(11, 8, 11, 9), Margin = new Thickness(0, 0, 0, 6),
+                    Background = Brush(task.Status == "done" ? "#F4F6F7" : "#FFFFFF"), BorderBrush = Brush("#DDE3E6"), BorderThickness = new Thickness(1),
+                };
+                var inner = new StackPanel();
+                var head = new Grid();
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                head.Children.Add(new TextBlock { Text = task.Title, Foreground = Brush("#171A2F"), FontSize = 14, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 8, 0) });
+                var (label, fg, bg) = TaskChip(task);
+                var chip = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 1, 7, 2), Background = Brush(bg), VerticalAlignment = VerticalAlignment.Top, Child = new TextBlock { Text = label, Foreground = Brush(fg), FontSize = 11.5, FontWeight = FontWeights.Bold } };
+                Grid.SetColumn(chip, 1);
+                head.Children.Add(chip);
+                inner.Children.Add(head);
+                if (!string.IsNullOrWhiteSpace(task.Instructions) && task.Status != "done")
+                    inner.Children.Add(new TextBlock { Text = task.Instructions, Foreground = Brush("#5E6B6D"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0) });
+                var facts = new List<string>();
+                if (task.DueAt is { } due && task.Status != "done") facts.Add("до " + due.ToLocalTime().ToString("dd.MM", Kz));
+                if (task.RewardKzt is > 0) facts.Add("+" + Tenge(task.RewardKzt.Value) + " за выполнение");
+                if (facts.Count > 0)
+                    inner.Children.Add(new TextBlock { Text = string.Join("  ·  ", facts), Foreground = Brush("#1F6B57"), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 3, 0, 0) });
+                box.Child = inner;
+                stack.Children.Add(box);
+            }
+            if (model.HqTasks.Count > 4)
+                stack.Children.Add(new TextBlock { Text = "Ещё " + (model.HqTasks.Count - 4) + " в кабинете", Foreground = Brush("#6B7280"), FontSize = 12, Margin = new Thickness(2, 0, 0, 4) });
+            if (model.HqTasks.Any(t => t.Status != "done"))
+            {
+                var open = new Button
+                {
+                    Content = "Пройти в кабинете", Height = 36, FontSize = 13.5, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 2, 0, 0),
+                    Foreground = Brushes.White, Background = Brush("#1F8A70"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
+                };
+                open.Click += (_, _) => OpenCabinetRequested?.Invoke();
+                stack.Children.Add(open);
+            }
+            return stack;
+        }
+
+        internal static (string Label, string Foreground, string Background) TaskChip(StaffSelfTask task) => task.Status switch
+        {
+            "done" => ("Выполнено ✓", "#1F6B57", "#DFF3EA"),
+            "overdue" => ("Просрочено", "#FFFFFF", "#B23127"),
+            "in_progress" => (task.ProgressPct > 0 ? $"В процессе · {task.ProgressPct}%" : "В процессе", "#7A4B00", "#FFF1D6"),
+            _ => ("Новое", "#FFFFFF", "#E0392B"),
+        };
 
         /// <summary>The task feed changed: only the tasks line changes, typed phone or password stay as they are.</summary>
         public void UpdateTasks(int? count, bool online)
@@ -304,6 +372,8 @@ namespace CustomerDisplay
         {
             _phone.Text = "";
             _password.Password = "";
+            _passwordRepeat.Password = "";
+            _changingPassword = false;
         }
 
         private static string Plural(int n, string one, string few, string many)
@@ -389,19 +459,52 @@ namespace CustomerDisplay
             stack.Children.Add(head);
             stack.Children.Add(new TextBlock
             {
-                Text = complete ? "Телефон и пароль сохранены: вход в кабинет с телефона работает."
-                                : "Укажите телефон и пароль, чтобы заходить в кабинет с телефона и из дома.",
+                Text = complete ? "С этим номером и паролем можно войти в кабинет с телефона или из дома: epharm.inkar.kz/learn"
+                                : "Укажите телефон и пароль: с ними можно войти в кабинет с телефона или из дома.",
                 Foreground = Brush("#6B7280"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10),
             });
 
             // The inputs live across rebuilds (Update): take them out of the previous tree first.
             Detach(_phone);
             Detach(_password);
-            stack.Children.Add(FieldLabel("Номер телефона"));
-            stack.Children.Add(model.PhoneBound ? DoneLine("Телефон привязан") : _phone);
-            stack.Children.Add(FieldLabel("Пароль для входа"));
-            stack.Children.Add(model.PasswordSet ? DoneLine("Пароль задан. Сменить его можно в кабинете по SMS") : _password);
-            if (complete)
+            Detach(_passwordRepeat);
+            if (model.PhoneBound) stack.Children.Add(DoneLine("Номер телефона привязан"));
+            else
+            {
+                stack.Children.Add(FieldLabel("Номер телефона"));
+                stack.Children.Add(_phone);
+            }
+            var askPassword = !model.PasswordSet || _changingPassword;
+            if (model.PasswordSet)
+            {
+                var line = new Grid();
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                line.Children.Add(DoneLine("Пароль задан"));
+                if (!_changingPassword)
+                {
+                    var change = new Button
+                    {
+                        Content = "Сменить пароль", Padding = new Thickness(10, 3, 10, 4), FontSize = 12.5, FontWeight = FontWeights.SemiBold,
+                        Foreground = Brush("#112B33"), Background = Brush("#E7EDEF"), BorderThickness = new Thickness(0),
+                        Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top,
+                    };
+                    change.Click += (_, _) => BeginPasswordChange();
+                    Grid.SetColumn(change, 1);
+                    line.Children.Add(change);
+                }
+                stack.Children.Add(line);
+            }
+            if (askPassword)
+            {
+                stack.Children.Add(FieldLabel(model.PasswordSet ? "Новый пароль" : "Пароль для входа"));
+                stack.Children.Add(_password);
+                var repeat = FieldLabel("Повторите пароль");
+                repeat.Margin = new Thickness(0, 8, 0, 4);
+                stack.Children.Add(repeat);
+                stack.Children.Add(_passwordRepeat);
+            }
+            if (model.PhoneBound && !askPassword)
             {
                 box.Child = stack;
                 return box;
@@ -412,9 +515,17 @@ namespace CustomerDisplay
                 Content = "Сохранить", Margin = new Thickness(0, 11, 0, 0), Height = 42, FontSize = 15, FontWeight = FontWeights.SemiBold,
                 Foreground = Brushes.White, Background = Brush("#1F8A70"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
             };
-            save.Click += (_, _) => SaveContactRequested?.Invoke(
-                model.PhoneBound ? null : _phone.Text?.Trim(),
-                model.PasswordSet || _password.Password.Length == 0 ? null : _password.Password);
+            save.Click += (_, _) =>
+            {
+                string? password = null;
+                if (askPassword && (_password.Password.Length > 0 || _passwordRepeat.Password.Length > 0))
+                {
+                    if (_password.Password != _passwordRepeat.Password) { ShowStatus("Пароли не совпадают. Введите одинаковый пароль два раза.", error: true); return; }
+                    if (_password.Password.Length < MinPasswordLength) { ShowStatus($"Пароль слишком короткий: нужно хотя бы {MinPasswordLength} знака.", error: true); return; }
+                    password = _password.Password;
+                }
+                SaveContactRequested?.Invoke(model.PhoneBound ? null : _phone.Text?.Trim(), password);
+            };
             stack.Children.Add(save);
             box.Child = stack;
             return box;
@@ -445,6 +556,16 @@ namespace CustomerDisplay
             }
             return box;
         }
+
+        /// <summary>«Сменить пароль»: two fields for the new password (the server replaces the old one, 1.0.96).</summary>
+        public void BeginPasswordChange()
+        {
+            _changingPassword = true;
+            Update(Model);
+        }
+
+        /// <summary>Same minimum as the server and the cabinet (four characters, #148).</summary>
+        internal const int MinPasswordLength = 4;
 
         private static TextBlock FieldLabel(string text) => new()
         {

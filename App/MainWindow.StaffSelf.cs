@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
@@ -55,6 +56,7 @@ public partial class MainWindow
         // The tasks icon started first: one icon is enough.
         if (_taskKioskTray != null) { _taskKioskTray.Visible = false; _taskKioskTray.Dispose(); _taskKioskTray = null; }
         InitEpharmNotice();
+        InitRemoteCommands();
     }
 
     private void DisposeStaffSelfTray()
@@ -88,11 +90,13 @@ public partial class MainWindow
     {
         if (_epharm == null || _selfTray == null) return;
         var request = SelfRequest(link: false);
-        if (request == null) { SetSelfTrayState(null, null); return; }
+        if (request == null) { _newHqTasks = 0; SetSelfTrayState(null, null); return; }
         var result = await _epharm.GetSelfAsync(request);
         if (!result.Ok) return;
         _selfStatusUser = request.StandardNUserId;
         SetSelfTrayState(result.Value!.PhoneBound && result.Value.PasswordSet, result.Value.FullName);
+        await LoadHqTasksAsync(request);
+        MaybeWelcome(request.StandardNUserId, result.Value.FullName);
     }
 
     private void SetSelfTrayState(bool? complete, string? name)
@@ -114,7 +118,7 @@ public partial class MainWindow
         UpdateSelfTrayText();
     }
 
-    private bool NeedsAttention() => _selfProfileComplete == false || (TasksCountForSelf() ?? 0) > 0;
+    private bool NeedsAttention() => _selfProfileComplete == false || (TasksCountForSelf() ?? 0) > 0 || _newHqTasks > 0;
 
     private string _selfTrayName = "";
 
@@ -164,6 +168,7 @@ public partial class MainWindow
         if (!result.Ok) return new StaffSelfModel { Notice = result.Error, TasksCount = TasksCountForSelf(), TasksOnline = _taskKioskOnline };
         var self = result.Value!;
         SetSelfTrayState(self.PhoneBound && self.PasswordSet, self.FullName);
+        var hqTasks = await LoadHqTasksAsync(request);
         return new StaffSelfModel
         {
             FullName = self.FullName,
@@ -177,7 +182,21 @@ public partial class MainWindow
             CabinetUrl = self.CabinetUrl,
             TasksCount = TasksCountForSelf(),
             TasksOnline = _taskKioskOnline,
+            HqTasks = hqTasks,
         };
+    }
+
+    private int _newHqTasks;
+
+    /// <summary>HQ tasks for the person (1.0.96); an older server without the feed gives none.</summary>
+    private async Task<IReadOnlyList<StaffSelfTask>> LoadHqTasksAsync(PosmSelfRequestDto request)
+    {
+        var result = await _epharm!.GetSelfTasksAsync(request with { Link = false });
+        if (!result.Ok) { _newHqTasks = 0; ApplyNoticeToTray(); return Array.Empty<StaffSelfTask>(); }
+        _newHqTasks = result.Value!.NewCount + (result.Value.Tasks ?? new()).Count(t => t.Status == "overdue");
+        ApplyNoticeToTray();
+        return (result.Value.Tasks ?? new()).Select(t => new StaffSelfTask(
+            t.Title, t.Instructions ?? "", t.RewardKzt, t.Status, t.ProgressPct, t.DueAt)).ToList();
     }
 
     /// <summary>Pharmacy tasks shown in the personal window; null when this till has no task feed.</summary>

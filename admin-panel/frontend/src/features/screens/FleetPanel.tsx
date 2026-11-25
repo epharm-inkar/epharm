@@ -1,17 +1,22 @@
 // «Все кассы»: все кассы сети одним снимком (GET /api/admin/screens/fleet).
 // Сверху плитки-фильтры, ниже плотная таблица на компьютере и карточки на телефоне,
-// в конце эфиры, которые сейчас назначены на экраны касс.
+// в конце эфиры, которые сейчас назначены на экраны касс. HQ видит ещё «Управление»:
+// диагностика и перезапуск кассы без AnyDesk (GET/POST /api/admin/tills/commands).
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, SearchInput } from '@/ui'
 import { IconRefresh } from '@/ui/icons'
 import { useScreenFleet } from '@/lib/queries/screens'
+import { useTillCommands } from '@/lib/queries/tillCommands'
+import { useUiStore } from '@/app/store'
+import { canManageTills } from '@/app/accessPolicy'
 import { describeError } from '@/lib/describeError'
 import type {
   PosmCoverageGapDto,
   ScreenFleetDto,
   ScreenFleetPlaylistDto,
   ScreenFleetRegisterDto,
+  TillCommandDto,
 } from '@/lib/api-types'
 import { useT } from '@/i18n'
 import { staffSourceStatusLabel } from './staffSourceStatus'
@@ -27,6 +32,8 @@ import {
   type TFn,
   type Tone,
 } from './fleetFormat'
+import { TillCommandCell } from './TillCommandCell'
+import { latestCommandByTill, tillKey } from './tillCommands'
 
 const PAGE_SIZE = 200
 // Фирменный «green» в этой теме коралловый и читается как тревога, поэтому «всё в порядке»
@@ -49,6 +56,13 @@ export function FleetPanel() {
   const t = useT()
   const fleet = useScreenFleet()
   const narrow = useNarrowScreen()
+  const manage = canManageTills(useUiStore((s) => s.authedUser?.role))
+  const tillCommands = useTillCommands(manage)
+  // Последнее задание каждой кассы; null: «Управление» не показываем (не HQ).
+  const commands = useMemo(
+    () => (manage ? latestCommandByTill(tillCommands.data) : null),
+    [manage, tillCommands.data],
+  )
   const [filter, setFilter] = useState<FleetFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<FleetSort>('pharmacy')
@@ -149,11 +163,18 @@ export function FleetPanel() {
         ) : narrow ? (
           <ul className="flex flex-col gap-2" data-testid="fleet-cards">
             {shownRows.map((row) => (
-              <FleetCard key={rowKey(row)} row={row} data={data} t={t} />
+              <FleetCard key={rowKey(row)} row={row} data={data} t={t} commands={commands} />
             ))}
           </ul>
         ) : (
-          <FleetTable rows={shownRows} data={data} sort={sort} descending={descending} onSort={chooseSort} />
+          <FleetTable
+            rows={shownRows}
+            data={data}
+            sort={sort}
+            descending={descending}
+            onSort={chooseSort}
+            commands={commands}
+          />
         )}
 
         {filter !== 'gaps' && rows.length > limit && (
@@ -229,12 +250,14 @@ function FleetTable({
   sort,
   descending,
   onSort,
+  commands,
 }: {
   rows: ScreenFleetRegisterDto[]
   data: ScreenFleetDto
   sort: FleetSort
   descending: boolean
   onSort: (sort: FleetSort) => void
+  commands: Map<string, TillCommandDto> | null
 }) {
   const t = useT()
   const header = (id: FleetSort | null, label: string, hint?: string) =>
@@ -257,15 +280,18 @@ function FleetTable({
     >
       {/* !table: общий стиль админки делает таблицы display:block, а тогда ширины колонок
           не действуют и узкая колонка растягивает строку в несколько этажей. */}
+      {/* «Управление» (только HQ) узкая: связь и эфир отдают ей 30 px, чтобы на ноутбуке 1440 px
+          таблица по-прежнему помещалась без прокрутки. */}
       <table className="!table w-full min-w-[1100px] table-fixed text-[12px]" data-testid="fleet-table">
         <colgroup>
           <col />
           <col className="w-[160px]" />
-          <col className="w-[110px]" />
+          <col className={commands ? 'w-[100px]' : 'w-[110px]'} />
           <col className="w-[140px]" />
           <col className="w-[140px]" />
-          <col className="w-[170px]" />
+          <col className={commands ? 'w-[150px]' : 'w-[170px]'} />
           <col className="w-[150px]" />
+          {commands && <col className="w-[110px]" />}
         </colgroup>
         <thead className="hairline border-b">
           <tr className="text-left text-[11px] font-bold uppercase tracking-[0.06em] text-ink-500">
@@ -276,6 +302,7 @@ function FleetTable({
             {header(null, t('fleet.th.standardN'))}
             {header(null, t('fleet.th.playlist'))}
             {header('sales', t('fleet.th.sales'))}
+            {commands && header(null, t('tillCmd.th'))}
           </tr>
         </thead>
         <tbody className="divide-y divide-ink-100">
@@ -299,6 +326,11 @@ function FleetTable({
               <td className="px-2.5 py-1.5 align-middle"><StandardNChip row={row} /></td>
               <td className="min-w-0 px-2.5 py-1.5 align-middle"><PlaylistCell row={row} data={data} /></td>
               <td className="px-2.5 py-1.5 align-middle"><SalesCell row={row} data={data} /></td>
+              {commands && (
+                <td className="min-w-0 px-2.5 py-1.5 align-middle">
+                  <TillCommandCell row={row} command={commands.get(tillKey(row.pharmacyId, row.deviceId))} />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -307,7 +339,17 @@ function FleetTable({
   )
 }
 
-function FleetCard({ row, data, t }: { row: ScreenFleetRegisterDto; data: ScreenFleetDto; t: TFn }) {
+function FleetCard({
+  row,
+  data,
+  t,
+  commands,
+}: {
+  row: ScreenFleetRegisterDto
+  data: ScreenFleetDto
+  t: TFn
+  commands: Map<string, TillCommandDto> | null
+}) {
   return (
     <li className="rounded-lg border border-ink-100 p-3 text-[12px]" data-testid={`fleet-card-${rowKey(row)}`}>
       <div className="flex items-start justify-between gap-2">
@@ -328,6 +370,15 @@ function FleetCard({ row, data, t }: { row: ScreenFleetRegisterDto; data: Screen
         <PlaylistCell row={row} data={data} />
         <SalesCell row={row} data={data} inline />
       </div>
+      {commands && (
+        <div className="hairline mt-2 border-t pt-2">
+          <TillCommandCell
+            row={row}
+            command={commands.get(tillKey(row.pharmacyId, row.deviceId))}
+            variant="card"
+          />
+        </div>
+      )}
     </li>
   )
 }

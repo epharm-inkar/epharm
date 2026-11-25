@@ -25,6 +25,14 @@ object PhoneUtil {
         return "+7$ten"
     }
 
+    /**
+     * `+7XXXXXXXXXX` for a Kazakhstan number typed in any usual way (`+7 7XX…`, `87XX…`, `7XX…`, with spaces,
+     * brackets or dashes); null when the input is not such a number.
+     */
+    fun canonicalOrNull(raw: String): String? = normalize(raw).takeIf(CANONICAL::matches)
+
+    private val CANONICAL = Regex("^\\+7[0-9]{10}$")
+
     /** Маскированный вид для ответов/логов: `+7 (700) ***-**-NN`. Не светим весь номер. */
     fun mask(normalized: String): String {
         val digits = normalized.filter(Char::isDigit)

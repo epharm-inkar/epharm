@@ -296,9 +296,14 @@ denial is not proof that every historical window has closed. See [the contract](
 
 The pharmacist recommendation popup is a non-activating, right-anchored panel so the Standard-N
 scanner keeps focus. It shows up to five replacements and five cross-sell offers in ordered,
-mouse-wheel-scrollable sections. Text and prices are deliberately larger than the legacy popup.
-Only an offer with a positive individual reward is green; a zero-reward offer stays white and says
-it has no reward. Closing the popup does not accept or reject a recommendation, and the panel does
+mouse-wheel-scrollable sections. The reward is read first: the dark ePharm header states the
+largest single-offer reward (`Ваш бонус до +200 ₸`, or `Предложите покупателю` when nothing pays),
+and each paid offer carries a large green `+N ₸` badge above its price. Only an offer with a positive
+individual reward is tinted green; a zero-reward offer stays white and says `без бонуса`. The
+backend's personal goal (`goalText`, `goalBonus`) is shown under the script when present. The
+footer states the auto-close delay. Visual changes are compared on the same realistic scenarios:
+`App.Ui.Tests -- --recommendation-showcase --output=<dir>` renders the real window to PNG, and the
+regular UI regression run renders them into its proof artifact. Closing the popup does not accept or reject a recommendation, and the panel does
 not promise an Esc shortcut because it cannot take keyboard focus from Standard-N.
 
 The legacy optional sale-bonus bridge does not invent an `accepted` action. With
@@ -986,6 +991,22 @@ rejected receipt; transport failures, `available=false` and malformed replies re
 Corrupt encrypted data is quarantined before a fresh queue is created, without logging tokens.
 Overlay updates preserve this state and pharmacy configuration. A signed current manifest alone
 does not prove that offline or broken legacy Windows updaters applied the package.
+
+## Remote commands without AnyDesk (server contract, 25.11.2026)
+
+HQ presses «Диагностика» or «Перезапуск» in «Все кассы»; the backend keeps the command (`till_commands`, V117).
+The client is written against this contract (see `docs/02-backend.md`, «Remote till commands»):
+
+| Step | Request | Answer |
+| --- | --- | --- |
+| Ask for work, at most once a minute (with the heartbeat) | `POST /api/posm/commands/next`, header `X-Posm-Key` (own key), no body | 200 `{"id":"<uuid>","action":"diagnostics"\|"restart","expiresAt":"<ISO-8601>"}`; 204 nothing to do; 401 fleet or unknown key |
+| Report | `POST /api/posm/commands/{id}/result`, multipart/form-data: `status` = `done`\|`failed`, `message` (text, cut to 2000 characters), `file` (optional, ZIP, at most 5 MB, diagnostics only) | 200 `{"id","status","finishedAt"}`; 400 bad status, not a ZIP or a file for restart; 404 not this till's command; 409 not taken, already answered or past `expiresAt` (final, do not retry); 413 archive above 5 MB; 503 archive storage down (retry before `expiresAt`) |
+
+- Run only actions compiled into the client; an unknown `action` is answered `failed` with a message, never run.
+- `expiresAt` from `next` is the answer deadline (10 minutes after taking). A taken command is not given again.
+- Restart: answer `done` first, then restart through the `EpharmPOSM-Watchdog` scheduler task.
+- Diagnostics archive: no device key, passwords or full IIN (mask it), 3 days of logs; above 5 MB send `failed`
+  with a message instead of the file.
 
 ## Operations
 

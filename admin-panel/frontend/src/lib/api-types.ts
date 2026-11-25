@@ -1160,6 +1160,37 @@ export interface ScreenFleetDto {
   pharmaciesWithoutRegisters: PosmCoverageGapDto[]
 }
 
+// ─── Задания кассам без AnyDesk (kz.epharm.posm.commands, V117) ───
+/** Фиксированный список: касса выполняет только то, что в неё зашито. */
+export type TillCommandAction = 'diagnostics' | 'restart'
+/** pending: ждёт кассу; delivered: касса взяла; done/failed: ответ кассы; expired: срок вышел. */
+export type TillCommandStatus = 'pending' | 'delivered' | 'done' | 'failed' | 'expired'
+
+export interface CreateTillCommandRequest {
+  pharmacyId: string
+  deviceId: string
+  action: TillCommandAction
+}
+
+export interface TillCommandDto {
+  id: string
+  pharmacyId: string
+  deviceId: string
+  action: TillCommandAction
+  status: TillCommandStatus
+  requestedBy: string
+  createdAt: string
+  /** Ждёт кассу: до какого времени касса может взять. Взято: до какого времени ждём ответ. */
+  expiresAt: string
+  deliveredAt: string | null
+  finishedAt: string | null
+  resultMessage: string | null
+  /** true, пока архив диагностики можно скачать (хранится 14 дней). */
+  artifactAvailable: boolean
+  /** Размер архива; остаётся и после удаления архива. */
+  artifactBytes: number | null
+}
+
 // ─── AI-Exam (Этап 3.6) — банк вопросов (результаты/сертификаты в Этапе 4) ───
 export type ExamQuestionKind = 'factual' | 'comparative' | 'scenario'
 
@@ -1475,7 +1506,9 @@ export interface TrainingProgramDto {
   maxAttempts: number
   completionBonus: number
   stages: TrainingProgramStageDto[]
+  /** Assignments of the current version and how many of them are completed. */
   assignments: number
+  completedAssignments: number
   createdAt: string
   updatedAt: string
 }

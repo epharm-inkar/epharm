@@ -65,6 +65,23 @@ internal static partial class Program
                 new("substitution", "Нурофен Экспресс 200 мг №20", 200, new DateTimeOffset(2026, 11, 24, 16, 15, 0, TimeSpan.FromHours(5))),
             },
         }),
+        ("staff-self-8-hq-tasks", new StaffSelfModel
+        {
+            FullName = "Айгерим Сапарова",
+            Iin = "950305•••••4",
+            Pharmacy = "Аптека со склада, Толе би 286",
+            EarnedMonthKzt = 3200,
+            BalanceKzt = 3200,
+            PhoneBound = true,
+            PasswordSet = true,
+            TasksCount = 0,
+            HqTasks = new List<StaffSelfTask>
+            {
+                new("Курс «Петровакс: Гриппол плюс»", "Откройте «Мой кабинет», раздел «Обучение», курс «Петровакс». 6 уроков и тест, около 20 минут.", 500, "new", 0, new DateTimeOffset(2026, 12, 5, 23, 59, 0, TimeSpan.FromHours(5))),
+                new("Пожарная безопасность в аптеке", "Курс в разделе «Обучение».", null, "in_progress", 40, new DateTimeOffset(2026, 11, 30, 23, 59, 0, TimeSpan.FromHours(5))),
+                new("Стандарт обслуживания покупателя", "", 300, "done", 100, null),
+            },
+        }),
         ("staff-self-3-not-recognised", new StaffSelfModel
         {
             Notice = "Не нашли вас в справочнике Стандарт-Н: попросите МАС заполнить ИИН в вашей карточке пользователя",
@@ -108,6 +125,14 @@ internal static partial class Program
                 SaveOwnWindow(help, "staff-self-6-help-open");
                 Console.WriteLine(Path.Combine(Output, "staff-self-6-help-open.png"));
                 help.Close();
+                // 1.0.96: password already set, «Сменить пароль» opens two fields.
+                var change = new StaffSelfWindow(StaffSelfScenarios[1].Model, _screen);
+                change.Show();
+                change.BeginPasswordChange();
+                await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                SaveOwnWindow(change, "staff-self-7-change-password");
+                Console.WriteLine(Path.Combine(Output, "staff-self-7-change-password.png"));
+                change.Close();
             }
             catch (Exception error)
             {

@@ -355,6 +355,109 @@ class MobileAuthIntegrationTest {
             .andExpect(jsonPath("$.code").value("PHARMACIST_BLOCKED"))
     }
 
+    // ── Вход по номеру телефона и паролю (25.11.2026) ─────────────────────────
+
+    @Test
+    fun `вход по номеру телефона в любом привычном формате`() {
+        for (typed in listOf("+77002223344", "+7 700 222 33 44", "87002223344", "8 (700) 222-33-44", "7002223344")) {
+            loginByPhone(typed, "Farm123!")
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.pharmacist.id").value("u_active"))
+                .andExpect(jsonPath("$.tokens.accessToken").isString)
+                .andExpect(jsonPath("$.tokens.refreshToken").isString)
+        }
+    }
+
+    @Test
+    fun `неверный пароль, неизвестный или чужой номер дают один и тот же отказ`() {
+        savePharmacist("u_other", "000101500071", "+77005556677", "Other123!")
+        for ((phone, password) in listOf(
+            activePhone to "Wrong123!",
+            "+77009998877" to "Farm123!",
+            // Another person's number with a password that is right only for a third person.
+            "+77005556677" to "Farm123!",
+            activePhone to "Other123!",
+            // A card that has a phone but no password yet.
+            unactivatedPhone to "Farm123!",
+        )) {
+            loginByPhone(phone, password)
+                .andExpect(status().isUnauthorized)
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.message").value("Неверный номер телефона или пароль"))
+        }
+        assertThat(refreshRepository.count()).isZero
+    }
+
+    @Test
+    fun `заблокированный фармацевт не может войти по телефону`() {
+        loginByPhone("8 700 333 44 55", "Farm123!")
+            .andExpect(status().isForbidden)
+            .andExpect(jsonPath("$.code").value("PHARMACIST_BLOCKED"))
+    }
+
+    @Test
+    fun `номер в старом формате находит карточку, а номер двух карточек не впускает никого`() {
+        savePharmacist("u_legacy", "000101500081", "8 (701) 555-12-34", "Legacy123!")
+        loginByPhone("+7 701 555 12 34", "Legacy123!")
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.pharmacist.id").value("u_legacy"))
+
+        // The unique index sees two different texts; the number itself now belongs to two cards.
+        savePharmacist("u_twin", "000101500091", "+77015551234", "Twin123!")
+        for (password in listOf("Legacy123!", "Twin123!")) {
+            loginByPhone("87015551234", password)
+                .andExpect(status().isUnauthorized)
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+        }
+        loginByIin("000101500091", "Twin123!")
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.pharmacist.id").value("u_twin"))
+    }
+
+    @Test
+    fun `телефон и ИИН одной карточки тратят один лимит попыток`() {
+        val formats = listOf("+77002223344", "8 700 222 33 44", "7002223344", "+7 (700) 222-33-44", "87002223344")
+        repeat(10) { index ->
+            loginByPhone(formats[index % formats.size], "wrong-$index").andExpect(status().isUnauthorized)
+        }
+        loginByPhone(activePhone, "Farm123!")
+            .andExpect(status().isTooManyRequests)
+            .andExpect(jsonPath("$.code").value("OTP_TOO_MANY_ATTEMPTS"))
+        loginByIin("951212500015", "Farm123!")
+            .andExpect(status().isTooManyRequests)
+            .andExpect(jsonPath("$.code").value("OTP_TOO_MANY_ATTEMPTS"))
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM posm_staff_rate_limits", Int::class.java)).isEqualTo(1)
+    }
+
+    @Test
+    fun `неизвестный номер ограничен своим лимитом и не тратит лимит чужой карточки`() {
+        repeat(10) { loginByPhone("+77009998877", "wrong-try").andExpect(status().isUnauthorized) }
+        loginByPhone("8 700 999 88 77", "wrong-try")
+            .andExpect(status().isTooManyRequests)
+            .andExpect(jsonPath("$.code").value("OTP_TOO_MANY_ATTEMPTS"))
+        loginByPhone(activePhone, "Farm123!").andExpect(status().isOk)
+    }
+
+    @Test
+    fun `вход принимает ровно одно из ИИН и телефона в понятном формате`() {
+        for (body in listOf(
+            mapOf("password" to "Farm123!"),
+            mapOf("iin" to "", "phone" to " ", "password" to "Farm123!"),
+            mapOf("iin" to "951212500015", "phone" to activePhone, "password" to "Farm123!"),
+            mapOf("phone" to "+1 202 555 0100", "password" to "Farm123!"),
+            mapOf("phone" to "not a phone", "password" to "Farm123!"),
+            mapOf("phone" to activePhone, "password" to "123"),
+        )) {
+            mockMvc.perform(
+                post("/api/mobile/auth/login").contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(body)),
+            )
+                .andExpect(status().isBadRequest)
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        }
+        // Malformed requests never reach the password check, so they spend no attempt.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM posm_staff_rate_limits", Int::class.java)).isZero
+    }
+
     @Test
     fun `verify существующего номера сразу выдаёт токены и профиль`() {
         requestOtp(activePhone)
@@ -472,6 +575,25 @@ class MobileAuthIntegrationTest {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private fun loginByPhone(phone: String, password: String) = mockMvc.perform(
+        post("/api/mobile/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(mapOf("phone" to phone, "password" to password))),
+    )
+
+    private fun loginByIin(iin: String, password: String) = mockMvc.perform(
+        post("/api/mobile/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(mapOf("iin" to iin, "password" to password))),
+    )
+
+    private fun savePharmacist(id: String, iin: String, phone: String, password: String) {
+        pharmacistRepository.save(
+            PharmacistEntity(id = id, name = "Синтетический $id", iin = iin, phone = phone).also {
+                it.status = PharmacistStatus.active
+                it.passwordHash = passwordEncoder.encode(password)
+            },
+        )
+    }
 
     private fun requestOtp(phone: String) {
         mockMvc.perform(
