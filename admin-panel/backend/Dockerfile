@@ -3,25 +3,26 @@
 # Контекст сборки: admin-panel/backend (см. docker-compose.prod.yml).
 
 FROM eclipse-temurin:22-jdk AS build
-ARG RELEASE_ID=dev
-ARG RELEASE_COMMIT=unknown
 WORKDIR /app
-# Сначала только gradle-метаданные — слой кэша зависимостей переживает правки кода.
+# Сначала только gradle-метаданные и загрузка Gradle с зависимостями отдельным слоем: Docker берёт его из кэша,
+# пока не менялись файлы сборки, и выпуск с новым кодом только компилирует (на сервере старый сборщик Docker,
+# кэша --mount там нет). Номер выпуска сюда не передаётся: ARG перед RUN сбрасывал бы этот кэш каждый раз.
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
+RUN chmod +x gradlew && ./gradlew --no-daemon dependencies > /dev/null
 # Затем исходники и сборка boot-jar (тесты гоняет CI, здесь -x test для скорости).
 COPY src ./src
-RUN chmod +x gradlew && ./gradlew --no-daemon clean bootJar verifyMerchandisingArtifact -x test
+RUN ./gradlew --no-daemon clean bootJar verifyMerchandisingArtifact -x test
 
 FROM eclipse-temurin:22-jre AS runtime
+# curl нужен для HEALTHCHECK (в JRE-образе его нет). Слой до ARG выпуска, чтобы он не собирался заново.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 ARG RELEASE_ID=dev
 ARG RELEASE_COMMIT=unknown
 LABEL org.opencontainers.image.title="Epharm backend" \
       org.opencontainers.image.version="$RELEASE_ID" \
       org.opencontainers.image.revision="$RELEASE_COMMIT"
-# curl нужен для HEALTHCHECK (в JRE-образе его нет).
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV RELEASE_ID="$RELEASE_ID" \
     RELEASE_COMMIT="$RELEASE_COMMIT"

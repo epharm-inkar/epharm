@@ -5,10 +5,14 @@ name: CI
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Every night the whole suite runs on main, also when merges reused the pull request run (02:30 Almaty).
+    - cron: "30 21 * * *"
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # The nightly run has its own group, so it never cancels the run of a fresh merge on main.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' && 'nightly' || 'change' }}
   cancel-in-progress: true
 
 permissions:
@@ -20,8 +24,64 @@ env:
   FLUTTER_REVISION: 17025dd88227cd9532c33fa78f5250d548d87e9a # 3.27.1
 
 jobs:
+  reuse:
+    name: CI / same tree as a green pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      verified: ${{ steps.tree.outputs.verified }}
+      posm: ${{ steps.tree.outputs.posm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Reuse the pull request run of an identical tree
+        id: tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Branch protection is strict, so a squash merge has exactly the tree of the pull request head that
+          # already passed this whole workflow. Then main only confirms that tree (and still builds the till
+          # package when the merge touched it, POSM releases take it from main). Any doubt runs everything.
+          verified=false
+          posm=true
+          if [[ "$EVENT_NAME" == push ]]; then
+            tree="$(git rev-parse 'HEAD^{tree}')"
+            if changed="$(git diff --name-only 'HEAD^' HEAD 2>/dev/null)"; then
+              if ! grep -Eq '^(App|App\.Tests|App\.Ui\.Tests|Models|\.github)/|^tools/tests/test-posm' <<<"$changed"; then
+                posm=false
+              fi
+            fi
+            numbers="$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[] | select(.merged_at != null) | .number' 2>/dev/null || true)"
+            for number in $numbers; do
+              head="$(gh api "repos/$REPO/pulls/$number" --jq .head.sha 2>/dev/null)" || continue
+              head_tree="$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha 2>/dev/null)" || continue
+              [[ "$head_tree" == "$tree" ]] || continue
+              green="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$head&event=pull_request&status=success&per_page=1" --jq .total_count 2>/dev/null)" || continue
+              if [[ "$green" =~ ^[0-9]+$ && "$green" -gt 0 ]]; then
+                verified=true
+                echo "Tree $tree already passed CI as pull request #$number (head $head)."
+                break
+              fi
+            done
+          fi
+          echo "verified=$verified, posm=$posm"
+          {
+            echo "verified=$verified"
+            echo "posm=$posm"
+          } >> "$GITHUB_OUTPUT"
+
   repo-quality:
     name: repo / workflow and shell lint
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,6 +104,8 @@ jobs:
 
   ops-contract:
     name: ops / config contracts
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -166,6 +228,8 @@ jobs:
 
   p0-config:
     name: P0 / config policy
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -174,6 +238,8 @@ jobs:
 
   pim-etl:
     name: pim / ETL safety tests
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -188,6 +254,8 @@ jobs:
 
   admin:
     name: admin / lint, typecheck, test and build
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
@@ -209,6 +277,8 @@ jobs:
 
   storefront:
     name: storefront / lint, test and build
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -229,10 +299,12 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  backend:
-    name: backend / unit, integration and build
+  backend-build:
+    name: backend / build and package checks
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: admin-panel/backend
@@ -245,10 +317,48 @@ jobs:
       - uses: gradle/actions/setup-gradle@67621b124fd2e251c5e8a0e6e3b91318f2287669 # v6.3.0
       - name: ACC classification import tests
         run: python3 -m unittest discover -s ../../tools/tests -p 'test_prepare_acc_recommendation_catalog.py'
+      # Everything of `build` except the tests, which run in the eight backend test jobs below.
+      - run: ./gradlew --no-daemon clean build -x test
+      - name: Verify Standard-N JDBC driver is packaged
+        run: jar tf build/libs/app.jar | grep -Eq '^BOOT-INF/lib/jaybird-5\.0\.6\.java8\.jar$'
+      - name: Verify merchandising code and configuration in the deployable JAR
+        run: python3 ../../tools/release/verify-merch-artifact.py --jar build/libs/app.jar
+      - name: Verify wallet-capable financial writers in the deployable JAR
+        run: python3 ../../tools/release/verify-financial-transition.py --jar build/libs/app.jar --schema-protected --reward-protected
+
+  backend:
+    # Each integration test class starts its own PostgreSQL container, so classes are independent. The suite is
+    # dealt out over eight machines with two test JVMs each (build.gradle.kts, testShards): 33 minutes in one
+    # job before 25.11.2026. The repository is public, so the extra machines cost nothing.
+    name: backend / tests ${{ matrix.shard }} of 8
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    defaults:
+      run:
+        working-directory: admin-panel/backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "22"
+      - uses: gradle/actions/setup-gradle@67621b124fd2e251c5e8a0e6e3b91318f2287669 # v6.3.0
+      - name: Restore the pinned pre-wallet rollback fixture
+        id: wallet-rollback-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/epharm-wallet-rollback/app.jar
+          key: wallet-rollback-757039e1021170351c6215c85a8b888ac4df6c8e-temurin22
       - name: Build the pinned pre-wallet rollback fixture
-        id: wallet-rollback
+        if: steps.wallet-rollback-cache.outputs.cache-hit != 'true'
         run: |
-          task_ci_rollback_dir="$(mktemp -d "$RUNNER_TEMP/epharm-wallet-rollback.XXXXXXXX")"
+          task_ci_rollback_dir="$(mktemp -d "$RUNNER_TEMP/epharm-wallet-rollback-src.XXXXXXXX")"
           git -C ../.. fetch --no-tags --depth=1 origin 757039e1021170351c6215c85a8b888ac4df6c8e
           git -C ../.. archive 757039e1021170351c6215c85a8b888ac4df6c8e admin-panel/backend \
             | tar -x -C "$task_ci_rollback_dir"
@@ -256,27 +366,32 @@ jobs:
             cd "$task_ci_rollback_dir/admin-panel/backend"
             ./gradlew --no-daemon bootJar -x test
           )
-          printf 'jar=%s\n' "$task_ci_rollback_dir/admin-panel/backend/build/libs/app.jar" >> "$GITHUB_OUTPUT"
-      - run: ./gradlew --no-daemon clean build
+          mkdir -p "$RUNNER_TEMP/epharm-wallet-rollback"
+          cp "$task_ci_rollback_dir/admin-panel/backend/build/libs/app.jar" "$RUNNER_TEMP/epharm-wallet-rollback/app.jar"
+      - name: Run this eighth of the test suite
+        run: ./gradlew --no-daemon test -PtestShards=8 -PtestShard=${{ matrix.shard }} -PtestForks=2
         env:
-          WALLET_ROLLBACK_JAR: ${{ steps.wallet-rollback.outputs.jar }}
-      - name: Verify Standard-N JDBC driver is packaged
-        run: jar tf build/libs/app.jar | grep -Eq '^BOOT-INF/lib/jaybird-5\.0\.6\.java8\.jar$'
-      - name: Verify merchandising code and configuration in the deployable JAR
-        run: python3 ../../tools/release/verify-merch-artifact.py --jar build/libs/app.jar
-      - name: Verify wallet-capable financial writers in the deployable JAR
-        run: python3 ../../tools/release/verify-financial-transition.py --jar build/libs/app.jar --schema-protected --reward-protected
+          WALLET_ROLLBACK_JAR: ${{ runner.temp }}/epharm-wallet-rollback/app.jar
+      - name: Prove this shard ran tests
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          count="$(find build/test-results/test -name 'TEST-*.xml' | wc -l)"
+          echo "Test classes in shard $SHARD: $count"
+          test "$count" -gt 0
       - name: Upload backend test reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: backend-test-reports
+          name: backend-test-reports-${{ matrix.shard }}
           path: admin-panel/backend/build/reports/tests/test/
           if-no-files-found: ignore
           retention-days: 7
 
   admin-e2e:
     name: admin / browser e2e against backend
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -349,6 +464,8 @@ jobs:
 
   containers:
     name: container / ${{ matrix.name }} production build
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -410,7 +527,8 @@ jobs:
   mobile-android:
     name: mobile / analyze, test and Android build
     # The owner paused the unused mobile app; opt back in explicitly when work resumes.
-    if: vars.MOBILE_APP_CI_ENABLED == 'true'
+    needs: reuse
+    if: vars.MOBILE_APP_CI_ENABLED == 'true' && needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -438,7 +556,8 @@ jobs:
 
   mobile-ios:
     name: mobile / iOS simulator build
-    if: vars.MOBILE_APP_CI_ENABLED == 'true'
+    needs: reuse
+    if: vars.MOBILE_APP_CI_ENABLED == 'true' && needs.reuse.outputs.verified != 'true'
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -463,6 +582,8 @@ jobs:
 
   posm-core:
     name: posm / core tests
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true' || needs.reuse.outputs.posm == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -474,6 +595,8 @@ jobs:
 
   posm-windows:
     name: posm / Windows production build
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true' || needs.reuse.outputs.posm == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -579,6 +702,8 @@ jobs:
 
   codeql:
     name: security / CodeQL (${{ matrix.language }})
+    needs: reuse
+    if: needs.reuse.outputs.verified != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
@@ -665,12 +790,14 @@ jobs:
     name: P0 / merge gate
     if: always()
     needs:
+      - reuse
       - repo-quality
       - ops-contract
       - p0-config
       - pim-etl
       - admin
       - storefront
+      - backend-build
       - backend
       - admin-e2e
       - containers
@@ -687,6 +814,10 @@ jobs:
       - name: Require every applicable check
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REUSE: ${{ needs.reuse.result }}
+          REUSE_VERIFIED: ${{ needs.reuse.outputs.verified }}
+          REUSE_POSM: ${{ needs.reuse.outputs.posm }}
+          BACKEND_BUILD: ${{ needs.backend-build.result }}
           REPO_QUALITY: ${{ needs.repo-quality.result }}
           OPS_CONTRACT: ${{ needs.ops-contract.result }}
           P0_CONFIG: ${{ needs.p0-config.result }}
@@ -705,9 +836,19 @@ jobs:
           DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
           COMMITLINT: ${{ needs.commitlint.result }}
         run: |
+          test "$REUSE" = success
+          if [[ "$REUSE_VERIFIED" = true ]]; then
+            # main: the same tree passed every check below as a pull request; the till package is rebuilt here.
+            if [[ "$REUSE_POSM" = true ]]; then
+              test "$POSM_CORE" = success
+              test "$POSM_WINDOWS" = success
+            fi
+            echo "Same tree as a green pull request run."
+            exit 0
+          fi
           required=(
             "$REPO_QUALITY" "$OPS_CONTRACT" "$P0_CONFIG" "$ADMIN" "$STOREFRONT"
-            "$BACKEND" "$ADMIN_E2E" "$CONTAINERS"
+            "$BACKEND_BUILD" "$BACKEND" "$ADMIN_E2E" "$CONTAINERS"
             "$PIM_ETL"
             "$POSM_CORE" "$POSM_WINDOWS" "$CODEQL"
           )
