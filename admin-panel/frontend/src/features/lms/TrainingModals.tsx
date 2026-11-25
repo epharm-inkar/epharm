@@ -9,7 +9,6 @@ import type {
   EventParticipantStatus,
   OfflineEventDto,
   PharmacistDto,
-  PharmacyDto,
   TrainingFormat,
   TrainingAssignmentDto,
   TrainingAssignmentStageDto,
@@ -1129,13 +1128,11 @@ export function AssignTrainingModal({
   programs,
   events,
   pharmacists,
-  pharmacies,
   initialPharmacistIds = [],
 }: CommonModalProps & {
   programs: TrainingProgramDto[]
   events: OfflineEventDto[]
   pharmacists: PharmacistDto[]
-  pharmacies: PharmacyDto[]
   initialPharmacistIds?: string[]
 }) {
   const toast = useToast()
@@ -1165,33 +1162,37 @@ export function AssignTrainingModal({
       event.programId === programId &&
       !['cancelled', 'completed', 'archived'].includes(event.status),
   )
+  // Training roles cannot read the HQ network list (GET /api/admin/pharmacies is 403 for them by
+  // design, 26.11.2026): both filters come from the training roster the page already loads.
   const cityOptions = useMemo(
     () =>
       Array.from(
-        new Set([
-          ...pharmacies
-            .filter((pharmacy) => pharmacy.active && pharmacy.city)
-            .map((pharmacy) => pharmacy.city),
-          ...pharmacists
+        new Set(
+          pharmacists
             .filter((pharmacist) => pharmacist.status === 'active' && pharmacist.city)
             .map((pharmacist) => pharmacist.city),
-        ]),
+        ),
       ).sort(),
-    [pharmacists, pharmacies],
+    [pharmacists],
   )
   const pharmacyOptions = useMemo(
     () =>
       Array.from(
         new Map(
-          pharmacies
+          pharmacists
             .filter(
-              (pharmacy) =>
-                pharmacy.active && (cityFilter === '__all__' || pharmacy.city === cityFilter),
+              (pharmacist) =>
+                pharmacist.status === 'active' &&
+                pharmacist.pharmacyId &&
+                (cityFilter === '__all__' || pharmacist.city === cityFilter),
             )
-            .map((pharmacy) => [pharmacy.id, pharmacy.name]),
+            .map((pharmacist) => [
+              pharmacist.pharmacyId,
+              pharmacist.pharmacyName || pharmacist.pharmacyId,
+            ]),
         ).entries(),
       ).sort((left, right) => left[1].localeCompare(right[1], 'ru')),
-    [cityFilter, pharmacies],
+    [cityFilter, pharmacists],
   )
   const visiblePharmacists = useMemo(() => {
     const normalized = query.trim().toLowerCase()

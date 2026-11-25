@@ -47,7 +47,12 @@ data class RuleDto(
     val updatedAt: Instant,
 ) {
     companion object {
-        fun of(e: RuleEntity): RuleDto = RuleDto(
+        /**
+         * Показы и «Принято» приходят из событий подсказок (то же окно и то же «Принято», что на
+         * Dashboard: товар попал в чек), а не из колонок rules.impressions/accepts: их никто не
+         * наполняет (в проде 0, 26.11.2026). Без значений по умолчанию, чтобы нули не вернулись молча.
+         */
+        fun of(e: RuleEntity, impressions: Int, accepts: Int): RuleDto = RuleDto(
             id = e.id,
             type = e.type,
             status = e.status,
@@ -59,9 +64,9 @@ data class RuleDto(
             abTest = e.abTest,
             card = e.card,
             pharmacies = e.pharmacies,
-            impressions = e.impressions,
-            accepts = e.accepts,
-            convRate = e.convRate.toDouble(),
+            impressions = impressions,
+            accepts = accepts,
+            convRate = if (impressions > 0) Math.round(accepts * 1000.0 / impressions) / 10.0 else 0.0,
             revenue = e.revenue,
             payout = e.payout,
             createdBy = e.createdBy,

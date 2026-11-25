@@ -145,10 +145,13 @@ export default function PharmacistsPage() {
   const showWarningBanner = isError && hasData
 
   const counts = useMemo(() => {
+    const blocked = pharmacists.filter((p) => p.status === 'blocked').length
     return {
       all: pharmacists.length,
+      // «В системе» = everyone except blocked: the same rule as the coverage tab (26.11.2026).
+      inSystem: pharmacists.length - blocked,
       active: pharmacists.filter((p) => activeThisWeek(p, now)).length,
-      blocked: pharmacists.filter((p) => p.status === 'blocked').length,
+      blocked,
     }
   }, [pharmacists, now])
 
@@ -341,14 +344,19 @@ export default function PharmacistsPage() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
             <Metric
               label={t('phc.mTotal')}
-              value={formatNum(counts.all)}
+              value={formatNum(counts.inSystem)}
               accent="ink"
               icon={<IconPharmacist size={18} />}
+              meta={
+                counts.blocked > 0
+                  ? t('phc.mTotalBlocked', { n: formatNum(counts.blocked) })
+                  : undefined
+              }
             />
             <Metric label={t('phc.mActive')} value={formatNum(counts.active)} accent="green" />
             <Metric
               label="Покрытие за 7 дней"
-              value={`${counts.all ? Math.round((counts.active / Math.max(1, counts.all - counts.blocked)) * 100) : 0}%`}
+              value={`${counts.all ? Math.round((counts.active / Math.max(1, counts.inSystem)) * 100) : 0}%`}
               accent="amber"
               sub="подробно во вкладке «Покрытие»"
             />

@@ -57,7 +57,6 @@ import {
   useTrainingPharmacists,
   useUpdateTrainingProgram,
 } from '@/lib/queries/lms'
-import { usePharmacies } from '@/lib/queries/pharmacies'
 import { describeError } from '@/lib/describeError'
 import { formatKzt, formatNum } from '@/mocks/fixtures'
 import {
@@ -84,6 +83,7 @@ import {
 } from './TrainingModals'
 import {
   ASSIGNMENT_STATUS_LABEL,
+  CERTIFICATE_STATUS_LABEL,
   FORMAT_LABEL,
   PROGRAM_STATUS_LABEL,
   STAGE_STATUS_LABEL,
@@ -150,7 +150,6 @@ export default function LMSPage() {
   const certificatesQuery = useTrainingCertificates()
   const coursesQuery = useCourses()
   const pharmacistsQuery = useTrainingPharmacists()
-  const pharmaciesQuery = usePharmacies()
 
   const dashboard = dashboardQuery.data
   const programs = programsQuery.data ?? []
@@ -159,7 +158,6 @@ export default function LMSPage() {
   const certificates = certificatesQuery.data ?? []
   const courses = coursesQuery.data ?? []
   const pharmacists = pharmacistsQuery.data ?? []
-  const pharmacies = pharmaciesQuery.data ?? []
   const capabilities = dashboard?.capabilities
   const authorityFresh =
     exportAccess.isSuccess && exportAccess.isFetchedAfterMount && !exportAccess.isError
@@ -423,7 +421,6 @@ export default function LMSPage() {
           programs={programs}
           events={events}
           pharmacists={pharmacists}
-          pharmacies={pharmacies}
           initialPharmacistIds={requestedPharmacistIds}
         />
       )}
@@ -1415,6 +1412,8 @@ function CertificatesTab({
             <th className="px-3 py-2.5">Программа</th>
             <th className="px-3 py-2.5">Результат</th>
             <th className="px-3 py-2.5">Выдан</th>
+            <th className="px-3 py-2.5">Действителен до</th>
+            <th className="px-3 py-2.5">Статус</th>
             <th className="px-5 py-2.5" />
           </tr>
         </thead>
@@ -1428,6 +1427,14 @@ function CertificatesTab({
                 {certificate.score == null ? 'Без оценки' : `${certificate.score}%`}
               </td>
               <td className="num px-3 py-3 text-ink-600">{dateOnly(certificate.issuedAt)}</td>
+              <td className="num px-3 py-3 text-ink-600">
+                {certificate.expiresAt ? dateOnly(certificate.expiresAt) : 'Бессрочно'}
+              </td>
+              <td className="px-3 py-3">
+                <span className={`chip ${chipClass(certificate.status)}`}>
+                  {CERTIFICATE_STATUS_LABEL[certificate.status] ?? certificate.status}
+                </span>
+              </td>
               <td className="px-5 py-3 text-right">
                 {certificate.pdfUrl && (
                   <a

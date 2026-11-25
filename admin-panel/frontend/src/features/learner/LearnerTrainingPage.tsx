@@ -85,8 +85,6 @@ type Pharmacist = {
   tier?: string
   balance?: number
   earned30d?: number
-  coursesDone?: number
-  coursesTotal?: number
 }
 
 type PersonalBalance = {
@@ -1781,7 +1779,9 @@ function PortalNavigation({
           {t('Навигация')}
         </div>
       </div>
-      <div className="mx-auto grid max-w-6xl grid-cols-5 gap-1 lg:mx-0 lg:flex lg:w-full lg:flex-col lg:gap-1">
+      {/* Each tab at least as wide as its label, the rest shared equally: «Сертификаты» and
+          «Сертификаттар» were cut at phone width (26.11.2026). Below 320 px equal columns again. */}
+      <div className="mx-auto grid max-w-6xl grid-cols-[repeat(5,minmax(max-content,1fr))] gap-1 max-[319px]:grid-cols-5 lg:mx-0 lg:flex lg:w-full lg:flex-col lg:gap-1">
         {items.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -2308,6 +2308,12 @@ function ProfileView({
 }) {
   const t = useLearnerT()
   const [showCardInfo, setShowCardInfo] = useState(false)
+  // Same source as the home and course pages (GET /api/mobile/training), not the stored counters of
+  // the profile, which only ever grow (26.11.2026: «2 из 10» with the only course done).
+  const courses = (overview?.assignments ?? []).filter(
+    (assignment) => assignment.status !== 'cancelled',
+  )
+  const coursesDone = courses.filter((assignment) => assignment.status === 'completed').length
   return (
     <section className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
       <div className="min-w-0 rounded-3xl bg-white p-6 text-center shadow-card">
@@ -2371,8 +2377,8 @@ function ProfileView({
               icon={GraduationCap}
               label={t('Обучение')}
               value={t('{done} из {total} завершено', {
-                done: pharmacist?.coursesDone ?? overview?.completed ?? 0,
-                total: pharmacist?.coursesTotal ?? overview?.total ?? 0,
+                done: coursesDone,
+                total: courses.length,
               })}
             />
           </div>
@@ -2890,7 +2896,9 @@ function OverviewView({
                     </>
                   ) : (
                     <>
-                      <span className="font-semibold text-ink-600">{statusText(assignment.status)}</span>
+                      <span className="font-semibold text-ink-600">
+                        {statusText(assignment.status)}
+                      </span>
                       {assignment.dueAt && (
                         <span className="flex items-center gap-1">
                           <CalendarDays size={13} />{' '}

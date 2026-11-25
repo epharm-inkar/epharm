@@ -204,7 +204,6 @@ function RuleAnalytics({ rule }: { rule: Rule }) {
           value={formatNum(rule.accepts)}
           accent="green"
           icon={<IconCheck size={16} />}
-          delta={+3.2}
         />
         <Metric label={t('rules.aConv')} value={`${rule.convRate.toFixed(1)}%`} accent="green" />
         <Metric label={t('rules.aRevenue')} value={formatKzt(rule.revenue)} accent="blue" />
