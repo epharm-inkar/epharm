@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import type {
   ActivatePharmacistRequest,
   CreatePharmacistRequest,
+  PharmacistCoverageDto,
   PharmacistDto,
   PharmacistStatus,
   PosmPharmacistMappingDto,
@@ -76,6 +77,18 @@ export function usePharmacists(filter: PharmacistListFilter = {}) {
     queryKey: pharmacistKeys.list(filter),
     queryFn: () =>
       api.get<PharmacistDto[]>('/api/admin/pharmacists', { params: filter }).then((r) => r.data),
+  })
+}
+
+/** Coverage of the network by ePharm by day; computed on the server, refreshed every ten minutes. */
+export function usePharmacistCoverage(days: number) {
+  return useQuery<PharmacistCoverageDto>({
+    queryKey: [...pharmacistKeys.all, 'coverage', days],
+    queryFn: () =>
+      api
+        .get<PharmacistCoverageDto>('/api/admin/pharmacists/coverage', { params: { days } })
+        .then((r) => r.data),
+    staleTime: 10 * 60_000,
   })
 }
 

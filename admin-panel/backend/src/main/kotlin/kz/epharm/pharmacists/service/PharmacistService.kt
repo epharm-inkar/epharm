@@ -19,7 +19,9 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 @Service
@@ -30,6 +32,7 @@ class PharmacistService(
     private val wallet: PharmacistWalletService,
     private val administrativeScope: AdministrativeScope,
     private val credentialVault: kz.epharm.learnercredentials.LearnerPasswordVault,
+    private val activityService: PharmacistActivityService? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -45,7 +48,10 @@ class PharmacistService(
             else -> pharmacistRepository.findAllByOrderByNameAsc()
         }
         val counts = receiptCounts(rows)
-        return rows.map { projected(it, counts[it.id] ?: 0) }
+        // One aggregate per response: «Активные» in the admin means worked with ePharm in the last 7 days.
+        val lastActive = if (rows.isEmpty()) emptyMap()
+            else activityService?.lastActiveSince(Instant.now().minus(30, ChronoUnit.DAYS)).orEmpty()
+        return rows.map { projected(it, counts[it.id] ?: 0).copy(lastActiveAt = lastActive[it.id]) }
     }
 
     @Transactional(readOnly = true)

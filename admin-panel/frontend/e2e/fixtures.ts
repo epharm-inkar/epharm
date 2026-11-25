@@ -4,6 +4,7 @@ import {
   test as base,
   expect as baseExpect,
   type Page,
+  type Locator,
   type APIRequestContext,
 } from '@playwright/test'
 
@@ -34,12 +35,40 @@ export async function loginViaUI(page: Page, acc: DevAccount = ACCOUNTS.damir): 
   await page.waitForURL('**/rules', { timeout: 10_000 })
 }
 
-export async function openSidebarModule(page: Page, label: string): Promise<void> {
-  const module = page
+/** The sidebar lists modules only (25.11.2026); a module opens on its first section. */
+export function sidebarModule(page: Page, label: string): Locator {
+  return page
     .getByRole('complementary', { name: 'Основная навигация' })
     .getByTitle(label, { exact: true })
+}
+
+export async function openSidebarModule(page: Page, label: string): Promise<void> {
+  const module = sidebarModule(page, label)
   await baseExpect(module).toBeVisible()
-  if ((await module.getAttribute('aria-expanded')) === 'false') await module.click()
+  if ((await module.getAttribute('aria-current')) !== 'page') await module.click()
+  await baseExpect(module).toHaveAttribute('aria-current', 'page')
+}
+
+/** A section of the open module: a tab at the top of the page (layout/ModuleTabs). */
+export function moduleTab(page: Page, module: string, section: string): Locator {
+  return page
+    .getByRole('navigation', { name: module, exact: true })
+    .getByRole('button', { name: section, exact: true })
+}
+
+/** «Обучение» keeps its own tab bar; the rarely used tabs and «AI-экзаменация» sit under «Ещё». */
+export function trainingTab(page: Page, label: string): Locator {
+  return page
+    .getByRole('navigation', { name: 'Разделы обучения' })
+    .getByRole('button', { name: label, exact: true })
+}
+
+export async function openTrainingMore(page: Page): Promise<void> {
+  const more = page
+    .getByRole('navigation', { name: 'Разделы обучения' })
+    .getByRole('button', { name: 'Ещё' })
+  if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click()
+  await baseExpect(page.getByRole('menu')).toBeVisible()
 }
 
 /**

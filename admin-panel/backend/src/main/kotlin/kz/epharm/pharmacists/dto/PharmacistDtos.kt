@@ -36,6 +36,8 @@ data class PharmacistDto(
     val standardNIdentityMatchMethod: String? = "NONE",
     val standardNIdentityMatchStatus: String? = "UNKNOWN",
     val standardNIdentityCheckedAt: Instant? = null,
+    /** Last time the pharmacist worked with ePharm in the last 30 days: a sale, a tip shown, a cabinet sign-in. */
+    val lastActiveAt: Instant? = null,
 ) {
     companion object {
         fun of(e: PharmacistEntity): PharmacistDto = PharmacistDto(

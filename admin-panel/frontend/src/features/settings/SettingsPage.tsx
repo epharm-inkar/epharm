@@ -1,5 +1,6 @@
-// Settings — конфигурация системы. В отличие от других секций, тут нет «данных» —
-// тут поля настроек, которые работают и в пустой системе.
+// Settings: the profile, the language, sign-out and access management. The placeholders for two-factor
+// sign-in, sessions, time zone and reconciliation automation were removed (Grigoriy, 25.11.2026: «нафиг
+// это всё нужно»): none of them was connected, they only took space.
 
 import { Button, Field, Input, PageHeader, SectionCard, Select, type SelectOption } from '@/ui'
 import { IconLogout, IconShield } from '@/ui/icons'
@@ -46,18 +47,6 @@ export default function SettingsPage() {
           <Field label={t('settings.email')}>
             <Input type="email" value={authedUser?.email ?? ''} placeholder="—" disabled />
           </Field>
-        </div>
-      </SectionCard>
-
-      {(authedUser?.role === 'HQ_HEAD' || authedUser?.role === 'SYSTEM_ADMIN') && (
-        <AccessManagement key={authedUser.id} />
-      )}
-
-      <SectionCard title={t('settings.localization')} subtitle={t('settings.localizationSub')}>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label={t('settings.timezone')} hint={t('settings.timezoneUnavailable')}>
-            <Input value="" placeholder={t('settings.notConfiguredHere')} disabled />
-          </Field>
           <Field label={t('settings.language')}>
             <Select
               value={language}
@@ -66,35 +55,16 @@ export default function SettingsPage() {
             />
           </Field>
         </div>
-      </SectionCard>
-
-      <SectionCard title={t('settings.security')} subtitle={t('settings.securitySub')}>
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-ink-500">{t('settings.securityUnavailable')}</p>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label={t('settings.twoFa')}>
-              <Input value="" placeholder={t('settings.notConfiguredHere')} disabled />
-            </Field>
-            <Field label={t('settings.emailNotif')}>
-              <Input value="" placeholder={t('settings.notConfiguredHere')} disabled />
-            </Field>
-          </div>
-          <div className="hairline border-t pt-3">
-            <Button variant="danger" leading={<IconLogout size={14} />} onClick={handleLogout}>
-              {t('settings.logoutBtn')}
-            </Button>
-          </div>
+        <div className="hairline mt-4 border-t pt-3">
+          <Button variant="danger" leading={<IconLogout size={14} />} onClick={handleLogout}>
+            {t('settings.logoutBtn')}
+          </Button>
         </div>
       </SectionCard>
 
-      <SectionCard title={t('settings.autoTitle')} subtitle={t('settings.autoSub')}>
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-ink-500">{t('settings.automationUnavailable')}</p>
-          <Field label={t('settings.autoThreshold')}>
-            <Input value="" placeholder={t('settings.notConfiguredHere')} disabled />
-          </Field>
-        </div>
-      </SectionCard>
+      {(authedUser?.role === 'HQ_HEAD' || authedUser?.role === 'SYSTEM_ADMIN') && (
+        <AccessManagement key={authedUser.id} />
+      )}
 
       <div className="text-[12px] text-ink-400">
         <IconShield size={12} className="mr-1 inline-block" /> {t('settings.note')}

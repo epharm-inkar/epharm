@@ -44,6 +44,8 @@ test('Learning admin inherits the same system and keeps its navigation', async (
   await expect(page.getByRole('heading', { name: 'Онлайн-курсы' })).toBeVisible()
 
   const primary = page.getByRole('button', { name: 'Новый курс' })
+  // The tab bar is on the page now (25.11.2026): move the pointer off it, the check is the resting colour.
+  await page.mouse.move(1, 1)
   await expect(primary).toHaveCSS('background-color', 'rgb(185, 83, 54)')
   await expect(primary).toHaveCSS('border-radius', '8px')
   await expect(page.locator('aside')).toHaveCSS('background-image', /linear-gradient/)

@@ -49,3 +49,24 @@ data class RecommendationProductDto(
     val catalogPriceKzt: Int,
     val catalogUpdatedAt: Instant,
 )
+
+/** What the pharmacist sold most in the last [days] days and what the till suggests with each product. */
+data class PharmacistTopProductsDto(
+    val items: List<PharmacistTopProductDto>,
+    val days: Int,
+)
+
+data class PharmacistTopProductDto(
+    val productId: String,
+    val name: String,
+    /** Receipts with this product among the pharmacist's own sales. */
+    val receipts: Int,
+    val offers: List<PharmacistTopOfferDto>,
+)
+
+data class PharmacistTopOfferDto(
+    val ruleId: String,
+    val type: kz.epharm.rules.entity.RuleType,
+    val product: RecommendationProductDto,
+    val script: String,
+)

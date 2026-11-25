@@ -204,7 +204,13 @@ test('built unified navigation and native calendar preserve protected cells and 
     'Управление',
   ])
     await expect(sidebar.getByRole('button', { name, exact: true })).toBeVisible()
-  await expect(sidebar.getByRole('button', { name: /Кабинет производителя/ })).toBeDisabled()
+  // Sections are tabs of the open module (25.11.2026); one that is not connected is not offered.
+  await expect(sidebar.getByRole('button', { name: /Кабинет производителя/ })).toHaveCount(0)
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Мерчендайзинг' })
+      .getByRole('button', { name: /Кабинет производителя/ }),
+  ).toHaveCount(0)
   await page.getByRole('combobox', { name: 'Аптека мерча' }).selectOption('demo-branch-01')
   await expect(page.getByLabel('Выбрать полку ST-01-B')).toBeDisabled()
   await expect(page.getByText('Цены недоступны с вашими правами.')).toBeVisible()

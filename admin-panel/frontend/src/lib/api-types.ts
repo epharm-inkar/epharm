@@ -332,7 +332,32 @@ export interface UpdatePharmacyRequest {
 export type PharmacistTier = 'Silver' | 'Gold' | 'Platinum'
 export type PharmacistStatus = 'active' | 'pending' | 'blocked'
 
+export interface PharmacistCoverageDayDto {
+  date: string
+  total: number
+  active7d: number
+  sellers7d: number
+  coveragePct: number
+  joined: number
+}
+
+/** GET /api/admin/pharmacists/coverage: how many pharmacists work with ePharm, by day. */
+export interface PharmacistCoverageDto {
+  date: string
+  total: number
+  fromStandardN: number
+  registered: number
+  active7d: number
+  sellers7d: number
+  cabinet7d: number
+  coveragePct: number
+  daily: PharmacistCoverageDayDto[]
+  generatedAt: string
+}
+
 export interface PharmacistDto {
+  /** Last time the pharmacist worked with ePharm in the last 30 days (sale, tip shown, cabinet). */
+  lastActiveAt?: string | null
   id: string
   name: string
   iin: string | null

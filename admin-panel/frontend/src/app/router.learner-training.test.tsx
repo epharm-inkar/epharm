@@ -176,15 +176,18 @@ describe('real learner training navigation and payment placeholder', () => {
       screen.getByRole('heading', { name: 'Все доступные курсы', exact: true }),
     ).toBeInTheDocument()
   })
-  it('shows one ongoing course at home and separates active courses from history through the sidebar', async () => {
+  it('shows every course to take at home and separates active courses from history through the sidebar', async () => {
     renderRouter()
     expect(
-      await screen.findByRole('heading', { name: 'Текущий курс', exact: true }),
+      await screen.findByRole('heading', { name: 'Ваши курсы', exact: true }),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('heading', { name: current.programName, exact: true }),
-    ).toBeInTheDocument()
-    for (const assignment of [assigned, later, completed, cancelled]) {
+    // 25.11.2026: the home page lists every course available now, not only the first one.
+    for (const assignment of [current, later, assigned]) {
+      expect(
+        screen.getByRole('heading', { name: assignment.programName, exact: true }),
+      ).toBeInTheDocument()
+    }
+    for (const assignment of [completed, cancelled]) {
       expect(
         screen.queryByRole('heading', { name: assignment.programName, exact: true }),
       ).not.toBeInTheDocument()
@@ -313,7 +316,7 @@ describe('real learner training navigation and payment placeholder', () => {
     assignments = [paused, scheduled, futureStarted, current]
     renderRouter()
     expect(
-      await screen.findByRole('heading', { name: 'Текущий курс', exact: true }),
+      await screen.findByRole('heading', { name: 'Ваши курсы', exact: true }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: current.programName, exact: true }),
@@ -372,7 +375,7 @@ describe('real learner training navigation and payment placeholder', () => {
     assignments = [undatedScheduled, completed, cancelled, elapsedScheduled]
     renderRouter()
     expect(
-      await screen.findByRole('heading', { name: 'Текущий курс', exact: true }),
+      await screen.findByRole('heading', { name: 'Ваши курсы', exact: true }),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { name: elapsedScheduled.programName, exact: true }),
@@ -387,7 +390,7 @@ describe('real learner training navigation and payment placeholder', () => {
     assignments = [completed, cancelled]
     renderRouter()
     expect(
-      await screen.findByRole('heading', { name: 'Текущий курс', exact: true }),
+      await screen.findByRole('heading', { name: 'Ваши курсы', exact: true }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { name: completed.programName, exact: true }),
@@ -423,7 +426,7 @@ describe('real learner training navigation and payment placeholder', () => {
     ).not.toBeInTheDocument()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Главная', exact: true }))
     expect(
-      await screen.findByRole('heading', { name: 'Текущий курс', exact: true }),
+      await screen.findByRole('heading', { name: 'Ваши курсы', exact: true }),
     ).toBeInTheDocument()
     expect(screen.getByTestId('training-path')).toHaveTextContent('/learn')
   })

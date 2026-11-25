@@ -32,7 +32,8 @@ const CASES: Case[] = [
     name: 'SettingsPage',
     Page: SettingsPage,
     title: /Настройки/i,
-    contains: [/Профиль/, /Локализация/, /Безопасность/, /Часовой пояс/],
+    // 25.11.2026: only the profile, the language and sign-out stay; unconnected placeholders are gone.
+    contains: [/Профиль/, /^Язык$/, /Выйти из аккаунта/],
     hasZeroMetric: false,
   },
 ]
