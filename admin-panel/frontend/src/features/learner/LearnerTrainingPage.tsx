@@ -4012,7 +4012,10 @@ function LessonPage({
             ]
           : [],
       )
-  const textGated = !quizLesson && !liveLesson && !!lesson.content?.trim()
+  // Text and video lessons are read part by part; for a link, a file or a test the text is only an
+  // instruction and stays a plain block without a reading pause.
+  const readingLesson = !lesson.kind || lesson.kind === 'text' || lesson.kind === 'video'
+  const textGated = readingLesson && !!lesson.content?.trim()
   const readerFinished = read || !textGated || !!readerDone[lesson.id]
   const selfCheckFinished = read || selfCheckQuestions.length === 0 || !!selfCheckDone[lesson.id]
   const lessonTitles = Object.fromEntries(lessons.map((item) => [item.id, item.title]))
@@ -4231,7 +4234,7 @@ function LessonPage({
             </section>
           )}
 
-          {lesson.content && quizLesson && (
+          {lesson.content && !readingLesson && (
             <div className="space-y-3">
               {lessonSections(lesson.content).map((section, sectionIndex) => (
                 <div key={`${section.title ?? 'intro'}-${sectionIndex}`} className="space-y-3">
@@ -4246,7 +4249,7 @@ function LessonPage({
             </div>
           )}
 
-          {lesson.content && !quizLesson && (
+          {lesson.content && readingLesson && (
             <LessonReader
               key={lesson.id}
               content={lesson.content}
