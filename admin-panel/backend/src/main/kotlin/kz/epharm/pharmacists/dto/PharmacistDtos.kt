@@ -38,6 +38,8 @@ data class PharmacistDto(
     val standardNIdentityCheckedAt: Instant? = null,
     /** Last time the pharmacist worked with ePharm in the last 30 days: a sale, a tip shown, a cabinet sign-in. */
     val lastActiveAt: Instant? = null,
+    /** Sum of [receipts30d], ₸: the pharmacist's own receipts at the current pharmacy, refunds excluded. */
+    val sales30d: Long? = null,
 ) {
     companion object {
         fun of(e: PharmacistEntity): PharmacistDto = PharmacistDto(

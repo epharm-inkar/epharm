@@ -47,11 +47,11 @@ class PharmacistService(
             pharmacyId != null -> pharmacistRepository.findAllByPharmacyIdOrderByNameAsc(pharmacyId)
             else -> pharmacistRepository.findAllByOrderByNameAsc()
         }
-        val counts = receiptCounts(rows)
+        val money = money(rows)
         // One aggregate per response: «Активные» in the admin means worked with ePharm in the last 7 days.
         val lastActive = if (rows.isEmpty()) emptyMap()
             else activityService?.lastActiveSince(Instant.now().minus(30, ChronoUnit.DAYS)).orEmpty()
-        return rows.map { projected(it, counts[it.id] ?: 0).copy(lastActiveAt = lastActive[it.id]) }
+        return rows.map { projected(it, money[it.id]).copy(lastActiveAt = lastActive[it.id]) }
     }
 
     @Transactional(readOnly = true)
@@ -195,12 +195,17 @@ class PharmacistService(
 
     private fun projected(
         entity: PharmacistEntity,
-        receipts30d: Int = receiptCounts(listOf(entity))[entity.id] ?: 0,
-    ): PharmacistDto = administrativeScope.pharmacist(PharmacistDto.of(entity).copy(receipts30d = receipts30d))
+        money: PharmacistMoney? = money(listOf(entity))[entity.id],
+    ): PharmacistDto = administrativeScope.pharmacist(PharmacistDto.of(entity).copy(
+        receipts30d = money?.receipts ?: 0,
+        sales30d = money?.sales ?: 0,
+        // The ledger of the last 30 days; the stored `earned_30d` only ever grows and is not a 30-day figure.
+        earned30d = money?.earned ?: 0,
+    ))
 
-    /** One bounded aggregate per response, never per list row; do not mutate stale entity counters. */
-    private fun receiptCounts(rows: List<PharmacistEntity>): Map<String, Int> =
-        pharmacistRepository.currentReceiptCounts(rows.associate { it.id to it.pharmacyId })
+    /** Bounded aggregates per response, never per list row; do not mutate stale entity counters. */
+    private fun money(rows: List<PharmacistEntity>): Map<String, PharmacistMoney> =
+        pharmacistRepository.currentMoney(rows.associate { it.id to it.pharmacyId })
 
     private fun loadOrThrow(id: String, forUpdate: Boolean = false): PharmacistEntity {
         val scope = administrativeScope.currentPharmacyIds()

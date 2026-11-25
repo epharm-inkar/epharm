@@ -16,6 +16,20 @@ interface PharmacistReceiptCountRow {
     val count: Long
 }
 
+/** Receipts and their sum for the roster (INK-156, 25.11.2026: sales of each pharmacist in the admin). */
+interface PharmacistSalesRow {
+    val pharmacistId: String
+    val pharmacyId: String
+    val count: Long
+    val amount: Long
+}
+
+/** What the wallet credited a pharmacist in a period (`earned_delta_kzt`, the ledger, not a stored counter). */
+interface PharmacistEarnedRow {
+    val pharmacistId: String
+    val earned: Long
+}
+
 interface PharmacyPharmacistCountRow {
     val pharmacyId: String
     val count: Long
@@ -85,6 +99,41 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
         @Param("since") since: Instant,
         @Param("observedAt") observedAt: Instant,
     ): List<PharmacistReceiptCountRow>
+
+    /**
+     * The same exact sellers and filter as [receiptCounts], with the receipt sum: one aggregate for the whole
+     * roster response. `<> ''` on `s.pharmacist_id` keeps the partial index (INK-145).
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT p.id AS "pharmacistId", p.pharmacy_id AS "pharmacyId", COUNT(*) AS "count",
+               COALESCE(SUM(s.total_amount), 0) AS "amount"
+        FROM pos_sales s
+        JOIN pharmacists p ON p.id = s.pharmacist_id AND p.pharmacy_id = s.pharmacy_id
+        WHERE s.pharmacist_id IN (:ids)
+          AND s.pharmacist_id <> ''
+          AND p.pharmacy_id <> ''
+          AND s.printed_at >= :since AND s.printed_at <= :observedAt
+          AND COALESCE(s.reward_evidence #>> '{completion,status}', '') <> 'refund'
+        GROUP BY p.id, p.pharmacy_id
+    """)
+    fun salesTotals(
+        @Param("ids") ids: Set<String>,
+        @Param("since") since: Instant,
+        @Param("observedAt") observedAt: Instant,
+    ): List<PharmacistSalesRow>
+
+    /** Net credited in the period from the append-only wallet ledger (`ix_wallet_pharmacist_created`). */
+    @Query(nativeQuery = true, value = """
+        SELECT e.pharmacist_id AS "pharmacistId", COALESCE(SUM(e.earned_delta_kzt), 0) AS "earned"
+        FROM pharmacist_wallet_entries e
+        WHERE e.pharmacist_id IN (:ids) AND e.created_at >= :since AND e.created_at <= :observedAt
+        GROUP BY e.pharmacist_id
+    """)
+    fun walletEarned(
+        @Param("ids") ids: Set<String>,
+        @Param("since") since: Instant,
+        @Param("observedAt") observedAt: Instant,
+    ): List<PharmacistEarnedRow>
 
     /** Live profile count per pharmacy; `pharmacies.pharmacists` is a stale seed column (INK-145). */
     @Query(nativeQuery = true, value = """
