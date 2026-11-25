@@ -85,24 +85,34 @@ export function Sidebar({
       pathname !== '/account' &&
       module.items.some((item) => activeNavigationItem(item, active, activeTrainingTab, pathname))
     const Icon = module.Icon
-    const home = module.items.find((item) => item.available) ?? module.items[0]
+    // A module with no connected section stays in the list but closed, as its sections were
+    // before (merch sections the account has no capability for are «не подключено»).
+    const home = module.items.find((item) => item.available)
+    const name = t(`module.${module.id}`)
     return (
       <div key={module.id} className="px-2 py-0.5">
         <button
           type="button"
-          title={t(`module.${module.id}`)}
+          disabled={!home}
+          title={home ? name : `${name} · ${t('nav.not_connected')}`}
           aria-current={selected ? 'page' : undefined}
           data-module={module.id}
           onClick={() => {
             // A module opens on its first section; on that section already, nothing to do.
-            if (!activeNavigationItem(home, active, activeTrainingTab, pathname)) pick(home)
+            if (home && !activeNavigationItem(home, active, activeTrainingTab, pathname)) pick(home)
           }}
-          className={`cursor-sidebar__item sidebar-hover flex min-h-[38px] w-full items-center gap-2.5 rounded-md px-2 text-left ${selected ? 'sidebar-active text-white' : 'text-white/75'} ${collapsed ? 'justify-center' : ''}`}
+          className={`cursor-sidebar__item sidebar-hover flex min-h-[38px] w-full items-center gap-2.5 rounded-md px-2 text-left disabled:cursor-default disabled:opacity-40 ${selected ? 'sidebar-active text-white' : 'text-white/75'} ${collapsed ? 'justify-center' : ''}`}
         >
           <Icon size={18} className="flex-none text-brand-green-200/80" />
           {!collapsed && (
             <span className="min-w-0 flex-1 text-[12.5px] font-bold">
-              {t(`module.${module.id}`)}
+              {name}
+              {!home && (
+                <>
+                  {' '}
+                  <span className="block text-[10px] font-normal">{t('nav.not_connected')}</span>
+                </>
+              )}
             </span>
           )}
         </button>

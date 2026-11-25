@@ -49,15 +49,13 @@ export function TrainingTabs({
   }, [open])
 
   return (
-    <div className="hairline flex items-end gap-4 border-b">
-      <div
-        aria-label="Разделы обучения"
-        className="no-scrollbar flex min-w-0 flex-1 items-center gap-5 overflow-x-auto"
-      >
+    <nav aria-label="Разделы обучения" className="hairline flex items-end gap-4 border-b">
+      <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-5 overflow-x-auto">
         {primary.map((item) => (
           <button
             key={item.value}
             type="button"
+            data-training-tab={item.value}
             aria-current={value === item.value ? 'page' : undefined}
             className={`tab flex-none whitespace-nowrap ${value === item.value ? 'active' : ''}`}
             onClick={() => onChange(item.value)}
@@ -121,6 +119,6 @@ export function TrainingTabs({
           </div>
         )}
       </div>
-    </div>
+    </nav>
   )
 }

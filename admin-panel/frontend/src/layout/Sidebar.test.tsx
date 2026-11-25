@@ -48,11 +48,12 @@ describe('Sidebar — навигация', () => {
       'Аналитика',
       'Мотивация фармацевтов',
       'Обучение',
-      'Мерчендайзинг',
       'Аптеки и товары',
       'Фармацевты',
       'Управление',
-    ].forEach((label) => expect(screen.getByRole('button', { name: label })).toBeInTheDocument())
+    ].forEach((label) => expect(screen.getByRole('button', { name: label })).toBeEnabled())
+    // Merch with no connected section stays in the list, closed and labelled (25.11.2026).
+    expect(screen.getByRole('button', { name: 'Мерчендайзинг Не подключено' })).toBeDisabled()
     const bottom = container.querySelector('[aria-label="Управление"]')
     expect(bottom?.querySelector('button')).toHaveTextContent('Управление')
     expect(bottom?.closest('nav')).toBeNull()
@@ -61,7 +62,9 @@ describe('Sidebar — навигация', () => {
   it('бизнес-роль не получает обучение; неподключённый мерч не становится доступом', async () => {
     const { onSelect } = setup()
     expect(screen.queryByRole('button', { name: /^Обучение$/ })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Мерчендайзинг' }))
+    const merch = screen.getByRole('button', { name: /^Мерчендайзинг/ })
+    expect(merch).toBeDisabled()
+    await userEvent.click(merch)
     expect(onSelect).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: /Кабинет производителя/ })).not.toBeInTheDocument()
   })

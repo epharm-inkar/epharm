@@ -626,7 +626,12 @@ test('personal queue opens its server-selected item rather than a pending review
   await page.goto('/merch/tasks')
   await page.getByRole('combobox', { name: 'Рабочая очередь заданий' }).selectOption('mine')
   await expect(page.getByText(/Доступ к аптеке сам по себе не делает задание вашим/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Задания мерча', exact: true })).toBeVisible()
+  // One-level sidebar (25.11.2026): the module of this page is current, its sections are page tabs.
+  await expect(
+    page
+      .getByRole('complementary', { name: 'Основная навигация' })
+      .getByRole('button', { name: 'Мерчендайзинг', exact: true }),
+  ).toHaveAttribute('aria-current', 'page')
   await page.screenshot({
     path: testInfo.outputPath('personal-task-queue.png'),
     fullPage: true,
