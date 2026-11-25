@@ -19,6 +19,7 @@ import kz.epharm.mobile.auth.dto.SetInitialPasswordRequest
 import kz.epharm.mobile.auth.dto.VerifySmsResponse
 import kz.epharm.mobile.auth.security.PharmacistPrincipal
 import kz.epharm.mobile.auth.service.MobileAuthService
+import kz.epharm.shared.PhoneUtil
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
 import org.springframework.http.HttpStatus
@@ -43,10 +44,22 @@ class MobileAuthController(
     private val passwordLoginLimiter: kz.epharm.mobile.auth.service.PharmacistPasswordLoginLimiter,
 ) {
 
+    /** «ИИН или номер телефона» + пароль. Both identifiers spend the same per-account attempt budget. */
     @PostMapping("/login")
     fun login(@Valid @RequestBody req: IinPasswordLoginRequest): MobileAuthResponse {
-        passwordLoginLimiter.check(req.iin)
-        return mobileAuthService.login(req.iin, req.password)
+        val iin = req.iin?.takeIf(String::isNotBlank)
+        val rawPhone = req.phone?.takeIf(String::isNotBlank)
+        if ((iin == null) == (rawPhone == null)) {
+            throw AppException(ErrorCode.VALIDATION_FAILED, "Введите ИИН или номер телефона", HttpStatus.BAD_REQUEST)
+        }
+        if (iin != null) {
+            passwordLoginLimiter.check(iin)
+            return mobileAuthService.login(iin, req.password)
+        }
+        val phone = PhoneUtil.canonicalOrNull(rawPhone!!)
+            ?: throw AppException(ErrorCode.VALIDATION_FAILED, "Номер телефона в формате +7 7XX XXX XX XX", HttpStatus.BAD_REQUEST)
+        passwordLoginLimiter.checkPhone(phone)
+        return mobileAuthService.loginByPhone(phone, req.password)
     }
 
     /** One-time link from the till «Мой кабинет» button or QR (no password, no SMS). */
