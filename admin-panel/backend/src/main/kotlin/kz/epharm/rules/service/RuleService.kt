@@ -6,7 +6,7 @@ import kz.epharm.catalog.repository.ProductRepository
 import kz.epharm.catalog.service.AccCatalogTaxonomy
 import kz.epharm.catalog.service.AccScopeKind
 import kz.epharm.posm.repository.RecommendationEventRepository
-import kz.epharm.posm.repository.RuleAggRow
+import kz.epharm.posm.repository.RulePageAggRow
 import kz.epharm.rules.dto.CreateRuleRequest
 import kz.epharm.rules.dto.RuleDto
 import kz.epharm.rules.dto.TriggerDto
@@ -37,13 +37,16 @@ class RuleService(
     @Value("\${app.analytics.window-days:90}") private val windowDays: Long,
 ) {
 
-    /** Показы и «Принято» по правилам: то же окно, тот же источник и то же «Принято» (ACCEPTED_SQL), что на Dashboard. */
-    private fun eventTotals(): Map<String, RuleAggRow> =
-        recommendationEventRepository.aggregateByRuleSince(Instant.now().minus(windowDays, ChronoUnit.DAYS))
-            .associateBy { it.ruleId }
+    private fun since(): Instant = Instant.now().minus(windowDays, ChronoUnit.DAYS)
 
-    private fun toDto(e: RuleEntity, events: Map<String, RuleAggRow> = eventTotals()): RuleDto {
-        val row = events[e.id]
+    /** Показы и «Принято» по правилам: то же окно, тот же источник и то же «Принято» (ACCEPTED_SQL), что на Dashboard. */
+    private fun eventTotals(): Map<String, RulePageAggRow> =
+        recommendationEventRepository.aggregateRulesPageSince(since()).associateBy { it.ruleId }
+
+    /** One rule reads only its own events (idx_rec_events_rule); the list reads all rules once. */
+    private fun toDto(e: RuleEntity, events: Map<String, RulePageAggRow>? = null): RuleDto {
+        val row = if (events != null) events[e.id]
+            else recommendationEventRepository.aggregateRuleSince(e.id, since()).firstOrNull()
         return RuleDto.of(
             e,
             impressions = row?.impressions?.toInt() ?: 0,

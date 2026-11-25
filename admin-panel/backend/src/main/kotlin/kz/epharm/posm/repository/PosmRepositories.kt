@@ -30,9 +30,14 @@ interface RuleAggRow {
     val ruleId: String
     val impressions: Long
     val accepts: Long
-    /** Sum of offer prices of accepted tips (as the dashboard's product revenue), ₸. */
+}
+
+/** The Rules page per rule: shown, accepted, offer prices of accepted tips (₸) and pharmacies that saw the tip. */
+interface RulePageAggRow {
+    val ruleId: String
+    val impressions: Long
+    val accepts: Long
     val revenue: Long
-    /** Pharmacies where the rule's tip was shown in the period. */
     val pharmacies: Long
 }
 
@@ -344,6 +349,24 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
         value = """
             SELECT rule_id AS "ruleId",
                    COUNT(*) AS "impressions",
+                   COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts"
+            FROM recommendation_events
+            WHERE shown_at >= :since
+            GROUP BY rule_id
+        """,
+    )
+    fun aggregateByRuleSince(@Param("since") since: Instant): List<RuleAggRow>
+
+    /**
+     * The Rules page: the dashboard's shown and «Принято» plus revenue and pharmacies. Kept apart from
+     * [aggregateByRuleSince]: COUNT(DISTINCT) costs about 0.4 s over 90 days in production (26.11.2026),
+     * the dashboard does not need it.
+     */
+    @Query(
+        nativeQuery = true,
+        value = """
+            SELECT rule_id AS "ruleId",
+                   COUNT(*) AS "impressions",
                    COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts",
                    COALESCE(SUM(expected_amount) FILTER (WHERE $ACCEPTED_SQL), 0) AS "revenue",
                    COUNT(DISTINCT pharmacy_id) AS "pharmacies"
@@ -352,7 +375,23 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
             GROUP BY rule_id
         """,
     )
-    fun aggregateByRuleSince(@Param("since") since: Instant): List<RuleAggRow>
+    fun aggregateRulesPageSince(@Param("since") since: Instant): List<RulePageAggRow>
+
+    /** One rule (its card, a save): the same figures read through idx_rec_events_rule, not across all rules. */
+    @Query(
+        nativeQuery = true,
+        value = """
+            SELECT rule_id AS "ruleId",
+                   COUNT(*) AS "impressions",
+                   COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts",
+                   COALESCE(SUM(expected_amount) FILTER (WHERE $ACCEPTED_SQL), 0) AS "revenue",
+                   COUNT(DISTINCT pharmacy_id) AS "pharmacies"
+            FROM recommendation_events
+            WHERE rule_id = :ruleId AND shown_at >= :since
+            GROUP BY rule_id
+        """,
+    )
+    fun aggregateRuleSince(@Param("ruleId") ruleId: String, @Param("since") since: Instant): List<RulePageAggRow>
 
     /** Принятия и атрибутированная выручка по рекомендованному товару за период. */
     @Query(
