@@ -159,6 +159,13 @@ right.
 Sticky header, separated rows, hover surface, selected row with coral left inset. Status columns use chips.
 Numeric columns use `.num`.
 
+Dense lists use `DataTable` (`src/ui/DataTable.tsx`, template: Pharmacists, 25.11.2026): 30 px rows, 13 px
+body, 12 px semibold normal-case headers, no avatars, every data column sortable with an arrow, one-line cells
+truncated with the full text in the tooltip, numbers right-aligned with thin-space digit groups, money
+`125 000 ₸`, «—» for missing or hidden values, a status tag only when it is not the normal state. Secondary
+header actions go into one «Ещё ▾» menu, row actions into a «⋯» menu; toolbars use 32 px controls
+(`.dense-controls`). The table scrolls in its own box; at 375 px the page itself never scrolls sideways.
+
 ### SummaryBar
 
 Use instead of four KPI cards on dense operational pages.
