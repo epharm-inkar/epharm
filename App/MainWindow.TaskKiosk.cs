@@ -47,16 +47,20 @@ public partial class MainWindow
             _merchShownRetryTimer.Tick += async (_, _) => await FlushMerchShownOutbox();
             _merchShownRetryTimer.Start();
             _ = FlushMerchShownOutbox();
-            _taskKioskTray = new System.Windows.Forms.NotifyIcon
+            // One ePharm icon by the clock: with the personal icon (1.0.94) the tasks live in the personal window.
+            if (!PersonalTrayReplacesTasksTray)
             {
-                Icon = System.Drawing.SystemIcons.Information,
-                Text = "Задания аптеки",
-                Visible = true,
-            };
-            var menu = new System.Windows.Forms.ContextMenuStrip();
-            menu.Items.Add("Задания аптеки", null, (_, _) => OpenTaskKiosk(activate: true));
-            _taskKioskTray.ContextMenuStrip = menu;
-            _taskKioskTray.DoubleClick += (_, _) => OpenTaskKiosk(activate: true);
+                _taskKioskTray = new System.Windows.Forms.NotifyIcon
+                {
+                    Icon = System.Drawing.SystemIcons.Information,
+                    Text = "Задания аптеки",
+                    Visible = true,
+                };
+                var menu = new System.Windows.Forms.ContextMenuStrip();
+                menu.Items.Add("Задания аптеки", null, (_, _) => OpenTaskKiosk(activate: true));
+                _taskKioskTray.ContextMenuStrip = menu;
+                _taskKioskTray.DoubleClick += (_, _) => OpenTaskKiosk(activate: true);
+            }
 
             _taskKioskTimer = new DispatcherTimer { Interval = _taskKioskPollSchedule.Initial };
             _taskKioskTimer.Tick += async (_, _) => await PollTaskKiosk();
@@ -117,6 +121,7 @@ public partial class MainWindow
 
             if (_taskKioskTray != null) _taskKioskTray.Text = $"Задания аптеки: {items.Count}";
             _taskKioskWindow?.UpdateTasks(items);
+            OnTasksChangedForSelf();
             if (_taskKioskWindow == null && _taskKioskSnoozed.ShouldShow(items, DateTimeOffset.UtcNow))
             {
                 OpenTaskKiosk();
@@ -134,7 +139,8 @@ public partial class MainWindow
             var retryAfter = _taskKioskPollSchedule.RecordFailure();
             if (_taskKioskTimer != null) _taskKioskTimer.Interval = retryAfter;
             _taskKioskWindow?.SetOffline();
-            if (_taskKioskTray != null) _taskKioskTray.Text = "Задания аптеки — нет связи с CRM";
+            if (_taskKioskTray != null) _taskKioskTray.Text = "Задания аптеки: нет связи с CRM";
+            OnTasksChangedForSelf();
             Log($"Задания аптек: временно недоступны ({ex.Message}); повтор через {retryAfter.TotalSeconds:0} с.");
         }
         finally

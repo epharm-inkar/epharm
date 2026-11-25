@@ -7,6 +7,27 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- «ePharm на технических работах» (Grigoriy, 25.11.2026): HQ switches it in `posm_notice` (`PUT
+  /api/admin/posm-notice`, HQ roles); the till reads its view about once a minute (`GET /api/posm/notice`, device
+  key). POSM 1.0.95 then opens a notice from the ePharm icon instead of the personal window, puts an amber dot on the
+  icon and shows no recommendation popup; tills of the pilot channel stay live while `pilot_live` is on. When the
+  works end, every till shows «ePharm снова работает» once in the corner of the pharmacist screen without taking the
+  focus, also after a restart if it was off at that moment (`%LOCALAPPDATA%\Epharm\notice-state.json`). The
+  migration starts the network in maintenance; tills before 1.0.95 do not read it.
+- New ePharm icon by the clock (1.0.95): a teal-green rounded square with a white «e» and a small pharmacy cross,
+  drawn at the tray's own size; red dot while something waits for the person (profile not filled, a pharmacy
+  task), amber dot during the works.
+- The recommendation popup groups offers by basket product: with several products, one tab per product («Товар · N»),
+  the last scanned one open, each with up to five replacements and five cross-sells; only the open tab counts as
+  shown. «Подсказки по чеку» in the ePharm icon menu reopens every offer of the current receipt after the popup was
+  closed. The server puts the offers of the product just scanned first and keeps up to five per kind for each
+  product (at most fifteen per kind per answer), so an earlier product no longer pushes the new one out; older tills
+  keep taking the first five per kind.
+- POSM 1.0.94, one ePharm icon by the clock: the personal window (name, earnings, profile, cabinet) also shows
+  the pharmacy tasks («Задания аптеки», opens the tasks window), so the separate «i» tasks icon is gone. A «?»
+  button explains what ePharm is, that no registration is needed, how the bonus per package is earned and that the
+  month's earnings are paid out at the start of the next month. The window never grows taller than the screen
+  (the body scrolls), keeps typed phone and password across refreshes, and updates the task count in place.
 - No ePharm registration (Grigoriy and Dmitry, 24.11.2026): the pharmacist card is created from the central
   Standard-N directory (IIN, name, pharmacy) the first time the person sells or gets a recommendation at a till
   (`pharmacists.account_source = standardn`, phone unique only when set). `/api/posm/self` serves the till's

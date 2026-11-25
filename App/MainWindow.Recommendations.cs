@@ -389,6 +389,12 @@ namespace CustomerDisplay
                     return;
                 }
                 var recommendations = resp.Recommendations ?? new List<Recommendation>();
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (token.IsCancellationRequested) return;
+                    _receiptOffers.Clear();
+                    _receiptOffers.AddRange(recommendations.Where(r => r != null));
+                });
                 var responseConflicts = resp.Conflicts ?? new List<Conflict>();
                 Log($"POSM recommend response ({reason}): recs={recommendations.Count}, conflicts={responseConflicts.Count}");
                 foreach (var rec in recommendations
@@ -420,7 +426,11 @@ namespace CustomerDisplay
                     _displayScannedItem = scannedItem;
                     if (conflicts.Count > 0) ShowConflicts(conflicts);
                     if (recs.Count == 0) _recoWindow?.Close();
-                    else if (_recoWindow != null) _recoWindow.UpdateRecommendations(recs);
+                    else if (_recoWindow != null)
+                    {
+                        _recoWindow.UpdateRecommendations(recs);
+                        _recoWindow.PreferTrigger(scannedItem?.Barcode, scannedItem?.PartId > 0 ? scannedItem.PartId.ToString() : null, scannedItem?.Name);
+                    }
                     else ShowRecommendations(recs, scannedItem);
                 });
             }
@@ -603,6 +613,7 @@ namespace CustomerDisplay
             Models.ReceiptItem? scannedItem = null)
         {
             if (recs == null || recs.Count == 0) return;
+            if (SkipRecommendationsForNotice()) return;
             _displayScannedItem = scannedItem;
             BeginRecommendationNotice();
             var previous = _recoWindow;
@@ -611,12 +622,14 @@ namespace CustomerDisplay
             // a subsequent scan can refresh it. Dismissing a card still records no sale/outcome.
             var target = PharmacistScreen();
             var win = new RecommendationWindow(recs, 60, target, _currentPharmacistName);
+            win.PreferTrigger(scannedItem?.Barcode, scannedItem?.PartId > 0 ? scannedItem.PartId.ToString() : null, scannedItem?.Name);
             _recoWindow = win;
             previous?.Close();
             win.Expired += () => _unconfirmedRecommendations = win.Recommendations.ToList();
             win.Displayed += diagnostics =>
             {
-                foreach (var r in win.Recommendations.Where(r => !RecommendationShown(r)))
+                // Only the open product tab is on screen; other tabs count once they are opened.
+                foreach (var r in win.VisibleRecommendations.Where(r => !RecommendationShown(r)))
                 {
                     // Mark shown only after native coordinates, visibility and topmost state were
                     // verified on the pharmacist monitor. Loaded alone can be off-screen under DPI scaling.
@@ -813,6 +826,27 @@ namespace CustomerDisplay
             _shownRecommendations.Clear();
             _unconfirmedRecommendations.Clear();
             _shownConflictSigs.Clear();
+            _receiptOffers.Clear();
+        }
+
+        /// <summary>Every offer of the current receipt from the last server answer, for «Подсказки по чеку».</summary>
+        private readonly List<Recommendation> _receiptOffers = new();
+
+        /// <summary>
+        /// The ePharm icon menu «Подсказки по чеку»: opens the popup again with every offer of the current receipt,
+        /// one tab per product, also after the cashier closed it. Offers already shown are not counted twice.
+        /// </summary>
+        private void ReopenReceiptRecommendations()
+        {
+            if (EpharmPaused) { ShowMaintenanceWindow(); return; }
+            if (_recoWindow != null) { _recoWindow.Activate(); return; }
+            var offers = RecommendationPopupModelBuilder.LimitPerTrigger(_receiptOffers);
+            if (offers.Count == 0 || ReceiptItems.Count == 0)
+            {
+                Log("ePharm: подсказок по текущему чеку нет.");
+                return;
+            }
+            ShowRecommendations(offers, _displayScannedItem);
         }
 
 

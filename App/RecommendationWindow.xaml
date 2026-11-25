@@ -149,16 +149,24 @@
                         ToolTip="Закрыть рекомендации"/>
             </Grid>
 
-            <Border x:Name="TopTriggerContext" Grid.Row="1" Background="#F1F2F4"
-                    CornerRadius="10" Margin="15,0,15,8" Padding="13,9">
-                <StackPanel>
-                    <TextBlock x:Name="TbTopTriggerLabel" Text="ПОКУПАТЕЛЬ ПОПРОСИЛ"
-                               Foreground="#70788A" FontSize="12" FontWeight="Bold"/>
-                    <TextBlock x:Name="TbTopTrigger" Foreground="#171A2F" FontSize="16"
-                               FontWeight="Bold" TextWrapping="Wrap" LineHeight="19"
-                               Margin="0,3,0,0"/>
+            <StackPanel Grid.Row="1">
+                <!-- One tab per basket product with offers; the last scanned product is open. -->
+                <StackPanel x:Name="TriggerTabsPanel" Margin="15,0,15,8" Visibility="Collapsed">
+                    <TextBlock Text="ПРЕДЛОЖЕНИЯ ПО ТОВАРАМ ЧЕКА" Foreground="#70788A" FontSize="11.5"
+                               FontWeight="Bold" Margin="1,0,0,5"/>
+                    <WrapPanel x:Name="TriggerTabs"/>
                 </StackPanel>
-            </Border>
+                <Border x:Name="TopTriggerContext" Background="#F1F2F4"
+                        CornerRadius="10" Margin="15,0,15,8" Padding="13,9">
+                    <StackPanel>
+                        <TextBlock x:Name="TbTopTriggerLabel" Text="ПОКУПАТЕЛЬ ПОПРОСИЛ"
+                                   Foreground="#70788A" FontSize="12" FontWeight="Bold"/>
+                        <TextBlock x:Name="TbTopTrigger" Foreground="#171A2F" FontSize="16"
+                                   FontWeight="Bold" TextWrapping="Wrap" LineHeight="19"
+                                   Margin="0,3,0,0"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
 
             <ScrollViewer Grid.Row="2" MaxHeight="700" MinHeight="0"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"

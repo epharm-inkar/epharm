@@ -1,3 +1,4 @@
+using System.Linq;
 using CustomerDisplay.Models.Posm;
 using CustomerDisplay.Services;
 using Xunit;
@@ -7,6 +8,35 @@ namespace CustomerDisplay.Tests;
 public sealed class RecommendationVisibilityTests
 {
     private static Recommendation Offer(string id) => new() { EventId = id, Kind = "substitution", RecommendPrice = 100, Bonus = 20 };
+
+    private static Recommendation OfferFor(string id, string trigger, bool substitution = true) => new()
+    {
+        EventId = id, Kind = substitution ? "substitution" : "crosssell", RecommendPrice = 100, Bonus = 20,
+        TriggerBarcode = trigger, TriggerName = "Товар " + trigger,
+    };
+
+    [Fact]
+    public void EachBasketProductKeepsItsOwnFiveOffersPerKind()
+    {
+        // Two products in the receipt with six replacements each: the popup gets five per product, not five in total.
+        var offers = Enumerable.Range(1, 6).Select(i => OfferFor("a" + i, "4600000000017"))
+            .Concat(Enumerable.Range(1, 6).Select(i => OfferFor("b" + i, "4600000000024")))
+            .Concat(new[] { OfferFor("c1", "4600000000024", substitution: false) })
+            .ToList();
+        var result = RecommendationVisibility.Reconcile([], offers, _ => false);
+        Assert.Equal(11, result.Count);
+        Assert.Equal(5, result.Count(r => r.TriggerBarcode == "4600000000017"));
+        Assert.Equal(6, result.Count(r => r.TriggerBarcode == "4600000000024"));
+        Assert.Equal(new[] { "a1", "a2", "a3", "a4", "a5" }, result.Take(5).Select(r => r.EventId));
+    }
+
+    [Fact]
+    public void TriggerKeyPrefersBarcodeThenPartThenName()
+    {
+        Assert.Equal("4600000000017", RecommendationPopupModelBuilder.TriggerKey(new Recommendation { TriggerBarcode = "4600000000017", TriggerIpartId = "77", TriggerName = "X" }));
+        Assert.Equal("77", RecommendationPopupModelBuilder.TriggerKey(new Recommendation { TriggerIpartId = "77", TriggerName = "X" }));
+        Assert.Equal("X", RecommendationPopupModelBuilder.TriggerKey(new Recommendation { TriggerName = " X " }));
+    }
 
     [Fact]
     public void EmptyOrFailedRefreshRemovesStaleOpenOffer()

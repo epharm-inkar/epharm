@@ -20,7 +20,7 @@ namespace CustomerDisplay
     /// What the ePharm tray window shows about the signed-in-by-Standard-N pharmacist. No password is needed to
     /// open it: the person is already known from Standard-N. The server fills this by IIN (device-authenticated).
     /// </summary>
-    public sealed class StaffSelfModel
+    public sealed record StaffSelfModel
     {
         public string FullName { get; init; } = "";
         public string Iin { get; init; } = "";
@@ -34,6 +34,9 @@ namespace CustomerDisplay
         public string? CabinetUrl { get; init; }
         /// <summary>Shown instead of the profile when the person is not known yet (no Standard-N sign-in, no IIN).</summary>
         public string? Notice { get; init; }
+        /// <summary>Pharmacy tasks from the CRM (merchandising): null when this till does not receive them.</summary>
+        public int? TasksCount { get; init; }
+        public bool TasksOnline { get; init; } = true;
     }
 
     /// <summary>
@@ -49,6 +52,10 @@ namespace CustomerDisplay
         /// <summary>«Мой кабинет»: the host asks the server for a fresh one-time link and opens the browser.</summary>
         public event Action? OpenCabinetRequested;
         public event Action<string?, string?>? SaveContactRequested;
+        /// <summary>«Задания аптеки»: the host opens the tasks window (the former tray icon of its own).</summary>
+        public event Action? OpenTasksRequested;
+        private Border? _help;
+        private TextBlock? _tasksText;
 
         private readonly TextBox _phone = NewField("+7 ___ ___ __ __");
         private readonly PasswordBox _password = new()
@@ -82,6 +89,8 @@ namespace CustomerDisplay
                     var dpi = VisualTreeHelper.GetDpi(this);
                     Left = area.Left / dpi.DpiScaleX + 24;
                     Top = area.Top / dpi.DpiScaleY + 24;
+                    // Never taller than the screen: the card scrolls (the «?» text makes it long on 768-pixel tills).
+                    MaxHeight = Math.Max(320, area.Height / dpi.DpiScaleY - 48);
                 };
             }
         }
@@ -116,24 +125,35 @@ namespace CustomerDisplay
                 Effect = new DropShadowEffect { Color = Colors.Black, Opacity = 0.26, BlurRadius = 26, ShadowDepth = 5 },
             };
             var root = new StackPanel();
+            var body = new StackPanel();
             root.Children.Add(BuildHeader(model));
+            root.Children.Add(new ScrollViewer
+            {
+                Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                MaxHeight = Math.Max(240, (MaxHeight is > 0 and < double.PositiveInfinity ? MaxHeight : SystemParameters.WorkArea.Height - 48) - 130),
+            });
+            _help = BuildHelp();
+            _help.Visibility = _helpOpen ? Visibility.Visible : Visibility.Collapsed;
+            body.Children.Add(_help);
             _status = new TextBlock { FontSize = 13, Margin = new Thickness(16, 10, 16, 0), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
-            root.Children.Add(_status);
+            body.Children.Add(_status);
             if (!string.IsNullOrWhiteSpace(model.Notice) && model.FullName.Length == 0)
             {
-                root.Children.Add(new Border
+                body.Children.Add(new Border
                 {
                     Margin = new Thickness(16, 14, 16, 16), CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 12, 14, 13),
                     Background = Brush("#F4F6F7"),
                     Child = new TextBlock { Text = model.Notice, Foreground = Brush("#374151"), FontSize = 14, TextWrapping = TextWrapping.Wrap },
                 });
+                if (model.TasksCount != null) body.Children.Add(BuildTasks(model));
                 card.Child = root;
                 return card;
             }
-            root.Children.Add(BuildEarnings(model));
-            if (model.Recent.Count > 0) root.Children.Add(BuildHistory(model));
-            root.Children.Add(BuildContact(model));
-            root.Children.Add(BuildCabinet(model));
+            body.Children.Add(BuildEarnings(model));
+            if (model.TasksCount != null) body.Children.Add(BuildTasks(model));
+            if (model.Recent.Count > 0) body.Children.Add(BuildHistory(model));
+            body.Children.Add(BuildContact(model));
+            body.Children.Add(BuildCabinet(model));
             card.Child = root;
             return card;
         }
@@ -172,12 +192,125 @@ namespace CustomerDisplay
                 Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top,
             };
             close.Click += (_, _) => Close();
-            Grid.SetColumn(close, 1);
+            var help = new Button
+            {
+                Content = "?", Width = 34, Height = 34, FontSize = 18, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 8, 0),
+                Foreground = Brushes.White, Background = Brush("#1E3A42"), BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top, ToolTip = "Что такое ePharm и как начисляются деньги",
+            };
+            help.Click += (_, _) => ToggleHelp();
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
+            buttons.Children.Add(help);
+            buttons.Children.Add(close);
+            Grid.SetColumn(buttons, 1);
 
             grid.Children.Add(left);
-            grid.Children.Add(close);
+            grid.Children.Add(buttons);
             header.Child = grid;
             return header;
+        }
+
+        /// <summary>Opens or closes the «?» panel; the window keeps its place.</summary>
+        public void ToggleHelp()
+        {
+            _helpOpen = !_helpOpen;
+            if (_help != null) _help.Visibility = _helpOpen ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private bool _helpOpen;
+
+        private static Border BuildHelp()
+        {
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Что такое ePharm", Foreground = Brush("#112B33"), FontSize = 15, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 8),
+            });
+            foreach (var line in HelpLines)
+            {
+                var row = new Grid { Margin = new Thickness(0, 0, 0, 7) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.Children.Add(new TextBlock { Text = "•", Foreground = Brush("#1F8A70"), FontSize = 14, FontWeight = FontWeights.Bold });
+                var text = new TextBlock
+                {
+                    Text = line, Foreground = Brush("#374151"), FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0, 0, 0),
+                };
+                Grid.SetColumn(text, 1);
+                row.Children.Add(text);
+                stack.Children.Add(row);
+            }
+            return new Border
+            {
+                Margin = new Thickness(16, 12, 16, 0), CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 12, 14, 6),
+                Background = Brush("#EEF7F3"), BorderBrush = Brush("#BFE3D6"), BorderThickness = new Thickness(1),
+                Child = stack, Visibility = Visibility.Collapsed,
+            };
+        }
+
+        /// <summary>The «?» text. Plain facts only: what shows up, who gets the money and when.</summary>
+        internal static readonly string[] HelpLines =
+        {
+            "ePharm подсказывает на кассе, что предложить покупателю: замену на товар партнёра или товар в дополнение к покупке.",
+            "Регистрироваться не нужно: ePharm узнаёт вас по входу в Стандарт-Н.",
+            "За каждую упаковку, проданную по подсказке, вам начисляется бонус. Его сумма видна в самой подсказке.",
+            "Начисления копятся за месяц («Заработано за месяц» и «На балансе» здесь) и в начале следующего месяца выплачиваются вам автоматически.",
+            "Курсы и все начисления: кнопка «Мой кабинет» или QR для телефона.",
+        };
+
+        private UIElement BuildTasks(StaffSelfModel model)
+        {
+            var count = model.TasksCount ?? 0;
+            var row = new Grid { Margin = new Thickness(16, 10, 16, 0) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = "Задания аптеки", Foreground = Brush("#6B7280"), FontSize = 12 });
+            _tasksText = new TextBlock { FontSize = 15, FontWeight = FontWeights.SemiBold };
+            ShowTasks(count, model.TasksOnline);
+            text.Children.Add(_tasksText);
+            row.Children.Add(text);
+            var open = new Button
+            {
+                Content = "Открыть", Padding = new Thickness(14, 6, 14, 6), FontSize = 13, FontWeight = FontWeights.SemiBold,
+                Foreground = Brush("#112B33"), Background = Brush("#E7EDEF"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            open.Click += (_, _) => OpenTasksRequested?.Invoke();
+            Grid.SetColumn(open, 1);
+            row.Children.Add(open);
+            return new Border
+            {
+                Margin = new Thickness(0), Padding = new Thickness(0), Child = row,
+            };
+        }
+
+        /// <summary>The task feed changed: only the tasks line changes, typed phone or password stay as they are.</summary>
+        public void UpdateTasks(int? count, bool online)
+        {
+            Model = Model with { TasksCount = count, TasksOnline = online };
+            if (count != null) ShowTasks(count.Value, online);
+        }
+
+        private void ShowTasks(int count, bool online)
+        {
+            if (_tasksText == null) return;
+            _tasksText.Text = !online ? "Нет связи, повторим позже" : count == 0 ? "Новых заданий нет" : count + " " + Plural(count, "задание", "задания", "заданий");
+            _tasksText.Foreground = Brush(count > 0 && online ? "#B23127" : "#171A2F");
+        }
+
+        /// <summary>After a successful save: the typed values are on the server, the inputs start empty.</summary>
+        public void ClearContactInputs()
+        {
+            _phone.Text = "";
+            _password.Password = "";
+        }
+
+        private static string Plural(int n, string one, string few, string many)
+        {
+            var mod100 = n % 100; var mod10 = n % 10;
+            if (mod100 is >= 11 and <= 14) return many;
+            return mod10 switch { 1 => one, >= 2 and <= 4 => few, _ => many };
         }
 
         private UIElement BuildEarnings(StaffSelfModel model)
@@ -265,10 +398,8 @@ namespace CustomerDisplay
             Detach(_phone);
             Detach(_password);
             stack.Children.Add(FieldLabel("Номер телефона"));
-            _phone.Text = "";
             stack.Children.Add(model.PhoneBound ? DoneLine("Телефон привязан") : _phone);
             stack.Children.Add(FieldLabel("Пароль для входа"));
-            _password.Password = "";
             stack.Children.Add(model.PasswordSet ? DoneLine("Пароль задан. Сменить его можно в кабинете по SMS") : _password);
             if (complete)
             {

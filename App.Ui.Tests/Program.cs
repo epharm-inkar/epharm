@@ -40,11 +40,13 @@ internal static partial class Program
     {
         var showcaseOnly = false;
         var staffSelfShowcaseOnly = false;
+        var noticeShowcaseOnly = false;
         foreach (var argument in args)
         {
             if (argument == "--allow-noninteractive") _allowNoninteractive = true;
             else if (argument == "--recommendation-showcase") showcaseOnly = true;
             else if (argument == "--staff-self-showcase") staffSelfShowcaseOnly = true;
+            else if (argument == "--notice-showcase") noticeShowcaseOnly = true;
             else if (argument.StartsWith("--output=", StringComparison.Ordinal) && argument.Length > "--output=".Length)
                 Output = Path.GetFullPath(argument["--output=".Length..]);
             else return 2;
@@ -60,6 +62,7 @@ internal static partial class Program
         var application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         if (showcaseOnly) return RunShowcaseOnly(application);
         if (staffSelfShowcaseOnly) return RunStaffSelfShowcaseOnly(application);
+        if (noticeShowcaseOnly) return RunNoticeShowcaseOnly(application);
         var watchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(90) };
         watchdog.Tick += (_, _) => {
             watchdog.Stop();

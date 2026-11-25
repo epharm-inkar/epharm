@@ -53,6 +53,22 @@ internal static partial class Program
                 $"Мильгамма композитум, вариант {i}", "Wörwag", "№30", 4200 + 100 * i, i == 2 ? 180 : 0,
                 "При боли в спине витамины группы B ускоряют восстановление.")))
             .ToList()),
+        // Two products in one receipt: one tab each, the last scanned (Нурофен) is open.
+        ("showcase-4-two-products-tabs", () => new()
+        {
+            ShowcaseOffer("T1", "substitution", "Терафлю от гриппа лимон", "№10",
+                "Боксгрипал порошок", "Вива Фарм", "№8", 2290, 250,
+                "Тот же парацетамол с фенилэфрином, дешевле на 600 ₸.", pharmacyQty: 7),
+            ShowcaseOffer("T2", "substitution", "Терафлю от гриппа лимон", "№10",
+                "Колдакт Флю Плюс", "Ranbaxy", "№10", 2540, 150,
+                "Те же компоненты от простуды, капсулы на 12 часов."),
+            ShowcaseOffer("N1", "substitution", "Нурофен Экспресс 200 мг", "№20",
+                "Ибуфен 200 мг", "Polfa", "№50", 1190, 200,
+                "Тот же ибупрофен 200 мг, упаковка в 2,5 раза больше.", pharmacyQty: 12),
+            ShowcaseOffer("N2", "crosssell", "Нурофен Экспресс 200 мг", "№20",
+                "Магнетаб таблетки", "Рубикон", "№90", 3990, 350,
+                "При головной боли от стресса магний помогает снять напряжение.", pharmacyQty: 3),
+        }),
     };
 
     private static Recommendation ShowcaseOffer(
@@ -61,7 +77,7 @@ internal static partial class Program
         decimal? pharmacyQty = null, string? goal = null, int? goalBonus = null) => new()
     {
         EventId = "SHOWCASE-EVENT-" + id, RuleId = "SHOWCASE-RULE-" + id, Kind = kind,
-        TriggerIpartId = "SHOWCASE-" + id, TriggerName = trigger, TriggerVolume = triggerVolume,
+        TriggerIpartId = "SHOWCASE-" + trigger, TriggerName = trigger, TriggerVolume = triggerVolume,
         RecommendSku = "SHOWCASE-SKU-" + id, RecommendName = name, RecommendVendor = vendor,
         RecommendVolume = volume, RecommendPrice = price, Bonus = bonus, Script = script,
         GoalText = goal, GoalBonus = goalBonus,
@@ -77,6 +93,7 @@ internal static partial class Program
         foreach (var (name, offers) in ShowcaseScenarios)
         {
             var window = new RecommendationWindow(offers(), autoCloseSec, _screen, "Нұрсая Әбдіқалық");
+            if (name.Contains("two-products")) window.PreferTrigger(null, "SHOWCASE-Нурофен Экспресс 200 мг", null);
             RecommendationWindows.Add(window);
             window.Show();
             await Idle();

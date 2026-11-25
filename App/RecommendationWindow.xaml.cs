@@ -12,8 +12,10 @@ namespace CustomerDisplay
 {
     /// <summary>
     /// Compact informational popup over Standard-N. Replacement and cross-sell suggestions are
-    /// shown together as mouse-scrollable lists (up to five rows per kind); there are no tabs or
-    /// accept/reject controls because the actual receipt remains the source of truth.
+    /// shown together as mouse-scrollable lists (up to five rows per kind). When several products of
+    /// the receipt have offers, one tab per product (25.11.2026, Grigoriy): the last scanned product
+    /// is open, earlier ones stay one click away. There are no accept/reject controls because the
+    /// actual receipt remains the source of truth.
     /// </summary>
     public partial class RecommendationWindow : Window
     {
@@ -63,18 +65,12 @@ namespace CustomerDisplay
             Topmost = true;
             SetPharmacistName(pharmacistName);
 
-            var input = recs ?? new List<Recommendation>();
-            _recs = input
-                .Where(rec => rec != null && rec.IsSubstitution)
-                .Take(RecommendationPopupModelBuilder.MaxPerKind)
-                .Concat(input
-                    .Where(rec => rec != null && !rec.IsSubstitution)
-                    .Take(RecommendationPopupModelBuilder.MaxPerKind))
-                .ToList();
+            // Every offer of the basket is kept; each product's tab shows at most 5 replacements and 5 cross-sells.
+            _recs = (recs ?? new List<Recommendation>()).Where(rec => rec != null).ToList();
             if (_recs.Count == 0) _recs.Add(new Recommendation());
 
             _targetScreen = targetScreen;
-            Bind(RecommendationPopupModelBuilder.Build(_recs));
+            Render();
 
             if (autoCloseSec > 0)
             {
@@ -124,7 +120,7 @@ namespace CustomerDisplay
             _recs.Clear();
             _recs.AddRange(updated);
             if (_recs.Count == 0) { Close(); return; }
-            Bind(RecommendationPopupModelBuilder.Build(_recs));
+            Render();
             if (freshResponse)
             {
                 _autoClose?.Stop();
@@ -133,6 +129,102 @@ namespace CustomerDisplay
             // New rows need native display evidence too, without stealing scanner focus.
             _displayAnnounced = false;
             Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(TryAnnounceDisplayed));
+        }
+
+        private string? _selectedTrigger;
+
+        /// <summary>Offers on screen: the open product tab (or the only product), at most 5 per kind.</summary>
+        public IReadOnlyList<Recommendation> VisibleRecommendations => LimitPerKind(OffersFor(_selectedTrigger));
+
+        /// <summary>The basket product an offer belongs to: barcode, then Standard-N part, then catalogue id or name.</summary>
+        internal static string TriggerKey(Recommendation r) => RecommendationPopupModelBuilder.TriggerKey(r);
+
+        /// <summary>Products with offers in the order the server ranked them (the scanned product first).</summary>
+        internal IReadOnlyList<string> TriggerKeys => _recs.Select(TriggerKey).Distinct(StringComparer.Ordinal).ToList();
+
+        private List<Recommendation> OffersFor(string? key)
+        {
+            var keys = TriggerKeys;
+            if (keys.Count <= 1) return _recs;
+            var selected = key != null && keys.Contains(key) ? key : keys[0];
+            return _recs.Where(r => TriggerKey(r) == selected).ToList();
+        }
+
+        private static List<Recommendation> LimitPerKind(IEnumerable<Recommendation> source)
+        {
+            var all = source.ToList();
+            return all.Where(r => r.IsSubstitution).Take(RecommendationPopupModelBuilder.MaxPerKind)
+                .Concat(all.Where(r => !r.IsSubstitution).Take(RecommendationPopupModelBuilder.MaxPerKind)).ToList();
+        }
+
+        /// <summary>
+        /// Opens the tab of the product just scanned (barcode, Standard-N part or name). Unknown product: the
+        /// current tab stays. The newly visible offers need display evidence before they count as shown.
+        /// </summary>
+        public void PreferTrigger(string? barcode, string? ipartId, string? name)
+        {
+            var match = _recs.FirstOrDefault(r =>
+                (!string.IsNullOrWhiteSpace(barcode) && string.Equals(r.TriggerBarcode?.Trim(), barcode.Trim(), StringComparison.Ordinal)) ||
+                (!string.IsNullOrWhiteSpace(ipartId) && string.Equals(r.TriggerIpartId?.Trim(), ipartId.Trim(), StringComparison.Ordinal)) ||
+                (!string.IsNullOrWhiteSpace(name) && string.Equals(r.TriggerName?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase)));
+            if (match == null) return;
+            SelectTrigger(TriggerKey(match));
+        }
+
+        private void SelectTrigger(string key)
+        {
+            if (_selectedTrigger == key) return;
+            _selectedTrigger = key;
+            Render();
+            _displayAnnounced = false;
+            Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(TryAnnounceDisplayed));
+        }
+
+        private void Render()
+        {
+            var keys = TriggerKeys;
+            if (_selectedTrigger == null || !keys.Contains(_selectedTrigger)) _selectedTrigger = keys.FirstOrDefault();
+            Bind(RecommendationPopupModelBuilder.Build(VisibleRecommendations));
+            RenderTabs(keys);
+        }
+
+        private void RenderTabs(IReadOnlyList<string> keys)
+        {
+            TriggerTabs.Children.Clear();
+            TriggerTabsPanel.Visibility = keys.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+            if (keys.Count <= 1) return;
+            foreach (var key in keys)
+            {
+                var offers = LimitPerKind(_recs.Where(r => TriggerKey(r) == key));
+                var first = offers.FirstOrDefault();
+                var label = TabLabel(first?.TriggerName) + " · " + offers.Count;
+                var selected = key == _selectedTrigger;
+                var tab = new System.Windows.Controls.Button
+                {
+                    Content = new System.Windows.Controls.TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 230 },
+                    Padding = new Thickness(11, 6, 11, 6),
+                    Margin = new Thickness(0, 0, 6, 6),
+                    FontSize = 13.5,
+                    FontWeight = selected ? FontWeights.Bold : FontWeights.SemiBold,
+                    Foreground = selected ? System.Windows.Media.Brushes.White : (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#171A2F")!,
+                    Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom(selected ? "#171A2F" : "#F1F2F4")!,
+                    BorderThickness = new Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Focusable = false,
+                    ToolTip = first?.TriggerName,
+                };
+                var captured = key;
+                tab.Click += (_, _) => SelectTrigger(captured);
+                TriggerTabs.Children.Add(tab);
+            }
+        }
+
+        /// <summary>Short tab text: the product name without the pack details that follow the dose.</summary>
+        internal static string TabLabel(string? triggerName)
+        {
+            var name = (triggerName ?? "").Trim();
+            if (name.Length == 0) return "Товар";
+            return name.Length <= 26 ? name : name[..26].TrimEnd() + "…";
         }
 
         private void Bind(RecommendationPopupModel model)
