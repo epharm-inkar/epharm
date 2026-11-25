@@ -204,6 +204,8 @@ describe('DashboardPage — рендер', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Показано рекомендаций')).toBeInTheDocument()
     expect(screen.getByText('33.3% конверсия')).toBeInTheDocument()
+    // «Принято» is a sale in the receipt now (the till has no accept key): the tile says so.
+    expect(screen.getByText('товар попал в чек')).toBeInTheDocument()
     expect(screen.getByText('из 6')).toBeInTheDocument()
   })
 

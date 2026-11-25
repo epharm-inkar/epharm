@@ -138,6 +138,10 @@ product, with timing. No bonus/payout side effects.
   avg/median time-to-sale, attributed revenue) + a single chronological **log merged from two
   tables** — `recommendation_events` (показ) and `pos_sales` (продажа) — each row with exact time,
   type chip, pharmacy, trusted pharmacist, and attribution source. Auto-refreshes every 15 s.
+- "Accepted" in the other admin counters (Dashboard tiles and top lists, Lift, the pharmacy registry
+  `rulesAccepted`) means the same thing: the row has `sold_at`, or the legacy `outcome='accepted'` (counted once).
+  The current till never sends an outcome, so counting only `outcome` left these counters at zero forever.
+  `outcome` itself is not written by the attribution: the bonus reservation depends on it.
 
 ## Reconciliation Sources
 

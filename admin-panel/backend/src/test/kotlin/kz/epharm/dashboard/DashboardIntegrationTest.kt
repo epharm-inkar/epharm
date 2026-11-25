@@ -221,6 +221,62 @@ class DashboardIntegrationTest {
             .andExpect(jsonPath("$.topProducts[0].revenue").value(20_000))
     }
 
+    /**
+     * Regression for «показано 467, принято 0»: since POSM 1.0.13 the till popup has no accept key and never
+     * calls /outcome, so every event stays `shown`. The only evidence of a followed tip is the sale attribution
+     * (`sold_at`), and that is what «Принято» must count. A legacy click is still counted, once per row.
+     */
+    @Test
+    fun `accepted counts the product sold in the receipt although the till never reports an outcome`() {
+        eventRepository.deleteAll()
+        val shownAt = Instant.now().minusSeconds(600)
+        fun event(id: String, outcome: RecommendationOutcome = RecommendationOutcome.shown, sold: Boolean = false) =
+            RecommendationEventEntity(
+                id = id,
+                sessionId = "s_$id",
+                pharmacistId = "ph_ph_hi",
+                pharmacyId = "ph_hi",
+                ruleId = "r_active",
+                recommendSku = "p_aquamaris",
+                recommendName = "Аквамарис",
+                expectedAmount = 1_000,
+                bonus = 100,
+                shownAt = shownAt,
+                soldAt = if (sold) shownAt.plusSeconds(40) else null,
+                saleId = if (sold) "sale_$id" else null,
+                secondsToSale = if (sold) 40 else null,
+            ).also { it.outcome = outcome }
+        eventRepository.saveAll(
+            (1..4).map { event("plain_$it") } + // shown, nothing came of it: not accepted
+                (1..3).map { event("sold_$it", sold = true) } + // product in the receipt, outcome still `shown`
+                (1..2).map { event("legacy_$it", RecommendationOutcome.accepted) } + // historical click
+                event("both", RecommendationOutcome.accepted, sold = true), // click and sale: one row, counted once
+        )
+        eventRepository.flush()
+
+        mockMvc.perform(get("/api/admin/dashboard/summary").header("Authorization", bearer))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.impressions").value(10))
+            .andExpect(jsonPath("$.accepts").value(6)) // 3 sold + 2 legacy + 1 both
+            .andExpect(jsonPath("$.convRate").value(60.0))
+            .andExpect(jsonPath("$.topRules[0].id").value("r_active"))
+            .andExpect(jsonPath("$.topRules[0].accepts").value(6))
+            .andExpect(jsonPath("$.topPharmacies[0].id").value("ph_hi"))
+            .andExpect(jsonPath("$.topPharmacies[0].rulesAccepted").value(6))
+            .andExpect(jsonPath("$.topProducts[0].id").value("p_aquamaris"))
+            .andExpect(jsonPath("$.topProducts[0].revenue").value(6_000))
+
+        // Lift and the pharmacy registry read the per-pharmacy aggregate; the product table reads the per-SKU one.
+        val byPharmacy = eventRepository.aggregateByPharmacySince(Instant.EPOCH).single { it.pharmacyId == "ph_hi" }
+        assertEquals(10L, byPharmacy.impressions)
+        assertEquals(6L, byPharmacy.accepts)
+        val bySku = eventRepository.aggregateBySkuSince(Instant.EPOCH).single { it.sku == "p_aquamaris" }
+        assertEquals(6L, bySku.accepts)
+        assertEquals(6_000L, bySku.revenue)
+        // The attribution is analytics only: the stored outcome of a sold row is untouched.
+        assertEquals(RecommendationOutcome.shown, eventRepository.findById("sold_1").get().outcome)
+    }
+
     @Test
     fun `GET summary без Bearer → 401`() {
         mockMvc.perform(get("/api/admin/dashboard/summary"))

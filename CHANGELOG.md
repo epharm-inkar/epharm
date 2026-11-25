@@ -185,6 +185,12 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Fixed
 
+- «Принято» in the admin was always 0: the Dashboard tiles and top lists, Lift and the pharmacy registry column
+  `rulesAccepted` counted `recommendation_events.outcome='accepted'`, which no till sends since POSM 1.0.13
+  made the popup informational (no accept key, no `/outcome` call; on 25.11 there were 0 accepted among 113 thousand
+  events and only 2 rejections). A recommendation now counts as accepted when its product was sold in the
+  same receipt (`sold_at`, set by the existing attribution) or carries a legacy accepted outcome, once per row.
+  The Dashboard tile gets the caption «товар попал в чек». The stored `outcome` and the bonus path are untouched.
 - POSM 1.0.92 reads receipts and determines the seller on tills where Standard-N keeps earlier cashier sessions
   open: sessions that started before the running cashier program are ignored, both by the receipt reader and by
   the pharmacist login. Standard-N refreshes the heartbeat of every unclosed session of a workstation and a
