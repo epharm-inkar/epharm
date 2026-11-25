@@ -59,7 +59,7 @@ class PharmacistActivityIntegrationTest {
     }
 
     @Test
-    fun `a sale, a tip and a cabinet sign-in count as work with ePharm; old activity and silence do not`() {
+    fun `a sale, a tip and a cabinet sign-in count as work with ePharm, old activity and silence do not`() {
         val now = Instant.now()
         pharmacist("act_sale", "990101300001")
         pharmacist("act_tip", "990101300002")
