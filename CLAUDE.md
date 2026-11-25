@@ -32,6 +32,7 @@
 - Админка: `cd admin-panel/frontend && npm test`
 - Мобилка: `export PATH="$HOME/development/flutter/bin:$PATH" && flutter analyze && flutter test`
 - Деплой: см. `docs/06-deployment-and-ops.md` (git archive → scp → compose build; НЕ git на сервере)
+- Сервер и админка выходят одной командой примерно за минуту: `git fetch -q origin && git show origin/main:tools/release/fast-release.sh | bash -s --` (docs/06, «Fast release of the server and admin»). Сразу после слияния в main запусти её с `--prebuild`: сервер соберёт main заранее. Кассу (POSM) она не выпускает, у кассы свой пилот.
 
 ## Правила
 

@@ -4,15 +4,17 @@
 
 FROM eclipse-temurin:22-jdk AS build
 WORKDIR /app
-# Сначала только gradle-метаданные и загрузка Gradle с зависимостями отдельным слоем: Docker берёт его из кэша,
-# пока не менялись файлы сборки, и выпуск с новым кодом только компилирует (на сервере старый сборщик Docker,
-# кэша --mount там нет). Номер выпуска сюда не передаётся: ARG перед RUN сбрасывал бы этот кэш каждый раз.
+# Gradle и зависимости живут в кэше сборщика (BuildKit cache mount epharm-gradle) и переживают и сборки, и правки
+# файлов сборки: после правки build.gradle.kts докачивается только новое. Отдельный слой `gradlew dependencies` (#221)
+# терял кэш при каждой такой правке и качал зависимости всех конфигураций, тестовых тоже: 941 с на сервере 25.11.2026.
+# Docker 29 на сервере держит такой кэш между сборками docker compose build (проверено 25.11.2026, INK-199).
+# Номер выпуска сюда не передаётся: ARG перед RUN сбрасывал бы кэш слоёв каждый раз.
 COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY gradle ./gradle
-RUN chmod +x gradlew && ./gradlew --no-daemon dependencies > /dev/null
-# Затем исходники и сборка boot-jar (тесты гоняет CI, здесь -x test для скорости).
 COPY src ./src
-RUN ./gradlew --no-daemon clean bootJar verifyMerchandisingArtifact -x test
+# Тесты гоняет CI до слияния, здесь -x test.
+RUN --mount=type=cache,id=epharm-gradle,target=/root/.gradle,sharing=locked \
+    chmod +x gradlew && ./gradlew --no-daemon clean bootJar verifyMerchandisingArtifact -x test
 
 FROM eclipse-temurin:22-jre AS runtime
 # curl нужен для HEALTHCHECK (в JRE-образе его нет). Слой до ARG выпуска, чтобы он не собирался заново.
