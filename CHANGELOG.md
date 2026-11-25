@@ -7,6 +7,16 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Pharmacist tasks for the till (Grigoriy, 25.11.2026: a task is an active training assignment, no separate task
+  system): `POST /api/posm/self/tasks` (device key, same body as `/api/posm/self`) lists the courses HQ assigned to
+  the person signed in to Standard-N at the till, with how to take them («Откройте «Мой кабинет», раздел «Обучение»,
+  курс «…».» plus the program's short description), the completion bonus (`rewardKzt`, the version's
+  `completion_bonus`, null without one), due date, progress and state `new` / `in_progress` / `overdue` / `done`, plus
+  `newCount` and `openCount`. Finished courses stay 14 days; cancelled ones and those HQ has not started yet are
+  hidden. The state follows the training module, so a course completed in the cabinet turns the task done.
+  Read-only: no task was created and nothing is sent; tills show the list once a POSM build reads it.
+- Training admin, «Программы»: «выполнили N из M» under each program's assignment count
+  (`TrainingProgramDto.completedAssignments`, current version), so HQ sees per program how many finished it.
 - «ePharm на технических работах» (Grigoriy, 25.11.2026): HQ switches it in `posm_notice` (`PUT
   /api/admin/posm-notice`, HQ roles); the till reads its view about once a minute (`GET /api/posm/notice`, device
   key). POSM 1.0.95 then opens a notice from the ePharm icon instead of the personal window, puts an amber dot on the

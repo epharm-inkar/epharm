@@ -122,6 +122,10 @@ POSM:
 - Real SMS provider is not connected; dev OTP may be used in pilot by decision.
 - Storefront/PIM is external Medusa; this repo consumes it through backend proxy.
 - Medusa images may be HTTP; browser/mobile should use backend media proxy.
+- Задания фармацевта (25.11.2026) = его активные назначения обучения, отдельной системы заданий нет. Касса
+  читает их через `POST /api/posm/self/tasks`; правила показа, статусов и порядка в
+  `training/tasks/PharmacistTaskFeed.kt` (чистая функция, `PharmacistTaskFeedTest`). Награда = `completion_bonus`
+  версии программы: `courses.bonus` в кошелёк не начисляется (импорт пакета копирует его в версию).
 
 ## Design
 
