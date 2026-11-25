@@ -135,12 +135,14 @@ class PosmSelfTasksIntegrationTest {
 
         val body = feed(body = mapOf("pharmacyId" to pharmacy, "standardNUserId" to "41"))
 
-        assertEquals(setOf("tasks", "newCount", "openCount"), body.fieldNames().asSequence().toSet())
+        assertEquals(setOf("tasks", "newCount", "openCount", "requiredOpenCount"), body.fieldNames().asSequence().toSet())
         val list = body["tasks"].toList()
         assertEquals(listOf(overdue, fresh, started, paused, done).map(UUID::toString), list.map { it["id"].asText() })
         assertEquals(listOf("overdue", "new", "in_progress", "in_progress", "done"), list.map { it["status"].asText() })
         assertEquals(1, body["newCount"].asInt())
         assertEquals(4, body["openCount"].asInt())
+        // Required by default; the paused course waits and does not light the till's red dot.
+        assertEquals(3, body["requiredOpenCount"].asInt())
 
         val task = list[1]
         assertEquals(
@@ -184,6 +186,7 @@ class PosmSelfTasksIntegrationTest {
             stage, assignment, stageDefinition,
         )
         assertEquals("new", feed()["tasks"][0]["status"].asText())
+        assertEquals(1, feed()["requiredOpenCount"].asInt())
 
         training.startAssignment(person, assignment)
         assertEquals("in_progress", feed()["tasks"][0]["status"].asText())
@@ -195,6 +198,7 @@ class PosmSelfTasksIntegrationTest {
         assertFalse(task["completedAt"].isNull)
         assertEquals(1200L, task["rewardKzt"].asLong())
         assertEquals(0, feed()["openCount"].asInt())
+        assertEquals(0, feed()["requiredOpenCount"].asInt())
         assertEquals(1200L, jdbc.queryForObject("SELECT amount FROM training_rewards WHERE assignment_id = ?", Long::class.java, assignment))
     }
 

@@ -46,7 +46,18 @@ namespace CustomerDisplay.Models.Posm
         DateTimeOffset? DueAt,
         DateTimeOffset? CompletedAt);
 
-    public sealed record PosmSelfTasksDto(List<PosmSelfTaskDto>? Tasks, int NewCount, int OpenCount);
+    /// <summary>
+    /// RequiredOpenCount (servers from the 1.0.99 release): required courses not finished yet; null from an older server.
+    /// </summary>
+    public sealed record PosmSelfTasksDto(List<PosmSelfTaskDto>? Tasks, int NewCount, int OpenCount, int? RequiredOpenCount = null);
+
+    /// <summary>
+    /// A notice from HQ for the person at this till (POST /api/posm/self/messages, 1.0.99). Pending = shown until the
+    /// person closes it with ×; ClosedAt = when they did (on any till).
+    /// </summary>
+    public sealed record PosmSelfMessageDto(string Id, string Title, string Text, DateTimeOffset SentAt, DateTimeOffset? ClosedAt, bool? Pending);
+
+    public sealed record PosmSelfMessagesDto(List<PosmSelfMessageDto>? Messages, int PendingCount);
 
     /// <summary>Either the value, or a message for the pharmacist (server text or a network problem).</summary>
     public sealed record PosmSelfResult<T>(T? Value, string? Error) where T : class

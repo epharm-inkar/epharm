@@ -56,6 +56,8 @@ public partial class MainWindow
         {
             _maintenanceWindow?.Update(notice.Title, notice.Message);
             _selfWindow?.Close();
+            // Notices from HQ wait for the end of the works (they stay open on the server).
+            CloseHqMessageQuietly();
         }
         else
         {
@@ -69,6 +71,11 @@ public partial class MainWindow
         }
         if (announce) ShowEpharmLiveToast();
         else FlushPendingWelcome();
+        if (!EpharmPaused)
+        {
+            OnMessagesStamp(notice.MessagesAt);
+            if (wasPaused) ShowNextHqMessage();
+        }
     }
 
     /// <summary>The ePharm icon during the works: the notice with the HQ text.</summary>
@@ -95,7 +102,13 @@ public partial class MainWindow
             name + "нажмите, чтобы открыть свой кабинет ePharm. Подсказки по чеку снова будут появляться здесь.",
             PharmacistScreen());
         toast.Clicked += () => Dispatcher.BeginInvoke(new Action(() => _ = OpenStaffSelfAsync()));
-        toast.Closed += (_, _) => { if (ReferenceEquals(_liveToast, toast)) _liveToast = null; };
+        toast.Closed += (_, _) =>
+        {
+            if (!ReferenceEquals(_liveToast, toast)) return;
+            _liveToast = null;
+            // A notice from HQ waited for the corner (1.0.99).
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ShowNextHqMessage));
+        };
         _liveToast = toast;
         toast.Show();
         CountLiveToastAsWelcome();

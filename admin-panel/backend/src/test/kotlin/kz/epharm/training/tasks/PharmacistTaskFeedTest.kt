@@ -161,6 +161,35 @@ class PharmacistTaskFeedTest {
         assertTrue(feed.tasks.isEmpty())
         assertEquals(0, feed.newCount)
         assertEquals(0, feed.openCount)
+        assertEquals(0, feed.requiredOpenCount)
+    }
+
+    @Test fun `the till's red dot counts required courses not finished yet`() {
+        val feed = PharmacistTaskFeed.build(
+            listOf(
+                row(not_started, id = 1),
+                row(waiting_online, id = 2, startedAt = days(-1), progress = 30),
+                row(not_started, id = 3, dueAt = days(-2)),
+                row(in_progress, id = 4, startedAt = days(-1), required = false),
+                row(paused, id = 5, startedAt = days(-3)),
+                row(completed, id = 6, completedAt = days(-1)),
+                row(cancelled, id = 7),
+                row(scheduled, id = 8, startsAt = days(3)),
+            ),
+            now,
+        )
+        // New, in progress and overdue required courses; not the optional one, the paused one, a finished,
+        // a cancelled one, nor one HQ has not started yet.
+        assertEquals(3, feed.requiredOpenCount)
+        assertEquals(5, feed.openCount)
+    }
+
+    @Test fun `finishing the last required course turns the red dot off`() {
+        val before = PharmacistTaskFeed.build(listOf(row(in_progress, id = 1, startedAt = days(-1), progress = 90)), now)
+        assertEquals(1, before.requiredOpenCount)
+        val after = PharmacistTaskFeed.build(listOf(row(completed, id = 1, completedAt = now, progress = 100)), now)
+        assertEquals(0, after.requiredOpenCount)
+        assertEquals(DONE, after.tasks.single().status)
     }
 
     @Test fun `task fields come from the assignment and its program version`() {

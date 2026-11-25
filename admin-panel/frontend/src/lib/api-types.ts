@@ -1219,6 +1219,43 @@ export interface TillCommandDto {
   artifactBytes: number | null
 }
 
+// ─── Уведомления фармацевтам на кассах (POSM 1.0.99, /api/admin/posm-messages, только HQ) ───
+export type PosmMessageAudience = 'all' | 'pharmacies' | 'pharmacists'
+
+export interface CreatePosmMessageRequest {
+  title: string
+  text: string
+  audience: PosmMessageAudience
+  pharmacyIds?: string[]
+  pharmacistIds?: string[]
+  /** Сколько дней кассы показывают уведомление (1-30, по умолчанию 7). */
+  days?: number
+}
+
+export interface PosmMessageDto {
+  id: string
+  title: string
+  text: string
+  audience: PosmMessageAudience
+  /** Выбранные аптеки или сотрудники; 0 для «всем». */
+  targetCount: number
+  /** Названия первых выбранных (не больше пяти). */
+  targetNames: string[]
+  /** Активные карточки фармацевтов в выборке на момент отправки. */
+  recipientsTotal: number
+  /** Сколько человек увидели уведомление на кассе. */
+  shownCount: number
+  /** Сколько человек закрыли его крестиком. */
+  closedCount: number
+  createdAt: string
+  createdBy: string
+  expiresAt: string
+  withdrawnAt: string | null
+  withdrawnBy: string | null
+  /** Кассы ещё показывают: не снято и срок не прошёл. */
+  active: boolean
+}
+
 // ─── AI-Exam (Этап 3.6) — банк вопросов (результаты/сертификаты в Этапе 4) ───
 export type ExamQuestionKind = 'factual' | 'comparative' | 'scenario'
 

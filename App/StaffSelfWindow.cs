@@ -14,8 +14,11 @@ using QRCoder;
 
 namespace CustomerDisplay
 {
-    /// <summary>A task from HQ (a course to take): what to do, by when, what the person gets, and its status.</summary>
-    public sealed record StaffSelfTask(string Title, string Instructions, long? RewardKzt, string Status, int ProgressPct, DateTimeOffset? DueAt);
+    /// <summary>
+    /// A task from HQ (a course to take): what to do, by when, what the person gets, and its status. Required: an
+    /// obligatory course; while it is not done the ePharm icon keeps its red dot (1.0.99).
+    /// </summary>
+    public sealed record StaffSelfTask(string Title, string Instructions, long? RewardKzt, string Status, int ProgressPct, DateTimeOffset? DueAt, bool Required = false);
 
     /// <summary>One credited recommendation in the pharmacist's history.</summary>
     public sealed record StaffSelfReward(string Kind, string Product, long BonusKzt, DateTimeOffset At);
@@ -43,6 +46,10 @@ namespace CustomerDisplay
         public bool TasksOnline { get; init; } = true;
         /// <summary>Tasks from HQ (courses), newest first; done ones stay visible for two weeks.</summary>
         public IReadOnlyList<StaffSelfTask> HqTasks { get; init; } = Array.Empty<StaffSelfTask>();
+        /// <summary>Notices from HQ not closed yet; null when this server has no notices (the row is hidden).</summary>
+        public int? MessagesPending { get; init; }
+        /// <summary>Notices of the last 30 days, closed ones included.</summary>
+        public int MessagesTotal { get; init; }
     }
 
     /// <summary>
@@ -60,8 +67,12 @@ namespace CustomerDisplay
         public event Action<string?, string?>? SaveContactRequested;
         /// <summary>«Задания аптеки»: the host opens the tasks window (the former tray icon of its own).</summary>
         public event Action? OpenTasksRequested;
-        private Border? _help;
+        /// <summary>«Что такое ePharm» (1.0.99, instead of the small «?»): the host opens the page.</summary>
+        public event Action? WhatIsEpharmRequested;
+        /// <summary>«Уведомления»: the host opens the history of notices from HQ.</summary>
+        public event Action? OpenMessagesRequested;
         private TextBlock? _tasksText;
+        private TextBlock? _messagesText;
 
         private readonly TextBox _phone = NewField("+7 ___ ___ __ __");
         private readonly PasswordBox _password = NewPassword();
@@ -143,9 +154,7 @@ namespace CustomerDisplay
                 Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 MaxHeight = Math.Max(240, (MaxHeight is > 0 and < double.PositiveInfinity ? MaxHeight : SystemParameters.WorkArea.Height - 48) - 130),
             });
-            _help = BuildHelp();
-            _help.Visibility = _helpOpen ? Visibility.Visible : Visibility.Collapsed;
-            body.Children.Add(_help);
+            body.Children.Add(BuildAbout());
             _status = new TextBlock { FontSize = 13, Margin = new Thickness(16, 10, 16, 0), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
             body.Children.Add(_status);
             if (!string.IsNullOrWhiteSpace(model.Notice) && model.FullName.Length == 0)
@@ -162,6 +171,7 @@ namespace CustomerDisplay
             }
             body.Children.Add(BuildEarnings(model));
             if (model.HqTasks.Count > 0) body.Children.Add(BuildHqTasks(model));
+            if (model.MessagesPending != null) body.Children.Add(BuildMessages(model));
             if (model.TasksCount != null) body.Children.Add(BuildTasks(model));
             if (model.Recent.Count > 0) body.Children.Add(BuildHistory(model));
             body.Children.Add(BuildContact(model));
@@ -204,15 +214,7 @@ namespace CustomerDisplay
                 Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top,
             };
             close.Click += (_, _) => Close();
-            var help = new Button
-            {
-                Content = "?", Width = 34, Height = 34, FontSize = 18, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 8, 0),
-                Foreground = Brushes.White, Background = Brush("#1E3A42"), BorderThickness = new Thickness(0),
-                Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Top, ToolTip = "Что такое ePharm и как начисляются деньги",
-            };
-            help.Click += (_, _) => ToggleHelp();
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
-            buttons.Children.Add(help);
             buttons.Children.Add(close);
             Grid.SetColumn(buttons, 1);
 
@@ -222,55 +224,86 @@ namespace CustomerDisplay
             return header;
         }
 
-        /// <summary>Opens or closes the «?» panel; the window keeps its place.</summary>
-        public void ToggleHelp()
-        {
-            _helpOpen = !_helpOpen;
-            if (_help != null) _help.Visibility = _helpOpen ? Visibility.Visible : Visibility.Collapsed;
-        }
+        /// <summary>Kept for the 1.0.94 showcase: the «?» panel became the «Что такое ePharm» page (1.0.99).</summary>
+        public void ToggleHelp() => WhatIsEpharmRequested?.Invoke();
 
-        private bool _helpOpen;
-
-        private static Border BuildHelp()
+        /// <summary>
+        /// «Что такое ePharm» right under the header: a clear entry instead of the small «?» (Grigoriy, 25.11.2026).
+        /// </summary>
+        private UIElement BuildAbout()
         {
-            var stack = new StackPanel();
-            stack.Children.Add(new TextBlock
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(new Border
             {
-                Text = "Что такое ePharm", Foreground = Brush("#112B33"), FontSize = 15, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 8),
-            });
-            foreach (var line in HelpLines)
-            {
-                var row = new Grid { Margin = new Thickness(0, 0, 0, 7) };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.Children.Add(new TextBlock { Text = "•", Foreground = Brush("#1F8A70"), FontSize = 14, FontWeight = FontWeights.Bold });
-                var text = new TextBlock
+                Width = 30, Height = 30, CornerRadius = new CornerRadius(15), Background = Brush("#1F8A70"), VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
                 {
-                    Text = line, Foreground = Brush("#374151"), FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0, 0, 0),
-                };
-                Grid.SetColumn(text, 1);
-                row.Children.Add(text);
-                stack.Children.Add(row);
-            }
-            return new Border
+                    Text = "i", Foreground = Brushes.White, FontSize = 17, FontWeight = FontWeights.Bold, FontFamily = new FontFamily("Georgia"),
+                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                },
+            });
+            var text = new StackPanel { Margin = new Thickness(12, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = "Что такое ePharm", Foreground = Brush("#112B33"), FontSize = 15.5, FontWeight = FontWeights.Bold });
+            text.Children.Add(new TextBlock
             {
-                Margin = new Thickness(16, 12, 16, 0), CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 12, 14, 6),
-                Background = Brush("#EEF7F3"), BorderBrush = Brush("#BFE3D6"), BorderThickness = new Thickness(1),
-                Child = stack, Visibility = Visibility.Collapsed,
+                Text = "Как пользоваться на кассе и как вы зарабатываете", Foreground = Brush("#4B6B66"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
+            });
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            var chevron = new TextBlock { Text = "›", Foreground = Brush("#1F8A70"), FontSize = 26, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(chevron, 2);
+            row.Children.Add(chevron);
+            var entry = new Button
+            {
+                Content = row, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12, 9, 12, 9),
+                Margin = new Thickness(16, 12, 16, 0), Background = Brush("#EEF7F3"), BorderBrush = Brush("#BFE3D6"),
+                BorderThickness = new Thickness(1), Cursor = Cursors.Hand, ToolTip = "Открыть страницу «Что такое ePharm»",
             };
+            entry.Click += (_, _) => WhatIsEpharmRequested?.Invoke();
+            return entry;
         }
 
-        /// <summary>The «?» text. Plain facts only: what shows up, who gets the money and when.</summary>
-        internal static readonly string[] HelpLines =
+        /// <summary>«Уведомления»: how many notices from HQ wait to be read, and the button to the history.</summary>
+        private UIElement BuildMessages(StaffSelfModel model)
         {
-            "ePharm подсказывает на кассе, на какой товар партнёра можно заменить то, что просит покупатель. Подсказка появляется сама, когда вы сканируете товар.",
-            "Регистрироваться не нужно: ePharm узнаёт вас по входу в Стандарт-Н.",
-            "За каждую упаковку, проданную по подсказке, вам начисляется бонус. Сумма видна в самой подсказке.",
-            "Когда начисляется: касса отправляет чек на сервер сразу после продажи, бонус появляется здесь через несколько минут. Если продажу нужно проверить, бонус появится после проверки.",
-            "Выплата: начисления копятся за месяц («Заработано за месяц»), в начале следующего месяца по ним составляется ведомость и выплачиваются деньги.",
-            "Задания: просьбы от HQ, например пройти курс. Новое задание отмечается красной точкой на значке ePharm.",
-            "Курсы и все начисления: кнопка «Мой кабинет» или QR для телефона.",
-        };
+            var row = new Grid { Margin = new Thickness(16, 10, 16, 0) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = "Уведомления", Foreground = Brush("#6B7280"), FontSize = 12 });
+            _messagesText = new TextBlock { FontSize = 15, FontWeight = FontWeights.SemiBold };
+            ShowMessages(model.MessagesPending ?? 0, model.MessagesTotal);
+            text.Children.Add(_messagesText);
+            row.Children.Add(text);
+            var open = new Button
+            {
+                Content = "Открыть", Padding = new Thickness(14, 6, 14, 6), FontSize = 13, FontWeight = FontWeights.SemiBold,
+                Foreground = Brush("#112B33"), Background = Brush("#E7EDEF"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            open.Click += (_, _) => OpenMessagesRequested?.Invoke();
+            Grid.SetColumn(open, 1);
+            row.Children.Add(open);
+            return row;
+        }
+
+        /// <summary>A notice was closed or new ones came: only the notices line changes.</summary>
+        public void UpdateMessages(int? pending, int total)
+        {
+            Model = Model with { MessagesPending = pending, MessagesTotal = total };
+            if (pending != null) ShowMessages(pending.Value, total);
+        }
+
+        private void ShowMessages(int pending, int total)
+        {
+            if (_messagesText == null) return;
+            _messagesText.Text = pending > 0 ? "Новых: " + pending
+                : total > 0 ? "Новых нет, за 30 дней: " + total : "Пока нет";
+            _messagesText.Foreground = Brush(pending > 0 ? "#B23127" : "#171A2F");
+        }
 
         private UIElement BuildTasks(StaffSelfModel model)
         {
@@ -302,7 +335,18 @@ namespace CustomerDisplay
         private UIElement BuildHqTasks(StaffSelfModel model)
         {
             var stack = new StackPanel { Margin = new Thickness(16, 10, 16, 0) };
-            stack.Children.Add(new TextBlock { Text = "МОИ ЗАДАНИЯ", Foreground = Brush("#9AA2AE"), FontSize = 11, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
+            var heading = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+            heading.Children.Add(new TextBlock { Text = "МОИ ЗАДАНИЯ", Foreground = Brush("#9AA2AE"), FontSize = 11, FontWeight = FontWeights.Bold });
+            if (model.HqTasks.Any(t => t.Required && t.Status != "done"))
+            {
+                // The same red dot as on the ePharm icon: an obligatory course is not finished yet.
+                heading.Children.Add(new Ellipse
+                {
+                    Width = 8, Height = 8, Fill = Brush("#E0392B"), Margin = new Thickness(7, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center, ToolTip = "Обязательный курс не пройден",
+                });
+            }
+            stack.Children.Add(heading);
             foreach (var task in model.HqTasks.Take(4))
             {
                 var box = new Border

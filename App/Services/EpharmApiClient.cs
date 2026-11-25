@@ -25,6 +25,27 @@ namespace CustomerDisplay.Services
         Rejected,
     }
 
+    /// <summary>Outcome of a notice report (shown or closed).</summary>
+    public enum MessageAckResult
+    {
+        Done,
+        /// <summary>No network, a server error or a key problem: send again later.</summary>
+        Retry,
+        /// <summary>Refused for good: the notice is withdrawn, not for this person, or the person is unknown.</summary>
+        Gone,
+    }
+
+    public static class MessageAckResults
+    {
+        /// <summary>400, 403, 404, 409 and 410 are final; 401 (key), 429 and 5xx are tried again.</summary>
+        public static MessageAckResult ForStatus(int status) => status switch
+        {
+            >= 200 and < 300 => MessageAckResult.Done,
+            400 or 403 or 404 or 409 or 410 or 422 => MessageAckResult.Gone,
+            _ => MessageAckResult.Retry,
+        };
+    }
+
     public sealed class EpharmApiClient : IMerchTaskApi, IDisposable
     {
         private readonly HttpClient _http;
@@ -106,6 +127,38 @@ namespace CustomerDisplay.Services
         /// <summary>A fresh one-time link that opens the web cabinet signed in (for the «Мой кабинет» button).</summary>
         public Task<PosmSelfResult<PosmCabinetLinkDto>> GetCabinetLinkAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
             PostSelfAsync<PosmCabinetLinkDto>("/api/posm/self/cabinet-link", req, ct);
+
+        /// <summary>Notices from HQ for the person at this till: open ones and the last 30 days (1.0.99).</summary>
+        public Task<PosmSelfResult<PosmSelfMessagesDto>> GetSelfMessagesAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
+            PostSelfAsync<PosmSelfMessagesDto>("/api/posm/self/messages", req with { Link = false }, ct);
+
+        /// <summary>
+        /// Reports that a notice appeared on screen or that the person closed it. Done: the server took it. Gone: it never
+        /// will (the notice was withdrawn, is not for this person, or the person is unknown), stop sending. Retry: no
+        /// network, a server error or a key problem, send again later.
+        /// </summary>
+        public async Task<MessageAckResult> AckSelfMessageAsync(PosmSelfRequestDto req, string messageId, bool closed, CancellationToken ct = default)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            var path = "/api/posm/self/messages/" + Uri.EscapeDataString(messageId) + (closed ? "/closed" : "/shown");
+            try
+            {
+                using var resp = await _http.PostAsJsonAsync(path, req with { Link = false, Phone = null, Password = null }, JsonOpts, cts.Token).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode) return MessageAckResult.Done;
+                _log?.Invoke($"self messages ack: HTTP {(int)resp.StatusCode}");
+                return MessageAckResults.ForStatus((int)resp.StatusCode);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _log?.Invoke($"self messages ack: {Describe(ex)}");
+                return MessageAckResult.Retry;
+            }
+        }
 
         private DateTime _noticeLogAt;
         private string? _noticeLogKey;
