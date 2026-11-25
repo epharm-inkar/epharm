@@ -7,6 +7,16 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Tills managed without AnyDesk (Grigoriy, 25.11.2026): in «Все кассы» HQ (SYSTEM_ADMIN, HQ_HEAD) presses
+  «Диагностика» or «Перезапуск» (restart asks for confirmation) and sees the latest command of every till, polled
+  every 10 s while one is in work. A command is one of a fixed list (`diagnostics`, `restart`) without parameters;
+  one command in work per till (409 otherwise). The till takes it with its own device key
+  (`POST /api/posm/commands/next`, 204 when there is nothing) and answers with `POST /api/posm/commands/{id}/result`
+  (multipart `status` done|failed, `message`, optional `file`: ZIP up to 5 MB, 413 above). A waiting command
+  expires after 30 minutes, a taken one after 10 minutes without an answer. Diagnostics archives go to a private
+  MinIO bucket (`POSM_COMMANDS_BUCKET`, default `epharm-private`, created on first upload; never the public
+  `epharm-receipts`) under `till-diagnostics/`, are downloaded only by HQ and removed after 14 days. Table
+  `till_commands` (V117). The till side ships with a later POSM release.
 - «ePharm на технических работах» (Grigoriy, 25.11.2026): HQ switches it in `posm_notice` (`PUT
   /api/admin/posm-notice`, HQ roles); the till reads its view about once a minute (`GET /api/posm/notice`, device
   key). POSM 1.0.95 then opens a notice from the ePharm icon instead of the personal window, puts an amber dot on the

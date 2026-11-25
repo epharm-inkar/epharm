@@ -75,6 +75,7 @@ opt-in серверный адаптер — `auth/access/` (права, кат�
 | `mobile` (остальное)                              | me/баланс, чеки, аптеки рядом                                                                                             |
 | `posm`                                            | recommend/sales/heartbeat/плейлисты касс + атрибуция показ→продажа (V032)                                                 |
 | `posm.staff`                                      | Независимые от device key вход РПС, SMS challenge и отзыв персональных сессий                                             |
+| `posm.commands`                                   | Задания кассам без AnyDesk (диагностика, перезапуск), архивы в закрытом бакете MinIO (V117)                               |
 | `finance.service` / `finance.merch`               | Единый денежный журнал, атомарные начисления/резервы и проверенный исполнитель QR; `docs/22-unified-pharmacist-wallet.md` |
 | `learnercredentials`                              | D9: отдельный vault и ограниченная выдача текущих учётных данных; `docs/23-unified-admin-data-and-access.md`              |
 | `training`                                        | программы, маршруты, назначения, события, результаты, сертификаты и бонусы                                                |

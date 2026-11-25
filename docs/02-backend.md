@@ -542,6 +542,8 @@ sale attribution or wallet eligibility. Redis/local presence expiry applies norm
 - `/api/admin/screens/**`, including `/connected`, `/broadcast`, and per-slot broadcast replacement
   at `/broadcast/slots/{1..12}`
 - `/api/admin/app-releases/**`
+- `/api/admin/tills/commands` (POST, GET) and `/{id}/artifact`: diagnostics and restart of tills without AnyDesk,
+  SYSTEM_ADMIN/HQ_HEAD only, see [Remote till commands](#remote-till-commands)
 - `/api/admin/lms/courses/**`
 - `/api/admin/training/**`
 - `/api/admin/ai-exam/questions/**`
@@ -797,6 +799,8 @@ All POSM endpoints require `X-Posm-Key`.
 - `POST /api/posm/tasks/shown` — accepted/rejected confirmation of an actual displayed QR.
 - `POST /api/posm/cdp/lookup`
 - `POST /api/posm/cdp/register`
+- `POST /api/posm/commands/next`, `POST /api/posm/commands/{id}/result`: remote till commands
+  (per-device key only, see [Remote till commands](#remote-till-commands))
 
 ### Shared Public
 
@@ -1070,3 +1074,28 @@ rehearsal database. `MERCH_STAFF_ACCESS_ENABLED` defaults to false.
   presence counts a device online for `app.posm.heartbeat-ttl-seconds` (`POSM_HEARTBEAT_TTL`, default 150 s).
 - `pharmacists.standard_n_*` IIN and name observation is rewritten only when the result changes,
   otherwise its check time is refreshed at most once an hour.
+
+## Remote till commands
+
+HQ manages tills without AnyDesk (25.11.2026, package `posm.commands`, table `till_commands`, V117). A command is
+one action from a fixed list compiled into the till, `diagnostics` or `restart`, with no parameters. The till is
+the authenticated device (per-device `X-Posm-Key`; the retired fleet key gets 401), never an id from the request.
+
+- `POST /api/admin/tills/commands` `{pharmacyId, deviceId, action}` -> 201 command. The till must have an active key
+  in an active pharmacy (404 otherwise); one command in work (`pending`/`delivered`) per till (409 otherwise).
+  `requestedBy` is the admin e-mail.
+- `GET /api/admin/tills/commands?pharmacyId=&deviceId=&limit=` (default 50, at most 500): newest first. A command
+  past its deadline is shown `expired` at once, the row is marked by the next write or the hourly cleanup.
+- `GET /api/admin/tills/commands/{id}/artifact`: the diagnostics zip, `Content-Disposition: attachment`, `no-store`.
+- `POST /api/posm/commands/next` -> 200 `{id, action, expiresAt}` for the oldest waiting command of this till, now
+  `delivered`; 204 when there is none. A waiting command lives 30 minutes; once taken, `expiresAt` becomes the
+  answer deadline, 10 minutes later.
+- `POST /api/posm/commands/{id}/result`, multipart: `status` `done|failed`, `message` (cut to 2000 characters),
+  optional `file` (ZIP signature checked, up to 5 MB inclusive; larger gets 413, not a zip or an archive for
+  `restart` gets 400). Another till's command gets 404; a command not taken, already answered or past its deadline
+  gets 409. A rejected answer leaves the command `delivered`, so the till may retry before the deadline.
+- Archives live in a private bucket of the same MinIO (`app.posm.commands.bucket`, `POSM_COMMANDS_BUCKET`, default
+  `epharm-private`, created on the first upload), key `till-diagnostics/<commandId>/<random>.zip`. The media bucket
+  `epharm-receipts` is anonymous-readable through `/s3` and is refused for this. `TillCommandCleanup`
+  (`POSM_COMMANDS_CLEANUP_CRON`, hourly) expires elapsed commands and removes archives older than 14 days;
+  `artifact_bytes` stays for history.

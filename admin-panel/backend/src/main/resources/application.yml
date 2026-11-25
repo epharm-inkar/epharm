@@ -221,6 +221,12 @@ app:
     fiscal-artifact-trusted-sources: ${POSM_FISCAL_ARTIFACT_TRUSTED_SOURCES:standardn-kkm-sdk,ofd-api}
     # Сколько секунд пульс кассы считается «живым» (T4, GET /screens/connected).
     heartbeat-ttl-seconds: ${POSM_HEARTBEAT_TTL:150}
+    commands:
+      # Diagnostics archives from tills (V117): private bucket in the same MinIO, created on first upload.
+      # Never the public media bucket (bucket-receipts is anonymous-readable through /s3).
+      bucket: ${POSM_COMMANDS_BUCKET:epharm-private}
+      # Expire elapsed commands and remove archives older than 14 days.
+      cleanup-cron: ${POSM_COMMANDS_CLEANUP_CRON:0 23 * * * *}
   unified-admin:
     primary-owner-id: ${UNIFIED_ADMIN_PRIMARY_OWNER_ID:}
   learner-credentials:
