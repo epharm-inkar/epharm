@@ -487,6 +487,9 @@ data class LessonProgressRequest(
     val progressPct: Int,
     @field:Min(0)
     val positionSeconds: Int = 0,
+    /** Length of the video as the browser measured it; lesson minutes are rounded up. */
+    @field:Min(0) @field:Max(36_000)
+    val mediaDurationSeconds: Int? = null,
 )
 
 data class QuizSubmissionRequest(

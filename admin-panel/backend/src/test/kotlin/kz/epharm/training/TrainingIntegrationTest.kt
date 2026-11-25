@@ -534,11 +534,18 @@ class TrainingIntegrationTest {
         val token = completed["certificate"]["verificationToken"].asText()
         mockMvc.perform(get("/api/public/training/certificates/$token"))
             .andExpect(status().isOk).andExpect(jsonPath("$.score").value(87))
+        // A phone scanning the QR asks for HTML and gets a readable page instead of JSON.
+        val page = mockMvc.perform(get("/api/public/training/certificates/$token").header("Accept", "text/html,application/xhtml+xml,*/*;q=0.8"))
+            .andExpect(status().isOk).andReturn().response
+        org.assertj.core.api.Assertions.assertThat(page.contentType).startsWith("text/html")
+        org.assertj.core.api.Assertions.assertThat(page.getContentAsString(Charsets.UTF_8))
+            .contains("Сертификат действителен", "программу обучения").doesNotContain("87%")
         val pdf = mockMvc.perform(get("/api/public/training/certificates/$token/pdf"))
             .andExpect(status().isOk).andReturn().response.contentAsByteArray
+        // The certificate states completion only; the score stays in the admin and the API.
         org.apache.pdfbox.Loader.loadPDF(pdf).use { document ->
             org.assertj.core.api.Assertions.assertThat(org.apache.pdfbox.text.PDFTextStripper().getText(document))
-                .contains("87%").doesNotContain("100%")
+                .contains("программу обучения").doesNotContain("87%", "100%", "Результат")
         }
     }
 

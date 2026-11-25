@@ -82,17 +82,54 @@ class TrainingCertificatePdfServiceTest {
         Loader.loadPDF(pdf).use { document ->
             val text = PDFTextStripper().getText(document)
             assertThat(text).contains("Әли Құнанбаев", "Ғылым, дәрі және жаңа өмір", "Үміт Һасенова Ілиясқызы")
-            assertThat(text).contains("95%").doesNotContain("100%")
+            // Completion only: no score on the certificate (Grigoriy, 25.11.2026).
+            assertThat(text).doesNotContain("95%", "100%", "Результат", "Без оценки")
         }
 
         val unscoredPdf = TrainingCertificatePdfService("https://epharm.inkar.kz", InMemoryMediaStorage())
             .render(UUID.fromString("ad632d6e-1da0-4705-9be9-5d17236f47cf"), certificate.copy(score = null))
         Loader.loadPDF(unscoredPdf).use { document ->
-            assertThat(PDFTextStripper().getText(document)).contains("Без оценки").doesNotContain("100%", "95%")
+            assertThat(PDFTextStripper().getText(document)).doesNotContain("Без оценки", "Результат", "100%", "95%")
             val preview = Path.of("build", "reports", "certificate-unscored-preview.png")
             Files.createDirectories(preview.parent)
             ImageIO.write(PDFRenderer(document).renderImageWithDPI(0, 110f), "png", preview.toFile())
         }
+    }
+
+    @Test
+    fun `program without a partner prints no placeholder and the verb follows the patronymic`() {
+        val certificate = CertificateVerificationDto(
+            number = "EPH-2026-7F8B2E849C",
+            pharmacistName = "Лузгина Валентина Петровна",
+            programName = "Курс обучения «Пожарная безопасность в аптечной сети: от склада до торгового зала»",
+            format = TrainingFormat.online,
+            issuedAt = Instant.parse("2026-11-25T14:04:22Z"),
+            expiresAt = Instant.parse("2029-11-25T14:04:22Z"),
+            score = 90,
+            signerName = "Руководитель учебного центра",
+            partnerCompanyName = "Компания-партнёр",
+            coverUrl = null,
+            epharmLogoUrl = null,
+            partnerLogoUrl = null,
+            templateName = "modern_ribbon",
+            status = CertificateStatus.valid,
+            valid = true,
+        )
+
+        val pdf = TrainingCertificatePdfService("https://epharm.inkar.kz", InMemoryMediaStorage())
+            .render(UUID.fromString("48c242c5-3c9d-4b48-880c-84b3e30d7866"), certificate)
+
+        Loader.loadPDF(pdf).use { document ->
+            val text = PDFTextStripper().getText(document)
+            assertThat(text).contains("завершила программу обучения", "ОНЛАЙН-ФОРМАТ", "Пожарная безопасность")
+            assertThat(text).doesNotContain("КОМПАНИЯ-ПАРТНЁР", "90%", "Результат")
+            val preview = Path.of("build", "reports", "certificate-no-partner-preview.png")
+            Files.createDirectories(preview.parent)
+            ImageIO.write(PDFRenderer(document).renderImageWithDPI(0, 110f), "png", preview.toFile())
+        }
+        assertThat(TrainingCertificatePdfService.partnerNameOrNull(" компания-партнёр ")).isNull()
+        assertThat(TrainingCertificatePdfService.partnerNameOrNull("")).isNull()
+        assertThat(TrainingCertificatePdfService.partnerNameOrNull("Петровакс")).isEqualTo("Петровакс")
     }
 
     @Test

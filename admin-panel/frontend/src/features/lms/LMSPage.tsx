@@ -1434,8 +1434,13 @@ function CertificatesTab({
                 {certificate.pdfUrl && (
                   <a
                     href={certificate.pdfUrl}
+                    // Download in the background: the admin page stays where it is.
+                    download
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex text-brand-green-700"
                     aria-label="Скачать сертификат"
+                    title="Скачать сертификат"
                   >
                     <IconDownload size={17} />
                   </a>

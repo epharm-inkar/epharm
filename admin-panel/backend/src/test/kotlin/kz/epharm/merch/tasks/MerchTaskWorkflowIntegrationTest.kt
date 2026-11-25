@@ -1211,7 +1211,7 @@ class MerchTaskWorkflowIntegrationTest {
 
     @Test fun `a training instruction requires a newly uploaded video while an ordinary photo task cannot accept that video`() {
         val ordinary=create(count=1);binding(ordinary);val plain=ordinary.items.single();start(plain.id)
-        val video=Files.readAllBytes(java.nio.file.Path.of("../frontend/public/training/fire-safety-training-video.mp4"))
+        val video=Files.readAllBytes(java.nio.file.Path.of("src/test/resources/fixtures/training-video.mp4"))
         fun videoUpload(item:UUID)=mvc.perform(multipart("/api/mobile/merch/tasks/items/$item/evidence")
             .file(MockMultipartFile("file","synthetic-training.mp4","video/mp4",video)).param("clientUploadId",UUID.randomUUID().toString()).header("Authorization",mobileAuth))
         videoUpload(plain.id).andExpect(status().isBadRequest)

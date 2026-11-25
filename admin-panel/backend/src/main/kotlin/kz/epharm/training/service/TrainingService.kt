@@ -1444,12 +1444,12 @@ class TrainingService(
         val requestedProgress = maxOf(progress.progressPct, req.progressPct)
         if (lesson.kind == CourseLessonKind.video && lesson.durationMin > 0 && requestedProgress > progress.progressPct) {
             val elapsedSeconds = Duration.between(progress.startedAt, now).seconds.coerceAtLeast(0)
-            val durationSeconds = lesson.durationMin.toLong() * 60L
+            val durationSeconds = videoGuardSeconds(lesson.durationMin, req.mediaDurationSeconds)
             val allowedProgress = (((elapsedSeconds + videoProgressGraceSeconds) * 100L) / durationSeconds)
                 .toInt()
                 .coerceIn(0, 100)
             if (requestedProgress > allowedProgress) {
-                conflict("Видео ещё не просмотрено: сейчас можно сохранить до $allowedProgress%")
+                conflict("Досмотрите видео: урок засчитается, когда видео будет просмотрено")
             }
         }
         progress.progressPct = requestedProgress
@@ -2907,4 +2907,16 @@ class TrainingService(
 
     private fun forbidden(message: String): Nothing =
         throw AppException(ErrorCode.FORBIDDEN, message, HttpStatus.FORBIDDEN)
+}
+
+/**
+ * Seconds a video lesson must play before it may count as watched. Lesson minutes are whole and
+ * rounded up, so a 95-second clip set as «2 min» could never reach 100% (pharmacists saw «можно
+ * сохранить до 78%» after watching to the end, 25.11.2026). The browser's own measurement wins
+ * when it is plausible: between half and double the planned length.
+ */
+internal fun videoGuardSeconds(durationMin: Int, mediaDurationSeconds: Int?): Long {
+    val planned = durationMin.toLong().coerceAtLeast(1) * 60L
+    val measured = mediaDurationSeconds?.toLong()?.takeIf { it >= planned / 2 && it <= planned * 2 }
+    return (measured ?: planned).coerceAtLeast(1)
 }
