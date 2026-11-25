@@ -2344,6 +2344,10 @@ class TrainingService(
                 )
             },
             assignments = assignmentRepository.countByProgramVersionId(version.id),
+            completedAssignments = assignmentRepository.countByProgramVersionIdAndStatusRaw(
+                version.id,
+                TrainingAssignmentStatus.completed.name,
+            ),
             createdAt = program.createdAt,
             updatedAt = program.updatedAt,
         )

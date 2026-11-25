@@ -4056,6 +4056,55 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H15.16",
+    "group": "H15",
+    "name": "Задания фармацевта на кассе: курсы из обучения, что за них получит и выполнены ли они",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/pharmacist-tasks-feed",
+      "ui": [],
+      "api": [
+        "POST /api/posm/self/tasks"
+      ],
+      "jobs": [],
+      "data": [
+        "training_assignments",
+        "training_program_versions",
+        "training_programs",
+        "pharmacists",
+        "standardn_pharmacist_directory",
+        "pharmacies"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/self/PosmSelfTasksController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/self/PosmSelfTasksService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/training/tasks/PharmacistTaskFeed.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/training/tasks/PharmacistTaskFeedService.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/training/tasks/PharmacistTaskFeedTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/PosmSelfTasksIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "POSM / совместимость устройств",
+      "actions": [
+        "Показать фармацевту на кассе его задания (курсы обучения), награду за них и статус выполнения"
+      ],
+      "scope": "Device-auth кассы (X-Posm-Key), аптека кассы; человек = пользователь Стандарт-Н на кассе, найденный по ИИН в центральном справочнике; задание = назначение обучения, только чтение"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Видны активные назначения и выполненные за последние 14 дней; отменённые и ещё не начатые HQ (starts_at в будущем) скрыты",
+      "Порядок: просроченные, новые, в процессе (по сроку), выполненные; new = не начато и ни разу не открыто, paused и waiting_* = в процессе",
+      "Курс, пройденный в кабинете, сам становится done; rewardKzt = completion_bonus версии программы, null без бонуса",
+      "Ключ кассы другой аптеки не проходит (401), чужая аптека в запросе получает 403; неизвестный пользователь Стандарт-Н получает 404 с тем же текстом, что и личное окно"
+    ],
+    "risks": [
+      "Список появится на кассах только с новой сборкой POSM, которая читает этот ответ"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H16.01",
     "group": "H16",
     "name": "Открыть контекст подписанного QR challenge",

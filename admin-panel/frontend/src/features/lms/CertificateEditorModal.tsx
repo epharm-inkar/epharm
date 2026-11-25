@@ -257,6 +257,7 @@ const previewProgram: TrainingProgramDto = {
   completionBonus: 0,
   stages: [],
   assignments: 1,
+  completedAssignments: 0,
   createdAt: '2026-09-29T08:00:00Z',
   updatedAt: '2026-09-29T08:00:00Z',
 }

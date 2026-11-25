@@ -694,7 +694,14 @@ function ProgramsTab({
               <td className="px-3 py-3 text-ink-700">
                 {program.allowedFormats.map((format) => FORMAT_LABEL[format]).join(', ')}
               </td>
-              <td className="num px-3 py-3 font-bold">{formatNum(program.assignments)}</td>
+              <td className="px-3 py-3">
+                <div className="num font-bold">{formatNum(program.assignments)}</div>
+                {program.assignments > 0 && (
+                  <div className="mt-0.5 whitespace-nowrap text-[11px] text-ink-500">
+                    {`выполнили ${formatNum(program.completedAssignments)} из ${formatNum(program.assignments)}`}
+                  </div>
+                )}
+              </td>
               <td className="px-3 py-3">
                 <span className={`chip ${chipClass(program.status)}`}>
                   {PROGRAM_STATUS_LABEL[program.status]}
