@@ -168,6 +168,7 @@ const program: TrainingProgramDto = {
     },
   ],
   assignments: 10,
+  completedAssignments: 4,
   createdAt: '2026-08-01T08:00:00Z',
   updatedAt: '2026-08-01T08:00:00Z',
 }
@@ -561,6 +562,7 @@ describe('Обучение — операционный раздел', () => {
     expect(screen.getByTestId('training-programs-table')).toBeInTheDocument()
     expect(screen.getByText('Кардиология: продукты INKAR')).toBeInTheDocument()
     expect(screen.getAllByText('Онлайн-курс')).not.toHaveLength(0)
+    expect(screen.getByText('выполнили 4 из 10')).toBeInTheDocument()
   })
 
   it('предлагает шаблон и проверяет Excel до создания курса', async () => {

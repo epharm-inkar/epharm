@@ -96,6 +96,7 @@ interface TrainingAssignmentRepository : JpaRepository<TrainingAssignmentEntity,
     ): List<TrainingAssignmentEntity>
     fun countByStatusRaw(statusRaw: String): Long
     fun countByProgramVersionId(programVersionId: UUID): Long
+    fun countByProgramVersionIdAndStatusRaw(programVersionId: UUID, statusRaw: String): Long
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from TrainingAssignmentEntity a where a.id = :id")

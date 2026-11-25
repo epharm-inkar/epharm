@@ -1475,7 +1475,9 @@ export interface TrainingProgramDto {
   maxAttempts: number
   completionBonus: number
   stages: TrainingProgramStageDto[]
+  /** Assignments of the current version and how many of them are completed. */
   assignments: number
+  completedAssignments: number
   createdAt: string
   updatedAt: string
 }
