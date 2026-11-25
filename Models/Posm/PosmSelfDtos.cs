@@ -30,6 +30,24 @@ namespace CustomerDisplay.Models.Posm
 
     public sealed record PosmCabinetLinkDto(string Url, DateTimeOffset ExpiresAt);
 
+    /// <summary>
+    /// One task from HQ for the person (POST /api/posm/self/tasks): today a training assignment. Status: new,
+    /// in_progress, done, overdue; done comes by itself when the course is completed.
+    /// </summary>
+    public sealed record PosmSelfTaskDto(
+        string Id,
+        string Kind,
+        string Title,
+        string? Instructions,
+        long? RewardKzt,
+        bool Required,
+        string Status,
+        int ProgressPct,
+        DateTimeOffset? DueAt,
+        DateTimeOffset? CompletedAt);
+
+    public sealed record PosmSelfTasksDto(List<PosmSelfTaskDto>? Tasks, int NewCount, int OpenCount);
+
     /// <summary>Either the value, or a message for the pharmacist (server text or a network problem).</summary>
     public sealed record PosmSelfResult<T>(T? Value, string? Error) where T : class
     {

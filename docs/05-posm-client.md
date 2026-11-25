@@ -296,9 +296,14 @@ denial is not proof that every historical window has closed. See [the contract](
 
 The pharmacist recommendation popup is a non-activating, right-anchored panel so the Standard-N
 scanner keeps focus. It shows up to five replacements and five cross-sell offers in ordered,
-mouse-wheel-scrollable sections. Text and prices are deliberately larger than the legacy popup.
-Only an offer with a positive individual reward is green; a zero-reward offer stays white and says
-it has no reward. Closing the popup does not accept or reject a recommendation, and the panel does
+mouse-wheel-scrollable sections. The reward is read first: the dark ePharm header states the
+largest single-offer reward (`Ваш бонус до +200 ₸`, or `Предложите покупателю` when nothing pays),
+and each paid offer carries a large green `+N ₸` badge above its price. Only an offer with a positive
+individual reward is tinted green; a zero-reward offer stays white and says `без бонуса`. The
+backend's personal goal (`goalText`, `goalBonus`) is shown under the script when present. The
+footer states the auto-close delay. Visual changes are compared on the same realistic scenarios:
+`App.Ui.Tests -- --recommendation-showcase --output=<dir>` renders the real window to PNG, and the
+regular UI regression run renders them into its proof artifact. Closing the popup does not accept or reject a recommendation, and the panel does
 not promise an Esc shortcut because it cannot take keyboard focus from Standard-N.
 
 The legacy optional sale-bonus bridge does not invent an `accepted` action. With

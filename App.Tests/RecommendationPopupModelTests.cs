@@ -133,6 +133,61 @@ public sealed class RecommendationPopupModelTests
         Assert.Equal(count * 2, model.TotalCount);
     }
 
+    [Fact]
+    public void Build_LeadsWithTheLargestBonusAndShortBadges()
+    {
+        var paid = Recommendation("substitution", "С бонусом", "Исходный", 2_890);
+        paid.Bonus = 200;
+        var small = Recommendation("crosssell", "Малый бонус", "Исходный", 1_650);
+        small.Bonus = 40;
+        var unpaid = Recommendation("substitution", "Без бонуса", "Исходный", 1_420);
+        unpaid.Bonus = 0;
+
+        var model = RecommendationPopupModelBuilder.Build(new[] { paid, unpaid, small });
+
+        Assert.Equal(200, model.MaxBonus);
+        Assert.Equal("Ваш бонус до +200 ₸", model.Headline);
+        Assert.Equal("+200 ₸", model.Substitutions.Rows[0].BonusBadge);
+        Assert.Equal("без бонуса", model.Substitutions.Rows[1].BonusBadge);
+        Assert.Equal(0, model.Substitutions.Rows[1].BonusAmount);
+        Assert.Equal("+40 ₸", model.CrossSells.Rows[0].BonusBadge);
+    }
+
+    [Fact]
+    public void Build_HeadlineForOneBonusAndForNoBonus()
+    {
+        var one = Recommendation("substitution", "Один", "Исходный", 1_000);
+        one.Bonus = 1_250;
+        Assert.Equal("Ваш бонус +1 250 ₸", RecommendationPopupModelBuilder.Build(new[] { one }).Headline);
+
+        var none = Recommendation("crosssell", "Без", "Исходный", 1_000);
+        none.Bonus = 0;
+        var noBonus = RecommendationPopupModelBuilder.Build(new[] { none });
+        Assert.Equal(0, noBonus.MaxBonus);
+        Assert.Equal("Предложите покупателю", noBonus.Headline);
+        Assert.Equal("Предложите покупателю", RecommendationPopupModelBuilder.Build(null).Headline);
+    }
+
+    [Fact]
+    public void Build_ShowsServerGoalWithItsBonusOnlyWhenPresent()
+    {
+        var withGoal = Recommendation("substitution", "Цель", "Исходный", 1_000);
+        withGoal.GoalText = "цель «3/10 Тантум Верде»";
+        withGoal.GoalBonus = 2_000;
+        var goalOnly = Recommendation("substitution", "Без суммы", "Исходный", 1_000);
+        goalOnly.GoalText = "  цель «0/5»  ";
+        var noGoal = Recommendation("substitution", "Нет цели", "Исходный", 1_000);
+        noGoal.GoalBonus = 500;
+
+        var rows = RecommendationPopupModelBuilder.Build(new[] { withGoal, goalOnly, noGoal }).Substitutions.Rows;
+
+        Assert.Equal("Цель «3/10 Тантум Верде» · +2 000 ₸ за выполнение", rows[0].Goal);
+        Assert.True(rows[0].HasGoal);
+        Assert.Equal("Цель «0/5»", rows[1].Goal);
+        Assert.Equal("", rows[2].Goal);
+        Assert.False(rows[2].HasGoal);
+    }
+
     private static Recommendation Recommendation(string kind, string name, string trigger, int price) => new()
     {
         Kind = kind,

@@ -33,7 +33,9 @@
     <Compile Include="..\Models\Posm\PosmDtos.cs" Link="Models\PosmDtos.cs" />
     <Compile Include="..\Models\Posm\PosmSelfDtos.cs" Link="Models\PosmSelfDtos.cs" />
     <Compile Include="..\Models\Posm\PosmNoticeDto.cs" Link="Models\PosmNoticeDto.cs" />
+    <Compile Include="..\Models\Posm\TillCommandDto.cs" Link="Models\TillCommandDto.cs" />
     <Compile Include="..\App\Services\EpharmNoticeState.cs" Link="Services\EpharmNoticeState.cs" />
+    <Compile Include="..\App\Services\TillDiagnostics.cs" Link="Services\TillDiagnostics.cs" />
     <Compile Include="..\Models\Posm\Playlist.cs" Link="Models\Playlist.cs" />
     <Compile Include="..\Models\Posm\Cdp.cs" Link="Models\Cdp.cs" />
     <Compile Include="..\Models\Posm\RecommendationPopupModel.cs" Link="Models\RecommendationPopupModel.cs" />

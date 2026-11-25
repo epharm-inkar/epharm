@@ -14,90 +14,113 @@
         WindowStartupLocation="Manual"
         SizeToContent="Height"
         Width="500"
-        MaxHeight="900">
+        MaxHeight="900"
+        FontFamily="Segoe UI"
+        Foreground="#1C1B19">
 
+    <!-- 1.0.96: compact. Header, the asked product and each offer take about half the height of 1.0.91, so three
+         replacements fit on a 768-pixel screen. Bonus first, as in the 1.0.91 design (INK-141). -->
     <Window.Resources>
+        <SolidColorBrush x:Key="Header" Color="#073F46"/>
+        <SolidColorBrush x:Key="HeaderMuted" Color="#B2CBCF"/>
+        <SolidColorBrush x:Key="Accent" Color="#07877F"/>
+        <SolidColorBrush x:Key="Bonus" Color="#0A7A3B"/>
+        <SolidColorBrush x:Key="Muted" Color="#5E6B6D"/>
+        <SolidColorBrush x:Key="Hairline" Color="#DCE8E8"/>
+
+        <Style x:Key="CloseButton" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="#1AFFFFFF"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="9">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#33FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Colour follows the bonus on this offer, never the rule or the other offers. -->
         <DataTemplate x:Key="OfferRowTemplate">
-            <Border x:Name="OfferCard" BorderThickness="1" CornerRadius="10" Padding="11,10"
-                    Margin="0,0,0,7">
+            <Border x:Name="OfferCard" BorderThickness="1" CornerRadius="9" Margin="0,0,0,6"
+                    Background="White" BorderBrush="{StaticResource Hairline}">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="44"/>
+                        <ColumnDefinition Width="5"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="164"/>
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+                    <Border x:Name="AccentStrip" CornerRadius="8,0,0,8" Background="Transparent"/>
 
-                    <Border x:Name="RankCircle" Grid.Column="0" Width="38" Height="38"
-                            CornerRadius="19" VerticalAlignment="Top">
-                        <TextBlock x:Name="RankText" Text="{Binding Number}"
-                                   FontSize="18" FontWeight="Bold" HorizontalAlignment="Center"
+                    <Grid Grid.Column="1" Margin="10,7,10,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock x:Name="NameText" Text="{Binding Name, Mode=OneWay}" FontSize="16.5"
+                                   FontWeight="Bold" TextWrapping="Wrap" LineHeight="20" Margin="0,1,8,0"/>
+                        <Border x:Name="BonusChip" Grid.Column="1" CornerRadius="7" Padding="8,1,8,2"
+                                VerticalAlignment="Top" HorizontalAlignment="Right" Background="Transparent">
+                            <TextBlock x:Name="BonusText" Text="{Binding BonusBadge, Mode=OneWay}" TextWrapping="NoWrap"/>
+                        </Border>
+
+                        <TextBlock x:Name="MetaText" Grid.Row="1" Text="{Binding Meta, Mode=OneWay}" FontSize="13"
+                                   Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,1,8,0"
                                    VerticalAlignment="Center"/>
-                    </Border>
+                        <TextBlock x:Name="PriceText" Grid.Row="1" Grid.Column="1" Text="{Binding Price, Mode=OneWay}"
+                                   FontSize="15" FontWeight="Bold" HorizontalAlignment="Right" Margin="0,1,0,0"/>
 
-                    <StackPanel Grid.Column="1" Margin="4,0,8,0">
-                        <TextBlock x:Name="NameText" Text="{Binding Name}"
-                                   FontSize="18" FontWeight="Bold" TextWrapping="Wrap"
-                                   LineHeight="21"/>
-                        <TextBlock x:Name="MetaText" Text="{Binding Meta}"
-                                   FontSize="15" TextWrapping="Wrap" Margin="0,3,0,0"/>
-                        <TextBlock x:Name="TriggerText" Text="{Binding TriggerContext}"
-                                   FontSize="13" FontWeight="SemiBold"
-                                   TextWrapping="Wrap" Margin="0,3,0,0"/>
-                        <TextBlock x:Name="StockText" Text="{Binding Stock}"
-                                   FontSize="12.5" FontWeight="SemiBold"
-                                   TextWrapping="Wrap" Margin="0,4,0,0"/>
-                    </StackPanel>
+                        <TextBlock x:Name="TriggerText" Grid.Row="2" Grid.ColumnSpan="2"
+                                   Text="{Binding TriggerContext, Mode=OneWay}" FontSize="12.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,2,0,0"/>
 
-                    <StackPanel Grid.Column="2" HorizontalAlignment="Right">
-                        <TextBlock x:Name="PriceText" Text="{Binding Price}"
-                                   FontSize="23" FontWeight="Bold" HorizontalAlignment="Right"
-                                   TextAlignment="Right" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="BonusText" Text="{Binding Bonus}"
-                                   FontSize="12.5" FontWeight="SemiBold" HorizontalAlignment="Right"
-                                   TextAlignment="Right" TextWrapping="NoWrap" Margin="0,4,0,0"/>
-                    </StackPanel>
+                        <TextBlock x:Name="DetailText" Grid.Row="3" Grid.ColumnSpan="2" FontSize="14"
+                                   TextWrapping="Wrap" LineHeight="18" Margin="0,4,0,0">
+                            <Run x:Name="DetailPrefix" Text="{Binding DetailLabel, Mode=OneWay}" FontWeight="Bold"
+                                 Foreground="{StaticResource Accent}"/><Run Text="{Binding Detail, Mode=OneWay}"/>
+                        </TextBlock>
 
-                    <TextBlock x:Name="DetailText" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                               FontSize="17" FontWeight="SemiBold"
-                               TextWrapping="Wrap" LineHeight="21" Margin="4,5,0,0">
-                        <Run x:Name="DetailPrefix" Text="{Binding DetailLabel}" FontWeight="Bold"/>
-                        <Run Text="{Binding Detail}"/>
-                    </TextBlock>
+                        <TextBlock x:Name="FootText" Grid.Row="4" Grid.ColumnSpan="2" FontSize="12"
+                                   TextWrapping="Wrap" Margin="0,3,0,0">
+                            <Run Text="{Binding GoalLead, Mode=OneWay}" FontWeight="Bold" Foreground="{StaticResource Bonus}"/><Run Text="{Binding StockShown, Mode=OneWay}" Foreground="{StaticResource Muted}"/>
+                        </TextBlock>
+                    </Grid>
                 </Grid>
             </Border>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding HasBonus}" Value="False">
-                    <Setter TargetName="OfferCard" Property="Background" Value="White"/>
-                    <Setter TargetName="OfferCard" Property="BorderBrush" Value="#D7DCE4"/>
-                    <Setter TargetName="RankCircle" Property="Background" Value="#EEF0F2"/>
-                    <Setter TargetName="RankText" Property="Foreground" Value="#111627"/>
-                    <Setter TargetName="NameText" Property="Foreground" Value="#171A2F"/>
-                    <Setter TargetName="MetaText" Property="Foreground" Value="#677083"/>
-                    <Setter TargetName="TriggerText" Property="Foreground" Value="#677083"/>
-                    <Setter TargetName="StockText" Property="Foreground" Value="#596274"/>
-                    <Setter TargetName="PriceText" Property="Foreground" Value="#171A2F"/>
-                    <Setter TargetName="BonusText" Property="Foreground" Value="#596274"/>
-                    <Setter TargetName="DetailText" Property="Foreground" Value="#20263A"/>
-                    <Setter TargetName="DetailPrefix" Property="Foreground" Value="#9F1329"/>
+                    <Setter TargetName="BonusText" Property="FontSize" Value="12.5"/>
+                    <Setter TargetName="BonusText" Property="FontWeight" Value="SemiBold"/>
+                    <Setter TargetName="BonusText" Property="Foreground" Value="#5E6B6D"/>
+                    <Setter TargetName="BonusChip" Property="Padding" Value="0,2,0,0"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding HasBonus}" Value="True">
-                    <Setter TargetName="OfferCard" Property="Background" Value="#087B39"/>
-                    <Setter TargetName="OfferCard" Property="BorderBrush" Value="#056E32"/>
-                    <Setter TargetName="RankCircle" Property="Background" Value="#32975F"/>
-                    <Setter TargetName="RankText" Property="Foreground" Value="White"/>
-                    <Setter TargetName="NameText" Property="Foreground" Value="White"/>
-                    <Setter TargetName="MetaText" Property="Foreground" Value="#D6EFE0"/>
-                    <Setter TargetName="TriggerText" Property="Foreground" Value="#D6EFE0"/>
-                    <Setter TargetName="StockText" Property="Foreground" Value="#D6EFE0"/>
-                    <Setter TargetName="PriceText" Property="Foreground" Value="White"/>
-                    <Setter TargetName="BonusText" Property="Foreground" Value="#D7EFAD"/>
-                    <Setter TargetName="DetailText" Property="Foreground" Value="#F5FFF8"/>
-                    <Setter TargetName="DetailPrefix" Property="Foreground" Value="White"/>
+                    <Setter TargetName="OfferCard" Property="Background" Value="#F3FBF6"/>
+                    <Setter TargetName="OfferCard" Property="BorderBrush" Value="#A7D8B9"/>
+                    <Setter TargetName="AccentStrip" Property="Background" Value="#0A7A3B"/>
+                    <Setter TargetName="BonusChip" Property="Background" Value="#0A7A3B"/>
+                    <Setter TargetName="BonusText" Property="FontSize" Value="17"/>
+                    <Setter TargetName="BonusText" Property="FontWeight" Value="ExtraBold"/>
+                    <Setter TargetName="BonusText" Property="Foreground" Value="White"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HasFoot}" Value="False">
+                    <Setter TargetName="FootText" Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding HasDetail}" Value="False">
                     <Setter TargetName="DetailText" Property="Visibility" Value="Collapsed"/>
@@ -112,10 +135,10 @@
         </DataTemplate>
     </Window.Resources>
 
-    <Border CornerRadius="17" Background="White" Margin="12"
-            BorderBrush="#D7DCE4" BorderThickness="1">
+    <Border CornerRadius="16" Background="White" Margin="12"
+            BorderBrush="#C9D9DA" BorderThickness="1">
         <Border.Effect>
-            <DropShadowEffect Color="#141B2A" Opacity="0.25" BlurRadius="34" ShadowDepth="6"/>
+            <DropShadowEffect Color="#0B2A2E" Opacity="0.30" BlurRadius="30" ShadowDepth="5"/>
         </Border.Effect>
 
         <Grid>
@@ -123,48 +146,46 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Margin="18,12,14,9">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Рекомендации" Foreground="#171A2F"
-                               FontSize="28" FontWeight="Bold"/>
-                    <StackPanel x:Name="PharmacistGreeting" Orientation="Horizontal"
-                                Margin="0,2,0,0" Visibility="Collapsed">
-                        <Ellipse Width="8" Height="8" Fill="#1F8A70" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="TbPharmacistName" Foreground="#1F8A70" FontSize="14"
-                                   FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock Text=", бонус начислим вам" Foreground="#70788A" FontSize="14"
-                                   Margin="0,0,0,0" VerticalAlignment="Center"/>
+            <Border Grid.Row="0" Background="{StaticResource Header}" CornerRadius="15,15,0,0"
+                    Padding="16,8,9,9">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="TbHeadline" Text="Предложите покупателю" Foreground="White"
+                                   FontSize="20" FontWeight="Bold" TextWrapping="Wrap"/>
+                        <StackPanel x:Name="PharmacistGreeting" Orientation="Horizontal"
+                                    Margin="0,1,0,0" Visibility="Collapsed">
+                            <Ellipse Width="7" Height="7" Fill="#7FE0B5" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TbPharmacistName" Foreground="White" FontSize="13"
+                                       FontWeight="SemiBold" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            <TextBlock Text=", бонус начислим вам" Foreground="{StaticResource HeaderMuted}"
+                                       FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-                <Button Grid.Column="1" Content="×" Width="42" Height="42" FontSize="28"
-                        FontWeight="Light" Foreground="#171B2E" Background="#F0F1F3"
-                        BorderThickness="0" Cursor="Hand" Click="OnCloseClick"
-                        ToolTip="Закрыть рекомендации"/>
-            </Grid>
+                    <Button Grid.Column="1" Width="34" Height="34" VerticalAlignment="Top"
+                            Style="{StaticResource CloseButton}" Click="OnCloseClick"
+                            ToolTip="Закрыть подсказки">
+                        <TextBlock Text="×" FontSize="22" Margin="0,-3,0,0" Foreground="White"/>
+                    </Button>
+                </Grid>
+            </Border>
 
             <StackPanel Grid.Row="1">
                 <!-- One tab per basket product with offers; the last scanned product is open. -->
-                <StackPanel x:Name="TriggerTabsPanel" Margin="15,0,15,8" Visibility="Collapsed">
-                    <TextBlock Text="ПРЕДЛОЖЕНИЯ ПО ТОВАРАМ ЧЕКА" Foreground="#70788A" FontSize="11.5"
-                               FontWeight="Bold" Margin="1,0,0,5"/>
+                <StackPanel x:Name="TriggerTabsPanel" Margin="12,8,12,0" Visibility="Collapsed">
                     <WrapPanel x:Name="TriggerTabs"/>
                 </StackPanel>
-                <Border x:Name="TopTriggerContext" Background="#F1F2F4"
-                        CornerRadius="10" Margin="15,0,15,8" Padding="13,9">
-                    <StackPanel>
-                        <TextBlock x:Name="TbTopTriggerLabel" Text="ПОКУПАТЕЛЬ ПОПРОСИЛ"
-                                   Foreground="#70788A" FontSize="12" FontWeight="Bold"/>
-                        <TextBlock x:Name="TbTopTrigger" Foreground="#171A2F" FontSize="16"
-                                   FontWeight="Bold" TextWrapping="Wrap" LineHeight="19"
-                                   Margin="0,3,0,0"/>
-                    </StackPanel>
+                <Border x:Name="TopTriggerContext" Background="#EAF3F3"
+                        CornerRadius="8" Margin="12,8,12,0" Padding="10,6,10,7">
+                    <TextBlock TextWrapping="Wrap" FontSize="14" LineHeight="18">
+                        <Run x:Name="TbTopTriggerLabel" Text="Покупатель попросил" Foreground="#4F6B6E"
+                             FontSize="12.5" FontWeight="SemiBold"/><Run Text=": " Foreground="#4F6B6E" FontSize="12.5"/><Run x:Name="TbTopTrigger" FontWeight="Bold" Foreground="#1C1B19"/>
+                    </TextBlock>
                 </Border>
             </StackPanel>
 
@@ -172,38 +193,28 @@
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           PanningMode="VerticalFirst" CanContentScroll="True"
                           Padding="0,0,3,0">
-                <StackPanel Margin="15,0,12,5">
-                    <StackPanel x:Name="PanelSubstitutions" Margin="0,0,0,12">
-                        <TextBlock x:Name="TbSubstitutionCount" Foreground="#9F1329"
-                                   FontSize="22" FontWeight="Bold" Margin="0,0,0,7"/>
+                <StackPanel Margin="12,6,9,6">
+                    <StackPanel x:Name="PanelSubstitutions" Margin="0,0,0,4">
+                        <TextBlock x:Name="TbSubstitutionCount" Foreground="{StaticResource Accent}"
+                                   FontSize="12.5" FontWeight="ExtraBold" Margin="2,0,0,4"/>
                         <ItemsControl x:Name="SubstitutionList"
                                       ItemTemplate="{StaticResource OfferRowTemplate}"/>
                     </StackPanel>
 
                     <StackPanel x:Name="PanelCrossSells">
-                        <TextBlock x:Name="TbCrossSellCount" Foreground="#9F1329"
-                                   FontSize="22" FontWeight="Bold" Margin="0,0,0,7"/>
-                        <Border x:Name="CrossSellTrigger" Background="#F1F2F4"
-                                CornerRadius="9" Padding="9,7" Margin="0,0,0,7">
-                            <StackPanel>
-                                <TextBlock Text="УЖЕ В ЧЕКЕ" Foreground="#70788A"
-                                           FontSize="11.5" FontWeight="Bold"/>
-                                <TextBlock x:Name="TbCrossSellTrigger" Foreground="#171A2F"
-                                           FontSize="14" FontWeight="SemiBold"
-                                           TextWrapping="Wrap" Margin="0,2,0,0"/>
-                            </StackPanel>
+                        <TextBlock x:Name="TbCrossSellCount" Foreground="{StaticResource Accent}"
+                                   FontSize="12.5" FontWeight="ExtraBold" Margin="2,0,0,4"/>
+                        <Border x:Name="CrossSellTrigger" Background="#EAF3F3"
+                                CornerRadius="8" Padding="10,5" Margin="0,0,0,6">
+                            <TextBlock TextWrapping="Wrap" FontSize="13.5">
+                                <Run Text="Уже в чеке: " Foreground="#4F6B6E" FontSize="12.5" FontWeight="SemiBold"/><Run x:Name="TbCrossSellTrigger" FontWeight="SemiBold" Foreground="#1C1B19"/>
+                            </TextBlock>
                         </Border>
                         <ItemsControl x:Name="CrossSellList"
                                       ItemTemplate="{StaticResource OfferRowTemplate}"/>
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
-
-            <Border Grid.Row="3" BorderBrush="#E3E6EB" BorderThickness="0,1,0,0"
-                    Padding="15,9" Background="White" CornerRadius="0,0,17,17">
-                <TextBlock Text="Колесо мыши — прокрутить список" Foreground="#5D6576"
-                           FontSize="12.5"/>
-            </Border>
         </Grid>
     </Border>
 </Window>

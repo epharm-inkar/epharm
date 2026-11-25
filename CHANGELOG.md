@@ -7,6 +7,24 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- POSM 1.0.96 (Grigoriy, 25.11.2026): «Вход в ePharm выполнен». When the person signed in to Standard-N is known,
+  a card in the corner greets them once a day by name («Доброе утро, …!»), says that replacement tips will appear
+  here and opens the personal window on a click; it never takes the focus and stays silent during the works.
+  The personal window sets or changes the password with two fields («Сменить пароль»), shows a bound phone with a
+  tick, calls the tasks row «Задания» and its «?» says when a bonus is credited (minutes after the till sends the
+  receipt, after a review when one is needed) and that the month is paid by statement.
+- Tasks from HQ in the till's personal window (1.0.96): «Задания» lists the person's courses to take
+  (`POST /api/posm/self/tasks`, training assignments) with «Новое», «В процессе · N%», «Просрочено» or «Выполнено ✓»,
+  what to do, by when and the reward, and a «Пройти в кабинете» button; a new or overdue task lights the red dot.
+  An older server without the feed shows none.
+- Till management without AnyDesk, till side (1.0.96): about once a minute the till asks
+  `POST /api/posm/commands/next` and does one of two fixed actions HQ gave from the admin: «diagnostics» (a zip of at
+  most 5 MB with the tail of the program journal, the receipt journal listing and groups, versions, monitors and
+  processes; IINs, phone numbers, keys and tokens masked) or «restart» (answers first, then starts a new copy and
+  exits, as after a key change), and answers `POST /api/posm/commands/{id}/result`. No other action exists.
+- The recommendation popup is compact (1.0.96): one-line header with the bonus, the asked product on one line,
+  each offer in three short lines (name and bonus, maker with price, «Почему»), goal and confirmed stock in one
+  small line; five replacements fit where 1.0.91 showed two and a half.
 - «ePharm на технических работах» (Grigoriy, 25.11.2026): HQ switches it in `posm_notice` (`PUT
   /api/admin/posm-notice`, HQ roles); the till reads its view about once a minute (`GET /api/posm/notice`, device
   key). POSM 1.0.95 then opens a notice from the ePharm icon instead of the personal window, puts an amber dot on the
@@ -98,6 +116,12 @@ All notable production changes to Epharm are recorded here. The format follows
   with a working device key) are retried hourly and archived locally after 5 refusals.
 - Backend writes `fulfillment_devices.last_seen_at` at most once a minute and the pharmacist IIN
   observation only on change (at most hourly otherwise); presence TTL default is 150 s.
+### Changed
+
+- POSM recommendation popup leads with the pharmacist's reward: a header with the largest
+  bonus, a large `+N ₸` badge on each paid offer, the server's personal goal line and an
+  auto-close note; ePharm colours and Manrope replace the red section titles. Offers, order,
+  limits and focus behaviour are unchanged. Needs a signed POSM release to reach the tills.
 
 ### Fixed
 
