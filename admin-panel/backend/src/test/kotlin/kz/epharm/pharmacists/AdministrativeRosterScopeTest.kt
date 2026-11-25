@@ -51,6 +51,8 @@ class AdministrativeRosterScopeTest {
         every { scope.requirePharmacyUpdate(any()) } returns Unit
         every { pharmacies.deviceCounts(any(), any(), any()) } returns emptyList()
         every { pharmacists.receiptCounts(any(), any(), any()) } returns emptyList()
+        every { pharmacists.salesTotals(any(), any(), any()) } returns emptyList()
+        every { pharmacists.walletEarned(any(), any(), any()) } returns emptyList()
         every { pharmacists.countsByPharmacy(any()) } returns emptyList()
     }
 

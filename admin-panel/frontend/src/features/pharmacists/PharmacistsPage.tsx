@@ -21,11 +21,7 @@ import {
   type TabItem,
 } from '@/ui'
 import { IconPharmacist, IconPlus, IconUsers } from '@/ui/icons'
-import type {
-  PharmacistDto,
-  TrainingFormat,
-  TrainingPreferenceDto,
-} from '@/lib/api-types'
+import type { PharmacistDto, TrainingFormat, TrainingPreferenceDto } from '@/lib/api-types'
 import {
   useActivatePharmacist,
   useBlockPharmacist,
@@ -54,6 +50,7 @@ import { useUiStore } from '@/app/store'
 import { canManagePharmacistCredentials } from '@/app/accessPolicy'
 import CredentialExportDialog from './CredentialExportDialog'
 import { CoverageView } from './CoverageView'
+import { compactKzt, sortRoster, sumOrNull, type RosterSort } from './rosterSort'
 import { maskedIin, maskedPhone } from './personal-data'
 
 // «Pending» is gone (Grigoriy, 25.11.2026): people are linked automatically now. «Активные» means worked
@@ -92,6 +89,7 @@ export default function PharmacistsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const view = searchParams.get('view') === 'coverage' ? 'coverage' : 'list'
   const [shownRows, setShownRows] = useState(PAGE_ROWS)
+  const [sort, setSort] = useState<RosterSort>('name')
   const [now] = useState(() => Date.now())
   const [q, setQ] = useState('')
   const [activating, setActivating] = useState<PharmacistDto | null>(null)
@@ -154,12 +152,13 @@ export default function PharmacistsPage() {
     }
   }, [pharmacists, now])
 
-  const totalBalance = useMemo(
-    () =>
-      pharmacists.reduce<number | null>(
-        (sum, p) => (sum == null || p.balance == null ? null : sum + p.balance),
-        0,
-      ),
+  // «Продажи и заработок каждого» (25.11.2026): totals of the whole roster, null without finance access.
+  const totals = useMemo(
+    () => ({
+      sales: sumOrNull(pharmacists, (p) => p.sales30d),
+      receipts: sumOrNull(pharmacists, (p) => p.receipts30d),
+      earned: sumOrNull(pharmacists, (p) => p.earned30d),
+    }),
     [pharmacists],
   )
 
@@ -181,6 +180,8 @@ export default function PharmacistsPage() {
         .includes(q.toLowerCase())
     })
   }, [formatFilter, pharmacists, preferenceByPharmacist, q, tab, now])
+
+  const sorted = useMemo(() => sortRoster(filtered, sort), [filtered, sort])
 
   const tabs: TabItem<PhTab>[] = (['all', 'active', 'blocked'] as PhTab[]).map((v) => ({
     value: v,
@@ -352,10 +353,26 @@ export default function PharmacistsPage() {
               sub="подробно во вкладке «Покрытие»"
             />
             <Metric
-              label={t('phc.mBalances')}
-              value={totalBalance == null ? '—' : formatKzt(totalBalance)}
+              label={t('phc.mSales')}
+              value={
+                totals.sales == null
+                  ? '—'
+                  : compactKzt(totals.sales, {
+                      million: t('phc.mln'),
+                      thousand: t('phc.thousand'),
+                    })
+              }
               accent="purple"
-              sub={t('phc.toPayout')}
+              sub={
+                totals.receipts == null
+                  ? undefined
+                  : t('phc.receiptsN', { n: formatNum(totals.receipts) })
+              }
+              meta={
+                totals.earned == null
+                  ? undefined
+                  : t('phc.mEarnedMeta', { v: formatKzt(totals.earned) })
+              }
             />
           </div>
 
@@ -465,15 +482,41 @@ export default function PharmacistsPage() {
                       <th className="px-3 py-2.5">{t('phc.thPharmacy')}</th>
                       <th className="px-3 py-2.5">Формат обучения</th>
                       <th className="px-3 py-2.5">{t('phc.thTier')}</th>
-                      <th className="px-3 py-2.5 text-right">{t('phc.thBalance')}</th>
-                      <th className="px-3 py-2.5 text-right">{t('phc.thReceipts')}</th>
-                      <th className="whitespace-nowrap px-3 py-2.5">Был в ePharm</th>
+                      {(
+                        [
+                          ['sales', t('phc.thSales'), 'text-right'],
+                          ['earned', t('phc.thEarned'), 'text-right'],
+                          ['activity', 'Был в ePharm', ''],
+                        ] as const
+                      ).map(([key, label, align]) => (
+                        <th
+                          key={key}
+                          scope="col"
+                          aria-sort={sort === key ? 'descending' : undefined}
+                          className={`whitespace-nowrap px-3 py-2.5 ${align}`}
+                        >
+                          <button
+                            type="button"
+                            title={t('phc.sortBy', { c: label })}
+                            onClick={() => {
+                              setSort((current) => (current === key ? 'name' : key))
+                              setShownRows(PAGE_ROWS)
+                            }}
+                            className={`inline-flex items-center gap-1 uppercase tracking-[0.06em] hover:text-ink-900 ${sort === key ? 'text-ink-900' : ''}`}
+                          >
+                            {label}
+                            <span aria-hidden="true" className={sort === key ? '' : 'opacity-30'}>
+                              ↓
+                            </span>
+                          </button>
+                        </th>
+                      ))}
                       <th className="px-3 py-2.5">{t('phc.thStatus')}</th>
                       <th className="px-5 py-2.5" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-ink-100">
-                    {filtered.slice(0, shownRows).map((p) => (
+                    {sorted.slice(0, shownRows).map((p) => (
                       <tr
                         key={p.id}
                         className="hover:bg-paper-hover"
@@ -577,11 +620,35 @@ export default function PharmacistsPage() {
                             {p.tier}
                           </span>
                         </td>
-                        <td className="num px-3 py-2.5 text-right font-extrabold text-brand-green-700">
-                          {p.balance == null ? '—' : formatKzt(p.balance)}
+                        <td className="num whitespace-nowrap px-3 py-2.5 text-right">
+                          {p.sales30d == null ? (
+                            '—'
+                          ) : (
+                            <>
+                              <div className="font-extrabold text-ink-900">
+                                {formatKzt(p.sales30d)}
+                              </div>
+                              <div className="text-[11px] text-ink-400">
+                                {t('phc.receiptsN', { n: formatNum(p.receipts30d ?? 0) })}
+                              </div>
+                            </>
+                          )}
                         </td>
-                        <td className="num px-3 py-2.5 text-right">
-                          {p.receipts30d == null ? '—' : formatNum(p.receipts30d)}
+                        <td className="num whitespace-nowrap px-3 py-2.5 text-right">
+                          {p.earned30d == null ? (
+                            '—'
+                          ) : (
+                            <>
+                              <div className="font-extrabold text-brand-green-700">
+                                {formatKzt(p.earned30d)}
+                              </div>
+                              {p.balance != null && (
+                                <div className="text-[11px] text-ink-400">
+                                  {t('phc.onAccount', { v: formatKzt(p.balance) })}
+                                </div>
+                              )}
+                            </>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-[12px] text-ink-500">
                           {lastActiveLabel(p.lastActiveAt, now)}

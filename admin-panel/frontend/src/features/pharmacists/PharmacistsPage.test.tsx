@@ -61,6 +61,7 @@ function mkPharmacist(over: Partial<PharmacistDto> = {}): PharmacistDto {
     city: 'Алматы',
     tier: 'Gold',
     receipts30d: 50,
+    sales30d: 125_000,
     rulesAccepted30d: 15,
     earned30d: 80_000,
     balance: 50_000,
@@ -230,14 +231,14 @@ describe('PharmacistsPage — рендер', () => {
     expect(screen.getByRole('button', { name: 'Продавцы Standard-N' })).toBeInTheDocument()
   })
 
-  it('H1 + 4 metrics: всего, работали за 7 дней, покрытие, балансы; без Pending', () => {
+  it('H1 + 4 metrics: всего, работали за 7 дней, покрытие, продажи; без Pending', () => {
     renderPage()
     expect(screen.getByRole('heading', { level: 1, name: /Фармацевты/i })).toBeInTheDocument()
     expect(screen.getByText('Всего фармацевтов')).toBeInTheDocument()
     expect(screen.getByText('Работали с ePharm за 7 дней')).toBeInTheDocument()
     expect(screen.getByText('Покрытие за 7 дней')).toBeInTheDocument()
     expect(screen.queryByText('Pending')).not.toBeInTheDocument()
-    expect(screen.getByText('Текущие балансы')).toBeInTheDocument()
+    expect(screen.getByText('Продажи за 30 дней')).toBeInTheDocument()
   })
 
   it('Empty state на пустом списке', () => {
@@ -519,6 +520,7 @@ describe('PharmacistsPage — список и actions', () => {
         iin: null,
         phone: null,
         receipts30d: null,
+        sales30d: null,
         rulesAccepted30d: null,
         earned30d: null,
         balance: null,
@@ -529,9 +531,9 @@ describe('PharmacistsPage — список и actions', () => {
     expect(within(row).getAllByRole('cell', { name: '—' })).toHaveLength(3)
     expect(row).not.toHaveTextContent('null')
     expect(row).not.toHaveTextContent(/\b0\s*₸/)
-    const balanceMetric = screen.getByText('Текущие балансы').closest('.card') as HTMLElement
-    expect(within(balanceMetric).getByText('—')).toBeInTheDocument()
-    expect(balanceMetric).not.toHaveTextContent(/50\s*000/)
+    const salesMetric = screen.getByText('Продажи за 30 дней').closest('.card') as HTMLElement
+    expect(within(salesMetric).getByText('—')).toBeInTheDocument()
+    expect(salesMetric).not.toHaveTextContent(/50\s*000/)
   })
 
   it('показывает пометку только при подтверждённом несовпадении ИИН Стандарт‑Н', () => {
@@ -629,14 +631,46 @@ describe('PharmacistsPage — список и actions', () => {
 
   it('сохраняет настоящий ноль и полную сумму для нескрытых балансов', () => {
     setPharmacists([
-      mkPharmacist({ id: 'zero', name: 'Нулевой баланс', balance: 0, receipts30d: 0 }),
+      mkPharmacist({
+        id: 'zero',
+        name: 'Нулевой баланс',
+        balance: 0,
+        receipts30d: 0,
+        sales30d: 0,
+        earned30d: 0,
+      }),
     ])
     renderPage()
     const row = screen.getByTestId('pharmacist-row-zero')
-    expect(within(row).getByRole('cell', { name: /0\s*₸/ })).toBeInTheDocument()
-    expect(within(row).getByRole('cell', { name: '0' })).toBeInTheDocument()
-    const balanceMetric = screen.getByText('Текущие балансы').closest('.card') as HTMLElement
-    expect(within(balanceMetric).getByText(/0\s*₸/)).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: /^0\s*₸\s*0 чеков$/ })).toBeInTheDocument()
+    expect(within(row).getByRole('cell', { name: /^0\s*₸\s*на счёте 0\s*₸$/ })).toBeInTheDocument()
+    const salesMetric = screen.getByText('Продажи за 30 дней').closest('.card') as HTMLElement
+    expect(within(salesMetric).getByText('0 ₸')).toBeInTheDocument()
+    expect(within(salesMetric).getByText('0 чеков')).toBeInTheDocument()
+    expect(within(salesMetric).getByText('фармацевты заработали 0 ₸')).toBeInTheDocument()
+  })
+
+  it('сортирует по продажам и заработку за 30 дней, повторный клик возвращает порядок по имени', async () => {
+    setPharmacists([
+      mkPharmacist({ id: 'a', name: 'Абаева', sales30d: 1_000, earned30d: 900 }),
+      mkPharmacist({ id: 'b', name: 'Борисова', sales30d: 90_000, earned30d: 0 }),
+      mkPharmacist({ id: 'v', name: 'Ванина', sales30d: 5_000, earned30d: 300 }),
+    ])
+    renderPage()
+    const user = userEvent.setup()
+    const order = () =>
+      screen.getAllByTestId(/^pharmacist-row-/).map((row) => row.getAttribute('data-testid'))
+    expect(order()).toEqual(['pharmacist-row-a', 'pharmacist-row-b', 'pharmacist-row-v'])
+    await user.click(screen.getByRole('button', { name: /Продажи, 30 дн\./ }))
+    expect(order()).toEqual(['pharmacist-row-b', 'pharmacist-row-v', 'pharmacist-row-a'])
+    expect(screen.getByRole('columnheader', { name: /Продажи, 30 дн\./ })).toHaveAttribute(
+      'aria-sort',
+      'descending',
+    )
+    await user.click(screen.getByRole('button', { name: /Заработок, 30 дн\./ }))
+    expect(order()).toEqual(['pharmacist-row-a', 'pharmacist-row-v', 'pharmacist-row-b'])
+    await user.click(screen.getByRole('button', { name: /Заработок, 30 дн\./ }))
+    expect(order()).toEqual(['pharmacist-row-a', 'pharmacist-row-b', 'pharmacist-row-v'])
   })
 
   it('не добавляет буквальное null в поиск скрытых персональных полей', async () => {

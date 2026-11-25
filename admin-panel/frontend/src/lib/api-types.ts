@@ -372,7 +372,10 @@ export interface PharmacistDto {
   city: string
   tier: PharmacistTier
   receipts30d: number | null
+  /** Sum of `receipts30d`, ₸ (25.11.2026); null without finance access. */
+  sales30d?: number | null
   rulesAccepted30d: number | null
+  /** Credited by the wallet ledger in the last 30 days, ₸. */
   earned30d: number | null
   balance: number | null
   coursesDone: number
