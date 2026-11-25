@@ -362,8 +362,13 @@ class UnifiedAdminAccessIntegrationTest {
     @Test fun `catalog never advertises unmigrated routes as grantable and scope empty is invalid`() {
         // 270 with GET /api/admin/screens/fleet (all tills tab, 24.11.2026); 273 with the three till command
         // routes (diagnostics and restart without AnyDesk, 25.11.2026), NOT_READY for managed accounts like the fleet;
-        // 274 with GET /api/admin/pharmacists/coverage (the coverage view, ALL_ONLY, 25.11.2026).
-        assertThat(catalog.routes).hasSize(274)
+        // 274 with GET /api/admin/pharmacists/coverage (the coverage view, ALL_ONLY, 25.11.2026); 277 with the three
+        // routes of notices to pharmacists at the till (POSM 1.0.99), NOT_READY like the till commands.
+        assertThat(catalog.routes).hasSize(277)
+        assertThat(catalog.routes.filter { it.permission.subsection == "till_messages" }).hasSize(3).allSatisfy { route ->
+            assertThat(route.mode).isEqualTo(ScopeIntegration.NOT_READY)
+            assertThat(route.permission.module).isEqualTo("pharmacists")
+        }
         val staffRoutes = catalog.routes.filter { it.permission.subsection == "staff_access" }
         assertThat(staffRoutes.map { it.api }).containsExactlyInAnyOrder(
             "GET /api/admin/merch/staff-access", "GET /api/admin/merch/staff-access/options",
