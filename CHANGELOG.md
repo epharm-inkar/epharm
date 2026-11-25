@@ -134,6 +134,20 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Changed
 
+- Admin «Фармацевты» is the dense-table template (Grigoriy, 25.11.2026): 30 px rows without avatars, sticky header,
+  sorting by every column, truncated cells with the full text on hover, one counter line instead of four KPI tiles,
+  search and chain/city/status/format filters in one row, «Показать ИИН и телефоны», «Учётные данные ЛК», «Excel:
+  реестр» and «Продавцы Standard-N» in one «Ещё» menu and the row actions in a «⋯» menu. Columns: ФИО (tags «тест»,
+  «ожидает», «заблокирован»), ИИН, main pharmacy (all Standard-N pharmacies in the tooltip), card source, phone and
+  password presence, last sale, receipts for 30 days, earned this month, open training. Tier, balance and training
+  format left the columns (the same for everybody; the format stays a filter and a row action). At 375 px the page no
+  longer scrolls sideways: the table scrolls in its own box with the name pinned. Reusable parts: `src/ui/DataTable.tsx`,
+  `src/ui/Menu.tsx`, `src/lib/format.ts`, `PageHeader meta`.
+- `GET /api/admin/pharmacists` (and `/{id}`) also returns `accountSource`, `hasPhone`, `lastSaleAt` (latest non-refund
+  receipt by IIN or saved seller ID, any pharmacy), `earnedMonthKzt` (wallet credits since the 1st in Asia/Almaty, as
+  the till window), `openAssignments` and `standardNPharmacies`, from one read-only statement per response on existing
+  indexes (no migration). `lastSaleAt` and `earnedMonthKzt` follow the financial mask of `receipts30d`; Standard-N
+  pharmacies outside the admin's pharmacy scope are not listed. `receipts30d` keeps its contract.
 - Automatic recommendation reward: a recommended product counts when it is added after the actual display in the same
   checkout and stays in the paid receipt; the 120-second addition cutoff is gone (Grigoriy's decision 24.11.2026).
   Producer reports keep their separate 0–120-second metric.

@@ -30,6 +30,8 @@ class PharmacistService(
     private val wallet: PharmacistWalletService,
     private val administrativeScope: AdministrativeScope,
     private val credentialVault: kz.epharm.learnercredentials.LearnerPasswordVault,
+    /** Last sale, month earnings, open training and Standard-N pharmacies: one query per response. */
+    private val rosterFacts: PharmacistRosterFacts? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -45,7 +47,8 @@ class PharmacistService(
             else -> pharmacistRepository.findAllByOrderByNameAsc()
         }
         val counts = receiptCounts(rows)
-        return rows.map { projected(it, counts[it.id] ?: 0) }
+        val facts = factsFor(rows)
+        return rows.map { projected(it, counts[it.id] ?: 0, facts[it.id]) }
     }
 
     @Transactional(readOnly = true)
@@ -190,11 +193,29 @@ class PharmacistService(
     private fun projected(
         entity: PharmacistEntity,
         receipts30d: Int = receiptCounts(listOf(entity))[entity.id] ?: 0,
-    ): PharmacistDto = administrativeScope.pharmacist(PharmacistDto.of(entity).copy(receipts30d = receipts30d))
+        facts: PharmacistRosterFact? = factsFor(listOf(entity))[entity.id],
+    ): PharmacistDto = administrativeScope.pharmacist(
+        PharmacistDto.of(entity).copy(receipts30d = receipts30d).withFacts(facts),
+    )
 
     /** One bounded aggregate per response, never per list row; do not mutate stale entity counters. */
     private fun receiptCounts(rows: List<PharmacistEntity>): Map<String, Int> =
         pharmacistRepository.currentReceiptCounts(rows.associate { it.id to it.pharmacyId })
+
+    private fun factsFor(rows: List<PharmacistEntity>): Map<String, PharmacistRosterFact> =
+        if (rows.isEmpty()) emptyMap() else rosterFacts?.load(rows).orEmpty()
+
+    /** Financial facts are masked afterwards by [AdministrativeScope.pharmacist]; pharmacies stay inside the scope. */
+    private fun PharmacistDto.withFacts(facts: PharmacistRosterFact?): PharmacistDto {
+        if (facts == null) return this
+        val scope = administrativeScope.currentPharmacyIds()
+        return copy(
+            lastSaleAt = facts.lastSaleAt,
+            earnedMonthKzt = facts.earnedMonthKzt,
+            openAssignments = facts.openAssignments,
+            standardNPharmacies = facts.standardNPharmacies.filter { scope == null || it.id in scope },
+        )
+    }
 
     private fun loadOrThrow(id: String, forUpdate: Boolean = false): PharmacistEntity {
         val scope = administrativeScope.currentPharmacyIds()

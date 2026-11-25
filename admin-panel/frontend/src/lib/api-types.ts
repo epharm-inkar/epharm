@@ -362,6 +362,26 @@ export interface PharmacistDto {
   joinedAt: string
   createdAt: string
   updatedAt: string
+  /** Who created the card (V114); absent from older backends. */
+  accountSource?: PharmacistAccountSource | null
+  /** Presence of a phone even when the number itself is hidden by permissions. */
+  hasPhone?: boolean | null
+  /** Latest non-refund receipt by IIN or saved seller ID, any pharmacy; null when none or hidden. */
+  lastSaleAt?: string | null
+  /** Wallet credits since the 1st of the month in Asia/Almaty; null when hidden by permissions. */
+  earnedMonthKzt?: number | null
+  /** Training assignments that are neither completed nor cancelled. */
+  openAssignments?: number | null
+  /** ePharm pharmacies linked to the person's active Standard-N users (the main one may be among them). */
+  standardNPharmacies?: PharmacistPharmacyRefDto[] | null
+}
+
+export type PharmacistAccountSource = 'registration' | 'standardn'
+
+export interface PharmacistPharmacyRefDto {
+  id: string
+  name: string
+  city: string
 }
 
 export interface CreatePharmacistRequest {

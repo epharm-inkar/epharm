@@ -1,5 +1,50 @@
 # Admin Console
 
+## Dense tables: the Pharmacists template (2026-11-25)
+
+The owner asked for Microsoft-like density: compact rows, sortable tables, nothing that is the same for
+everybody. «Фармацевты» is the first page on the new parts; after his yes the same pattern goes to the other
+lists (see the end of this section).
+
+- `src/ui/DataTable.tsx`: 30 px rows, no avatars, sticky header, click-to-sort on every data column
+  (asc/desc arrow and `aria-sort`; empty values stay last in both directions; numbers and dates start
+  descending), one-line cells truncated with the full text in `title`, right-aligned tabular numbers,
+  leading sticky columns, its own scroll box (`className` gives it the height). Selection and action columns
+  have no `sortValue` and are not sortable. `sortRows` lives in `src/ui/sortRows.ts`.
+- `src/ui/Menu.tsx`: the «Ещё ▾» header menu and the row «⋯» menu. The list is rendered in a portal with
+  `position: fixed`, so a scrolling table never clips it; Escape, a click outside or scrolling closes it.
+- `src/lib/format.ts`: digit groups with U+202F (a thin space that does not wrap), money as `125 000 ₸`,
+  dates in the viewer's own time zone. `PageHeader meta` puts one counter line next to the title instead of
+  KPI tiles. `.dense-controls` makes toolbar inputs 32 px.
+- The page fills the viewport (`h-[calc(100dvh-106px)]`: topbar 58 px plus main padding), the table box takes
+  the rest, so 22 rows fit at 1440×900 (4 before). At 375 px the toolbar wraps, the page does not scroll
+  sideways and the table scrolls inside its box with the checkbox and name pinned.
+
+Pharmacists columns: ФИО (tags «тест» for «[ДЕМО]»/«[ТЕСТ]» cards, «ожидает», «заблокирован»), ИИН (masked
+until «Ещё» → «Показать ИИН и телефоны»; Standard-N diagnostics as an icon with the old text in `title`), main
+pharmacy with city (tooltip: chain and all Standard-N pharmacies, «+N» tag), card source, phone and password
+presence (the revealed phone replaces the tick), last sale, receipts for 30 days, earned this month, open
+training assignments. Tier, balance and the training-format column were dropped: the format stays a toolbar
+filter, a bulk action and a row action. Test cards are not deleted. Every former action is still reachable:
+header «Добавить фармацевта» and «Ещё» (personal data, D9 credentials for 1-25 selected people, «Excel: реестр»,
+«Продавцы Standard-N»); the row «⋯» (training card, training format, set/change password, activate, block or
+unblock); bulk «Изменить формат (N)» and «Назначить обучение (N)» in the toolbar. The Excel export runs in
+`useReportDownload` so closing the menu does not cancel it; the result comes as a toast.
+
+`GET /api/admin/pharmacists` (also `/{id}` and the training roster) adds `accountSource`, `hasPhone`,
+`lastSaleAt`, `earnedMonthKzt`, `openAssignments`, `standardNPharmacies` from one read-only statement per
+response (`PharmacistRosterFacts`): correlated index probes on `ix_pos_sales_seller_iin_printed` and
+`idx_pos_sales_pharmacist_printed` (last non-refund receipt, backward scan), `ix_wallet_pharmacist_created`,
+`ix_training_assignment_pharmacist`, `ix_standardn_directory_active_iin` and `ix_pharmacies_standardn_profile`.
+No migration. `lastSaleAt` and `earnedMonthKzt` follow the financial mask of `receipts30d`; Standard-N
+pharmacies outside an admin's pharmacy scope are dropped. `receipts30d` is unchanged (saved seller ID in the
+card's current pharmacy). An old backend without the new fields shows «—» and derives phone presence from a
+visible number.
+
+Next tables for the same pattern: Pharmacies («Сеть аптек»), Promo campaigns list, Rules, Reconcile queue,
+Finance payout batches and items, Dashboard journal, Training assignments, programs, results and certificates,
+Merch tasks, Merch inventory and placements, Screens connected tills, Access management accounts.
+
 ## Explicit unlimited campaign budget — candidate 2026-11-16
 
 Campaign detail offers “Без лимита” only with fresh server-confirmed financial

@@ -320,6 +320,105 @@
   }
 }
 
+/* Dense data table (src/ui/DataTable.tsx, template 25.11.2026): the scroll region is its wrapper,
+   so the table itself is a real table again (the block rule above would break the sticky header). */
+.admin-console main table.dt-table,
+table.dt-table {
+  display: table;
+  width: 100%;
+  max-width: none;
+  overflow: visible;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.dt-table th,
+.admin-console main .dt-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 30px;
+  padding: 0 8px;
+  /* Same tints as the other admin tables (thead and row hover above). */
+  background: #f2f7f7;
+  border-bottom: 1px solid theme('colors.ink.200');
+  color: theme('colors.ink.500');
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 16px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.dt-table th.dt-sticky,
+.admin-console main .dt-table th.dt-sticky {
+  z-index: 3;
+}
+
+.dt-table td {
+  height: 30px;
+  padding: 0 8px;
+  border-bottom: 1px solid theme('colors.ink.100');
+  color: theme('colors.ink.800');
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.dt-table td.dt-sticky {
+  position: sticky;
+  z-index: 1;
+  background: theme('colors.paper.card');
+}
+
+.dt-table tbody tr:hover > td,
+.admin-console main .dt-table tbody tr:hover > td {
+  background: #eff8f7;
+}
+
+.dt-table tbody tr[data-selected='true'] > td {
+  background: theme('colors.brand.green.50');
+}
+
+.dt-table tbody tr[data-selected='true'] > td:first-child {
+  box-shadow: inset 2px 0 0 theme('colors.brand.green.600');
+}
+
+.dt-table tbody tr.dt-muted > td {
+  color: theme('colors.ink.400');
+}
+
+.dt-table td.dt-empty {
+  height: auto;
+  padding: 0;
+  white-space: normal;
+}
+
+.dt-sort {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font: inherit;
+}
+
+.dt-sort:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid theme('colors.brand.green.600');
+  outline-offset: 1px;
+}
+
+/* Toolbars above dense tables: 32px controls instead of the 38px form inputs. */
+.dense-controls .inp {
+  height: 32px;
+  font-size: 13px;
+}
+
 /* ─────────────────────────────────────────────────────────────────
    LEARNER PORTAL — responsive pharmacy workspace
    Keeps the mobile product flow while sharing the selected admin
