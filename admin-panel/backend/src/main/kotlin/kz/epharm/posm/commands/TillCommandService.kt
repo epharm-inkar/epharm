@@ -79,7 +79,7 @@ class TillCommandService(
         return jdbc.query("$SELECT_COMMAND $where ORDER BY created_at DESC, id DESC LIMIT ?", commandMapper, *args.toTypedArray())
     }
 
-    @Transactional(readOnly = true)
+    /** No transaction: one row is read, then the archive comes from the storage without holding a connection. */
     fun artifact(id: UUID): TillCommandArtifact {
         val row = jdbc.query(
             "SELECT pharmacy_id, device_id, finished_at, artifact_key FROM till_commands WHERE id = ?",
@@ -94,7 +94,12 @@ class TillCommandService(
             id,
         ).singleOrNull() ?: notFound("Задание не найдено")
         val key = row.key ?: notFound("Архива нет: касса его не прислала или он удалён через 14 дней")
-        val bytes = storage.get(key) ?: notFound("Архив не найден в хранилище")
+        val bytes = try {
+            storage.get(key)
+        } catch (error: RuntimeException) {
+            log.warn("Till diagnostics archive {} was not read: {}", key, error.message)
+            storageUnavailable()
+        } ?: notFound("Архив не найден в хранилище")
         return TillCommandArtifact(TillCommandRules.archiveFileName(row.pharmacyId, row.deviceId, row.finishedAt), bytes)
     }
 
@@ -252,11 +257,7 @@ class TillCommandService(
             storage.put(key, bytes)
         } catch (error: RuntimeException) {
             log.warn("Till diagnostics archive for {} was not stored: {}", id, error.message)
-            throw AppException(
-                ErrorCode.UPSTREAM_UNAVAILABLE,
-                "Хранилище архивов недоступно, повторите позже",
-                HttpStatus.SERVICE_UNAVAILABLE,
-            )
+            storageUnavailable()
         }
         return key
     }
@@ -313,5 +314,11 @@ class TillCommandService(
 
         fun unauthorized(message: String): Nothing =
             throw AppException(ErrorCode.UNAUTHORIZED, message, HttpStatus.UNAUTHORIZED)
+
+        fun storageUnavailable(): Nothing = throw AppException(
+            ErrorCode.UPSTREAM_UNAVAILABLE,
+            "Хранилище архивов недоступно, повторите позже",
+            HttpStatus.SERVICE_UNAVAILABLE,
+        )
     }
 }
