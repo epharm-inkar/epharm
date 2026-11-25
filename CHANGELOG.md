@@ -7,6 +7,19 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Cabinet sign-in by phone (owner's decision 25.11.2026): `/learn` has one field «ИИН или номер телефона» and a
+  password. `POST /api/mobile/auth/login` accepts `{phone, password}` besides the old `{iin, password}` (the cabinet
+  still sends an IIN that way, so an older server keeps working). The number is normalized with `PhoneUtil`
+  (`+7 7XX…`, `87XX…`, `7XX…`) and must belong to exactly one card, in any stored format; a number two cards share
+  signs in nobody. Phone attempts spend the 10-per-5-minutes budget of the card's IIN, unknown numbers have their
+  own. The SMS activation, registration and password reset screens are gone from the cabinet (their endpoints
+  stay); a hint says the password is set at the till: ePharm icon by the clock, then «Мой профиль».
+- The till changes a password that is already set: `POST /api/posm/self/contact` no longer answers 409 for the
+  password (the till asks for it twice and sends the final one). A changed password ends the person's cabinet
+  sessions (`mobile_refresh_tokens`); POSM staff sessions end through the existing `password_hash` triggers; the
+  credential vault keeps the new password as on first set. The same password sent again changes nothing. A bound
+  phone is still never replaced from the till (409). Till passwords follow the POSM minimum of 4 characters (6
+  before). `passwordSet` and `phoneBound` in `/api/posm/self` are unchanged.
 - «ePharm на технических работах» (Grigoriy, 25.11.2026): HQ switches it in `posm_notice` (`PUT
   /api/admin/posm-notice`, HQ roles); the till reads its view about once a minute (`GET /api/posm/notice`, device
   key). POSM 1.0.95 then opens a notice from the ePharm icon instead of the personal window, puts an amber dot on the

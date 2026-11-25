@@ -53,12 +53,13 @@ and follow-up reads from that obsolete session. Current-session errors remain vi
 This does not cancel a mutation already accepted by the server, alter saved progress,
 or change the SMS-free initial RPS registration and verified recovery flows.
 
-The separate `/learn` login cancels outstanding identity/authentication requests when
-the IIN, activation phone, step or component changes. A response from the previous
-identity cannot persist tokens or replace the current form. Failed current requests
-retain entered passwords; no automatic password submission or OTP retry is added.
-POSM new-employee registration remains SMS-free; existing learner activation and
-password recovery are separate protected flows.
+The separate `/learn` login is one form since 25.11.2026: «ИИН или номер телефона» and a
+password (`login-identifier.ts`: twelve digits are an IIN, sent as the old `{iin, password}`;
+a Kazakhstan number goes as `{phone: "+7XXXXXXXXXX"}`). Changing the login, navigation or
+unmount cancels an outstanding sign-in; a response from the previous identity cannot persist
+tokens or replace the current form. Failed requests keep what was typed; nothing is resubmitted
+automatically. The cabinet has no SMS activation, registration or reset: a hint sends the
+pharmacist to the till (ePharm icon by the clock, then «Мой профиль»).
 
 The pharmacy network shows three independent counters on desktop and mobile:
 inventory PCs (`inventoryDeviceCount`), registered POSM device identities, and devices

@@ -223,6 +223,27 @@ older manual/Excel writers safe. Rehearse the exact recovery artifact before rel
 The isolated HTTP/SQL workload and acceptance criteria are in
 [`tools/loadtests/recommendation-rewards`](../tools/loadtests/recommendation-rewards/README.md).
 
+## Cabinet sign-in by phone, password change from the till (25.11.2026)
+
+Pharmacists no longer register: the card comes from the Standard-N directory and the till's personal window
+(`/api/posm/self`) sets the phone and the password. `POST /api/mobile/auth/login` takes `{iin, password}`
+(unchanged) or `{phone, password}`; exactly one identifier, otherwise 400. The phone is normalized with
+`PhoneUtil.canonicalOrNull` (`+7` and ten digits). `PharmacistPhoneOwners` finds the cards whose stored phone
+means that number in any format (current writers store `+7XXXXXXXXXX`; an HQ edit keeps what was typed). Sign-in
+needs exactly one owner, locks the card like the IIN path and checks the number again under the lock. Unknown,
+shared or passwordless numbers and wrong passwords get the same 401 `INVALID_CREDENTIALS`; a blocked card gets 403
+as by IIN. `PharmacistPasswordLoginLimiter.checkPhone` spends the budget of the owner's IIN, so IIN, phone, POSM and
+`/learn` attempts share one durable row per account; a number of no single card has its own budget. Malformed
+requests are refused before the limiter.
+
+`POST /api/posm/self/contact` fills an empty phone (another number, or a number another card holds in any format,
+is 409) and sets or replaces the password (POSM rules: 4 to 128 characters, at most 72 UTF-8 bytes). A replaced
+password revokes every mobile refresh token of the person (cabinet sessions, till one-time-link sessions included);
+issued access JWTs keep their 15-minute lifetime. POSM staff sessions end through the V061/V097 `password_hash`
+triggers. The vault captures the new password after the flush, as on first set. The current password sent again
+keeps the hash and the sessions. The cabinet no longer offers SMS activation, registration or reset; those
+endpoints stay for older clients.
+
 ## Pharmacist access recovery candidate — 2026-11-10
 
 All pharmacist password writers share the BCrypt limit of 72 UTF-8 bytes without
