@@ -92,6 +92,11 @@ class PharmacistEntity(
 
     @Column(name = "standard_n_identity_checked_at", insertable = false, updatable = false)
     var standardNIdentityCheckedAt: Instant? = null,
+
+    // V114: 'standardn' when the server created the card from the central Standard-N directory. Read-only here:
+    // admin-created cards take the column default and an admin save never rewrites where a card came from.
+    @Column(name = "account_source", nullable = false, length = 16, insertable = false, updatable = false)
+    var accountSource: String = "registration",
 ) {
     var tier: PharmacistTier
         get() = PharmacistTier.valueOf(tierRaw)

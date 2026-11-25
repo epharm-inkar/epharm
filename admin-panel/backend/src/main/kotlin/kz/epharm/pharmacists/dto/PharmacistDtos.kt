@@ -36,6 +36,18 @@ data class PharmacistDto(
     val standardNIdentityMatchMethod: String? = "NONE",
     val standardNIdentityMatchStatus: String? = "UNKNOWN",
     val standardNIdentityCheckedAt: Instant? = null,
+    /** Who created the card (V114): `standardn` = the server, from the central Standard-N directory. */
+    val accountSource: String = "registration",
+    /** Presence only: the number itself stays behind the personal-data permission. */
+    val hasPhone: Boolean = false,
+    /** Latest non-refund receipt of the person, by IIN or by the saved seller ID, in any pharmacy. */
+    val lastSaleAt: Instant? = null,
+    /** Wallet credits since the 1st of the current month in Asia/Almaty, as the till's personal window shows. */
+    val earnedMonthKzt: Long? = null,
+    /** Training assignments that are neither completed nor cancelled; null when not computed. */
+    val openAssignments: Int? = null,
+    /** ePharm pharmacies linked (V112) to the person's active Standard-N users; the main one may be among them. */
+    val standardNPharmacies: List<PharmacistPharmacyRefDto> = emptyList(),
 ) {
     companion object {
         fun of(e: PharmacistEntity): PharmacistDto = PharmacistDto(
@@ -54,9 +66,13 @@ data class PharmacistDto(
             standardNIdentityMatchMethod = e.standardNIdentityMatchMethod,
             standardNIdentityMatchStatus = e.standardNIdentityMatchStatus,
             standardNIdentityCheckedAt = e.standardNIdentityCheckedAt,
+            accountSource = e.accountSource,
+            hasPhone = e.phone.isNotBlank(),
         )
     }
 }
+
+data class PharmacistPharmacyRefDto(val id: String, val name: String, val city: String)
 
 data class CreatePharmacistRequest(
     @field:NotBlank @field:Size(max = 255)

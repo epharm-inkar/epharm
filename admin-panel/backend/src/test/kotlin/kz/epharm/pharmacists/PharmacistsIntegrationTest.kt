@@ -41,9 +41,12 @@ import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.sql.Timestamp
 import java.time.LocalDate
 import java.time.Instant
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -164,6 +167,97 @@ class PharmacistsIntegrationTest {
         mockMvc.perform(get("/api/admin/pharmacists/u_pending").header("Authorization", bearer))
             .andExpect(status().isOk).andExpect(jsonPath("$.receipts30d").value(0))
         assertEquals(999, jdbc.queryForObject("SELECT receipts_30d FROM pharmacists WHERE id = 'u_active'", Int::class.java))
+    }
+
+    @Test
+    fun `roster facts read the last sale by IIN anywhere, Almaty month earnings, open training and Standard-N pharmacies`() {
+        val observed = Instant.now().truncatedTo(ChronoUnit.SECONDS)
+        val iin = "830909300014"
+        val almaty = ZoneId.of("Asia/Almaty")
+        val monthStart = LocalDate.now(almaty).withDayOfMonth(1).atStartOfDay(almaty).toInstant()
+        for ((id, city) in listOf("europharma_1" to "Астана", "europharma_2" to "Шымкент")) {
+            pharmacyRepository.saveAndFlush(
+                PharmacyEntity(id = id, name = "Europharma №10${id.last()}", chainId = "europharma", chainName = "Europharma", city = city)
+                    .also { it.group = PharmacyGroup.pilot },
+            )
+        }
+        for ((pharmacy, profile) in listOf("europharma_0" to 701L, "europharma_1" to 702L, "europharma_2" to 703L)) {
+            jdbc.update("UPDATE pharmacies SET standardn_profile_id = ?, standardn_profile_source = 'manual' WHERE id = ?", profile, pharmacy)
+        }
+        // Active users in two linked profiles; the blocked user (status 1) in the third must not appear.
+        for ((profile, status) in listOf(701L to 0, 702L to 0, 703L to 1)) {
+            jdbc.update(
+                """INSERT INTO standardn_pharmacist_directory(directory_key,source_profile_id,source_user_id,iin,full_name,source_status)
+                    VALUES(?,?,11,?,'Айгерим Касенова',?)""",
+                "roster-$profile", profile, iin, status,
+            )
+        }
+        jdbc.update(
+            """INSERT INTO pharmacists(id, name, iin, phone, password_hash, tier, status, pharmacy_id, pharmacy_name, city, account_source)
+                VALUES ('u_directory', 'Дана Сапарова', '900101400011', '', NULL, 'Silver', 'active', 'europharma_0', 'Europharma №100', 'Алматы', 'standardn')""",
+        )
+
+        fun sale(id: String, at: Instant, pharmacy: String, person: String = "", seller: String? = iin) = PosSaleEntity(
+            id = id, pharmacistId = person, pharmacyId = pharmacy, printedAt = at, sellerIin = seller,
+            items = listOf(PosSaleItem(name = "one")),
+        )
+        sales.saveAllAndFlush(listOf(
+            // Older receipt attributed only by the saved seller ID (before V112), in the home pharmacy.
+            sale("legacy_home", observed.minus(3, ChronoUnit.DAYS), "europharma_0", person = "u_active", seller = null),
+            sale("other_pharmacy", observed.minus(2, ChronoUnit.HOURS), "europharma_1"),
+            sale("refund_newer", observed.minus(1, ChronoUnit.HOURS), "europharma_1"),
+            sale("future_clock", observed.plus(1, ChronoUnit.HOURS), "europharma_1"),
+        ))
+        jdbc.update("UPDATE pos_sales SET reward_evidence = CAST(? AS jsonb) WHERE id = 'refund_newer'",
+            """{"completion":{"status":"refund"}}""")
+
+        fun wallet(sourceId: String, source: String, amount: Long, earned: Long, at: Instant) = jdbc.update(
+            """INSERT INTO pharmacist_wallet_entries
+                (id, pharmacist_id, source, source_id, amount_kzt, earned_delta_kzt, context_key, balance_after_kzt, created_at)
+                VALUES (?, 'u_active', ?, ?, ?, ?, 'synthetic-roster', ?, ?)""",
+            UUID.randomUUID(), source, sourceId, amount, earned, amount, Timestamp.from(at),
+        )
+        wallet("bonus-now", "receipt_bonus", 1_500, 1_500, observed)
+        wallet("training-at-month-start", "training_bonus", 500, 500, monthStart)
+        wallet("bonus-last-month", "receipt_bonus", 700, 700, monthStart.minusSeconds(1))
+        wallet("adjustment-now", "admin_adjustment", 300, 0, observed)
+
+        val actor = adminUserRepository.findAll().single().id
+        val program = UUID.randomUUID()
+        val version = UUID.randomUUID()
+        jdbc.update("""INSERT INTO training_programs(id,name,allowed_formats,status,created_by)
+            VALUES(?,'Синтетическая программа','online','published',?)""", program, actor)
+        jdbc.update("""INSERT INTO training_program_versions(id,program_id,version_no,allowed_formats,snapshot_json,created_by)
+            VALUES(?,?,1,'online','{}',?)""", version, program, actor)
+        listOf("in_progress", "scheduled", "completed", "cancelled").forEachIndexed { index, status ->
+            jdbc.update("""INSERT INTO training_assignments(id,program_version_id,pharmacist_id,format,status,assigned_by,repeat_no)
+                VALUES(?,?,'u_active','online',?,?,?)""", UUID.randomUUID(), version, status, actor, index + 1)
+        }
+
+        val body = mockMvc.perform(get("/api/admin/pharmacists").header("Authorization", bearer))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        val rows = objectMapper.readTree(body).associateBy { it["id"].asText() }
+
+        val active = rows.getValue("u_active")
+        assertEquals("registration", active["accountSource"].asText())
+        assertEquals(true, active["hasPhone"].asBoolean())
+        assertEquals(observed.minus(2, ChronoUnit.HOURS), Instant.parse(active["lastSaleAt"].asText()))
+        assertEquals(2_000L, active["earnedMonthKzt"].asLong())
+        assertEquals(2, active["openAssignments"].asInt())
+        assertEquals(listOf("Europharma №100", "Europharma №101"), active["standardNPharmacies"].map { it["name"].asText() })
+        assertEquals(listOf("europharma_0", "europharma_1"), active["standardNPharmacies"].map { it["id"].asText() })
+        // The 30-day count keeps its contract: saved seller ID in the current pharmacy only.
+        assertEquals(1, active["receipts30d"].asInt())
+
+        val pending = rows.getValue("u_pending")
+        assertEquals(true, pending["lastSaleAt"] == null || pending["lastSaleAt"].isNull)
+        assertEquals(0L, pending["earnedMonthKzt"].asLong())
+        assertEquals(0, pending["openAssignments"].asInt())
+        assertEquals(0, pending["standardNPharmacies"].size())
+
+        val directory = rows.getValue("u_directory")
+        assertEquals("standardn", directory["accountSource"].asText())
+        assertEquals(false, directory["hasPhone"].asBoolean())
     }
 
     @Test

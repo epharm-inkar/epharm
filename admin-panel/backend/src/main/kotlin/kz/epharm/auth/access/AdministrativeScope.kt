@@ -234,7 +234,9 @@ class AdministrativeScope(private val catalog: UnifiedAdminCatalog, private val 
             standardNIdentityMatchStatus = if (personal) dto.standardNIdentityMatchStatus else null,
             standardNIdentityCheckedAt = if (personal) dto.standardNIdentityCheckedAt else null,
             earned30d = if (finance) dto.earned30d else null, balance = if (finance) dto.balance else null,
-            receipts30d = if (finance) dto.receipts30d else null, rulesAccepted30d = if (finance) dto.rulesAccepted30d else null)
+            receipts30d = if (finance) dto.receipts30d else null, rulesAccepted30d = if (finance) dto.rulesAccepted30d else null,
+            // Same person-level sales/money rule as receipts30d and balance (D6).
+            lastSaleAt = if (finance) dto.lastSaleAt else null, earnedMonthKzt = if (finance) dto.earnedMonthKzt else null)
     }
 
     fun pharmacy(dto: PharmacyDto): PharmacyDto {
