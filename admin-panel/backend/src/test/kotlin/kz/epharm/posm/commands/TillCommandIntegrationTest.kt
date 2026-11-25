@@ -84,6 +84,7 @@ class TillCommandIntegrationTest {
     private val zip = byteArrayOf(0x50, 0x4B, 0x03, 0x04) + "synthetic diagnostics".toByteArray()
 
     @BeforeEach fun seed() {
+        storage.clear()
         jdbc.update("DELETE FROM till_commands")
         jdbc.update("DELETE FROM fulfillment_devices WHERE pharmacy_id LIKE 'tc-%'")
         jdbc.update("DELETE FROM pharmacies WHERE id LIKE 'tc-%'")

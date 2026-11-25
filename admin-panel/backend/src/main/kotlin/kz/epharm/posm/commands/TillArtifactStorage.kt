@@ -37,4 +37,7 @@ class InMemoryTillArtifactStorage : TillArtifactStorage {
     }
 
     fun keys(): Set<String> = objects.keys.toSet()
+
+    /** Tests share one context: each test starts with an empty store. */
+    fun clear() = objects.clear()
 }
