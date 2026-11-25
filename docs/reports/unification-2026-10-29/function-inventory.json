@@ -7939,7 +7939,7 @@
         "admin-panel/frontend/src/features/learner/LearnerTrainingPage.tsx",
         "admin-panel/frontend/src/app/router.tsx"
       ],
-      "api": ["GET /api/mobile/me/recommendations"],
+      "api": ["GET /api/mobile/me/recommendations", "GET /api/mobile/me/top-products"],
       "jobs": [],
       "data": [
         "pharmacists",
