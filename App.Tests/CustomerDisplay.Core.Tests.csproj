@@ -94,5 +94,6 @@
     <Compile Include="..\App\Services\MerchTaskDeliveryReply.cs" Link="Services\MerchTaskDeliveryReply.cs" />
     <Compile Include="..\App\Config\EpharmConfig.cs" Link="Config\EpharmConfig.cs" />
     <Compile Include="..\App\Services\StandardNConnectTarget.cs" Link="Services\StandardNConnectTarget.cs" />
+    <Compile Include="..\App\Services\StandardNDbCandidates.cs" Link="Services\StandardNDbCandidates.cs" />
   </ItemGroup>
 </Project>
