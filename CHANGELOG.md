@@ -5,6 +5,15 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- POSM 1.0.97 (Grigoriy, 25.11.2026: «окна входа не должно быть»): the till no longer has a sign-in window. The old
+  «Вход / регистрация сотрудника» window, its tray icon and menu, the employee grant channel from the till
+  (`StaffAuthClient`), the process-scoped session state, the prompt policy and the capability polling are deleted
+  with their 52 UI cases and unit tests (about 3,000 lines). The Standard-N session diagnostic stays: every five
+  minutes the heartbeat reports `staffSourceStatus` («Стандарт-Н» in «Все кассы»), `staffAuthStatus` is always
+  `local_disabled`. The server keeps the `/api/posm/staff/*` routes for tills that have not updated yet.
+
 ### Added
 
 - POSM 1.0.96 (Grigoriy, 25.11.2026): «Вход в ePharm выполнен». When the person signed in to Standard-N is known,

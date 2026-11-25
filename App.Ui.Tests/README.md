@@ -12,7 +12,12 @@ can explicitly pass `--allow-noninteractive`; the JSON then records the actual
 visible window on a real cashier's desktop. The existing Windows/Standard-N
 pilot is still required before enabling the production staff feature.
 
-Fifty-four cases exercise the actual `StaffAuthWindow` and `RecommendationWindow`
+Six cases exercise the actual `RecommendationWindow` through its own in-process controls (empty or failed
+refresh, partial cart removal, honest stock lines with an immutable quote, lifetime, native display events and
+the cashier showcase). The 52 `StaffAuthWindow` cases went away with the window in POSM 1.0.97: the till has no
+sign-in. `--staff-self-showcase` and `--notice-showcase` render the personal window and the works notice.
+
+History (before 1.0.97): Fifty-four cases exercise the actual `StaffAuthWindow` and `RecommendationWindow`
 assemblies through their own in-process controls. They include nonblocking close,
 parent-accepted grants, rejected foreign/stale contexts, fail-open cash work, source
 loss on an existing filled window, single-flight submits, local login password policy,

@@ -328,7 +328,6 @@ public sealed class LegacyPosmCompatibilityTests
     {
         var config = new CustomerDisplay.Config.EpharmConfig { BackendBaseUrl = Origin };
         Assert.Equal(new Uri(Origin), Assert.Single(config.GetBackendBaseUris()));
-        Assert.True(CustomerDisplay.Config.EpharmConfig.StaffAuthenticationReleaseEnabled);
         Assert.Equal(Origin, Fixture("1.0.57")["canonicalPublicOrigin"]!.GetValue<string>());
         Assert.Equal(Origin, Fixture("1.0.66")["canonicalPublicOrigin"]!.GetValue<string>());
     }

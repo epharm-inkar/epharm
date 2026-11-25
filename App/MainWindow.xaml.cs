@@ -220,7 +220,7 @@ StartLogReader();
             StartHeartbeatPolling();
             StartFulfillment();
             StartTaskKiosk();
-            StartStaffAuthentication();
+            StartStaffSourceDiagnostics();
             UpdateStartup.MarkInitializationComplete();
 
         }
@@ -838,7 +838,7 @@ percent = Math.Round(percent, 2, MidpointRounding.AwayFromZero); // наприм
             try
             {
                 StopTaskKiosk();
-                StopStaffAuthentication();
+                StopStaffSourceDiagnostics();
                 _logCts?.Cancel();
                 _standardNReceiptCts?.Cancel();
                 _playlistPollCts?.Cancel();

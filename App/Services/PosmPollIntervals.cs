@@ -17,21 +17,8 @@ public static class PosmPollIntervals
     /// <summary>A switched-off feature is asked again once an hour.</summary>
     public static readonly TimeSpan DisabledFeatureRecheck = TimeSpan.FromHours(1);
 
-    /// <summary>Employee sign-in switch: a server-side change reaches the cash desk within 15 minutes.</summary>
-    public static readonly TimeSpan StaffCapabilityRecheck = TimeSpan.FromMinutes(15);
-
-    /// <summary>The capability endpoint could not be reached: retry sooner than a healthy recheck.</summary>
-    public static readonly TimeSpan StaffCapabilityRetry = TimeSpan.FromMinutes(5);
-
-    /// <summary>Login switched off: who sells at the till is still read this often, for the heartbeat only.</summary>
-    public static readonly TimeSpan StaffDiagnosticWhileDisabled = TimeSpan.FromMinutes(5);
-
-    public static TimeSpan NextStaffCapabilityCheck(StaffCapabilityCheck capability)
-    {
-        ArgumentNullException.ThrowIfNull(capability);
-        if (capability.Status is "network_unavailable" or "endpoint_unavailable") return StaffCapabilityRetry;
-        return capability.Enabled ? StaffCapabilityRecheck : DisabledFeatureRecheck;
-    }
+    /// <summary>Who sells at the till is read this often, for the heartbeat only (no sign-in at the till since 1.0.97).</summary>
+    public static readonly TimeSpan StaffSourceDiagnostic = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Online-order queue: poll at the configured rate only while the queue is shown; when the

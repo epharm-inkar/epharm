@@ -123,10 +123,7 @@ public sealed class SaleRejectionArchiveTests : IDisposable
         Assert.Equal(TimeSpan.FromHours(1), PosmPollIntervals.NextFulfillmentPoll(queueAvailable: false, configuredPollSec: 10));
         Assert.Equal(TimeSpan.FromSeconds(10), PosmPollIntervals.NextFulfillmentPoll(queueAvailable: true, configuredPollSec: 10));
         Assert.Equal(TimeSpan.FromSeconds(5), PosmPollIntervals.NextFulfillmentPoll(queueAvailable: true, configuredPollSec: 0));
-        Assert.Equal(TimeSpan.FromHours(1), PosmPollIntervals.NextStaffCapabilityCheck(new StaffCapabilityCheck(false, "server_disabled")));
-        Assert.Equal(TimeSpan.FromMinutes(15), PosmPollIntervals.NextStaffCapabilityCheck(new StaffCapabilityCheck(true, "enabled")));
-        Assert.Equal(TimeSpan.FromMinutes(5), PosmPollIntervals.NextStaffCapabilityCheck(new StaffCapabilityCheck(false, "network_unavailable")));
-        Assert.Equal(TimeSpan.FromMinutes(5), PosmPollIntervals.NextStaffCapabilityCheck(new StaffCapabilityCheck(false, "endpoint_unavailable")));
+        Assert.Equal(TimeSpan.FromMinutes(5), PosmPollIntervals.StaffSourceDiagnostic);
     }
 
     private static EpharmApiClient Api(StatusEndpoint server) =>

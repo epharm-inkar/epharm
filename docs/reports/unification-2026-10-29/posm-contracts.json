@@ -2067,6 +2067,7 @@
     },
     {
       "id": "STAFF_LOGIN",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/login",
       "auth": {
@@ -2140,11 +2141,6 @@
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
           "line": 16,
           "anchor": "data class StaffLoginRequest("
-        },
-        {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 49,
-          "anchor": "public Task<StaffAuthResponse> LoginAsync("
         }
       ],
       "positiveChecks": [
@@ -2232,6 +2228,7 @@
     },
     {
       "id": "STAFF_REGISTER",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/register",
       "auth": {
@@ -2310,11 +2307,6 @@
           "anchor": "data class StaffPasswordRequest("
         },
         {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 81,
-          "anchor": "private async Task<T> PostAsync<T>"
-        },
-        {
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffAuthService.kt",
           "line": 108,
           "anchor": "private fun completeAccount("
@@ -2339,6 +2331,7 @@
     },
     {
       "id": "STAFF_PASSWORD_RESET",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/password/reset",
       "auth": {
@@ -2404,11 +2397,6 @@
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
           "line": 26,
           "anchor": "data class StaffPasswordRequest("
-        },
-        {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 81,
-          "anchor": "private async Task<T> PostAsync<T>"
         }
       ],
       "positiveChecks": ["Isolated correct-purpose fake OTP succeeds once with expected response."],
@@ -2421,6 +2409,7 @@
     },
     {
       "id": "STAFF_PASSWORD_ACTIVATE",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/password/activate",
       "auth": {
@@ -2486,11 +2475,6 @@
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
           "line": 26,
           "anchor": "data class StaffPasswordRequest("
-        },
-        {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 81,
-          "anchor": "private async Task<T> PostAsync<T>"
         }
       ],
       "positiveChecks": ["Isolated correct-purpose fake OTP succeeds once with expected response."],
@@ -2569,6 +2553,7 @@
     },
     {
       "id": "STAFF_SESSION_CHECK",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/session/check",
       "auth": {
@@ -2635,11 +2620,6 @@
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffAuthService.kt",
           "line": 139,
           "anchor": "fun session("
-        },
-        {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 61,
-          "anchor": "public async Task<StaffAuthResponse> ValidateAsync("
         }
       ],
       "positiveChecks": ["Correct session/context validates without returning raw token again."],
@@ -2652,6 +2632,7 @@
     },
     {
       "id": "STAFF_LOGOUT",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/logout",
       "auth": {
@@ -2694,11 +2675,6 @@
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffAuthService.kt",
           "line": 153,
           "anchor": "fun logout("
-        },
-        {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 73,
-          "anchor": "public async Task LogoutAsync("
         }
       ],
       "positiveChecks": ["Logout existing grant then session validation fails."],
@@ -2710,6 +2686,7 @@
     },
     {
       "id": "STAFF_DEVICE_LOGIN",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/device/login",
       "auth": {
@@ -2786,11 +2763,6 @@
           "anchor": "fun deviceLogin("
         },
         {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 49,
-          "anchor": "public Task<StaffAuthResponse> DeviceLoginAsync("
-        },
-        {
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
           "line": 50,
           "anchor": "data class StaffDeviceContext("
@@ -2821,6 +2793,7 @@
     },
     {
       "id": "STAFF_DEVICE_REGISTER_WITHOUT_SMS",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/device/register-without-sms",
       "auth": {
@@ -2899,11 +2872,6 @@
           "anchor": "fun deviceRegisterWithoutSms("
         },
         {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 54,
-          "anchor": "public Task<StaffRegistrationResponse> DeviceRegisterWithoutSmsAsync("
-        },
-        {
           "path": "admin-panel/backend/src/main/resources/db/migration/V098__pharmacist_phone_verification.sql",
           "line": 2,
           "anchor": "ALTER TABLE pharmacists ADD COLUMN"
@@ -2929,6 +2897,7 @@
     },
     {
       "id": "STAFF_DEVICE_REGISTER",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/device/register",
       "auth": {
@@ -3013,11 +2982,6 @@
           "anchor": "fun deviceRegister("
         },
         {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 51,
-          "anchor": "public Task<StaffRegistrationResponse> DeviceRegisterAsync("
-        },
-        {
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
           "line": 50,
           "anchor": "data class StaffDeviceContext("
@@ -3047,6 +3011,7 @@
     },
     {
       "id": "STAFF_DEVICE_SESSION_CHECK",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/device/session/check",
       "auth": {
@@ -3118,11 +3083,6 @@
           "anchor": "fun deviceSession("
         },
         {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 54,
-          "anchor": "public async Task<StaffAuthResponse> ValidateDeviceAsync("
-        },
-        {
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
           "line": 50,
           "anchor": "data class StaffDeviceContext("
@@ -3153,6 +3113,7 @@
     },
     {
       "id": "STAFF_DEVICE_LOGOUT",
+      "posmClient": "removed in POSM 1.0.97 (25.11.2026): the till has no sign-in; the server keeps the route for tills that have not updated",
       "method": "POST",
       "path": "/api/posm/staff/device/logout",
       "auth": {
@@ -3207,11 +3168,6 @@
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffAuthService.kt",
           "line": 255,
           "anchor": "fun deviceLogout("
-        },
-        {
-          "path": "App/Services/StaffAuthClient.cs",
-          "line": 64,
-          "anchor": "public async Task DeviceLogoutAsync("
         },
         {
           "path": "admin-panel/backend/src/main/kotlin/kz/epharm/posm/staff/StaffDtos.kt",
