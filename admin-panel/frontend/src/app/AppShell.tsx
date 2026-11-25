@@ -11,6 +11,7 @@ import { useT } from '@/i18n'
 import { useUiStore } from './store'
 import { SECTION_ROUTES } from './routes'
 import { adminNavigationForRole } from './adminNavigation'
+import { ModuleTabs } from '@/layout/ModuleTabs'
 import { useAdministrativeCapabilities } from './useAdministrativeCapabilities'
 import {
   canAccessSection,
@@ -270,6 +271,19 @@ export function AppShell() {
             onCommand={openCommandPalette}
           />
           <main className="scrollbar-thin min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pb-8 pt-4 sm:px-5">
+            <ModuleTabs
+              modules={adminNavigationForRole(authedUser.role, {
+                inventory: canViewMerchInventory,
+                placements: canViewMerchPlacements,
+                tasks: canViewMerchTasks,
+                staffAccess: canViewMerchStaffAccess,
+                ledger: canViewLedger,
+              })}
+              active={activeSection}
+              activeTrainingTab={activeTrainingTab}
+              pathname={location.pathname}
+              onNavigate={onNavigate}
+            />
             <Outlet />
           </main>
         </div>

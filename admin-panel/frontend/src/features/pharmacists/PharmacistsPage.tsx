@@ -2,7 +2,7 @@
 // Этап 3.4: подключён реальный backend через usePharmacists.
 
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import ReportDownloadButton from '@/features/reports/ReportDownloadButton'
 import { useAdministrativeCapabilities } from '@/app/useAdministrativeCapabilities'
 import { isValidNewPharmacistPassword } from '@/lib/pharmacist-password'
@@ -23,7 +23,6 @@ import {
 import { IconPharmacist, IconPlus, IconUsers } from '@/ui/icons'
 import type {
   PharmacistDto,
-  PharmacistStatus,
   TrainingFormat,
   TrainingPreferenceDto,
 } from '@/lib/api-types'
@@ -54,15 +53,34 @@ import { ASSIGNMENT_STATUS_LABEL, FORMAT_LABEL, dateTime } from '@/features/lms/
 import { useUiStore } from '@/app/store'
 import { canManagePharmacistCredentials } from '@/app/accessPolicy'
 import CredentialExportDialog from './CredentialExportDialog'
+import { CoverageView } from './CoverageView'
 import { maskedIin, maskedPhone } from './personal-data'
 
-type PhTab = 'all' | PharmacistStatus
+// «Pending» is gone (Grigoriy, 25.11.2026): people are linked automatically now. «Активные» means worked
+// with ePharm in the last 7 days (a sale at a till with ePharm, a tip shown, a cabinet sign-in).
+type PhTab = 'all' | 'active' | 'blocked'
 
 const TAB_KEYS: Record<PhTab, string> = {
   all: 'phc.tabAll',
   active: 'phc.tabActive',
-  pending: 'phc.tabPending',
   blocked: 'phc.tabBlocked',
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+/** Rows drawn at once; «Показать ещё» adds the next portion. */
+const PAGE_ROWS = 100
+
+function activeThisWeek(p: PharmacistDto, now: number): boolean {
+  if (p.status === 'blocked' || !p.lastActiveAt) return false
+  return now - new Date(p.lastActiveAt).getTime() <= WEEK_MS
+}
+
+function lastActiveLabel(value: string | null | undefined, now: number): string {
+  if (!value) return 'нет за 30 дней'
+  const days = Math.floor((now - new Date(value).getTime()) / (24 * 60 * 60 * 1000))
+  if (days <= 0) return 'сегодня'
+  if (days === 1) return 'вчера'
+  return `${days} дн. назад`
 }
 
 export default function PharmacistsPage() {
@@ -71,6 +89,10 @@ export default function PharmacistsPage() {
   const toast = useToast()
   const navigate = useNavigate()
   const [tab, setTab] = useState<PhTab>('all')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view = searchParams.get('view') === 'coverage' ? 'coverage' : 'list'
+  const [shownRows, setShownRows] = useState(PAGE_ROWS)
+  const [now] = useState(() => Date.now())
   const [q, setQ] = useState('')
   const [activating, setActivating] = useState<PharmacistDto | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -127,11 +149,10 @@ export default function PharmacistsPage() {
   const counts = useMemo(() => {
     return {
       all: pharmacists.length,
-      active: pharmacists.filter((p) => p.status === 'active').length,
-      pending: pharmacists.filter((p) => p.status === 'pending').length,
+      active: pharmacists.filter((p) => activeThisWeek(p, now)).length,
       blocked: pharmacists.filter((p) => p.status === 'blocked').length,
     }
-  }, [pharmacists])
+  }, [pharmacists, now])
 
   const totalBalance = useMemo(
     () =>
@@ -144,7 +165,8 @@ export default function PharmacistsPage() {
 
   const filtered = useMemo<PharmacistDto[]>(() => {
     return pharmacists.filter((p) => {
-      if (tab !== 'all' && p.status !== tab) return false
+      if (tab === 'active' && !activeThisWeek(p, now)) return false
+      if (tab === 'blocked' && p.status !== 'blocked') return false
       const preference = preferenceByPharmacist.get(p.id)
       if (formatFilter === 'unset' && preference) return false
       if (
@@ -158,9 +180,9 @@ export default function PharmacistsPage() {
         .toLowerCase()
         .includes(q.toLowerCase())
     })
-  }, [formatFilter, pharmacists, preferenceByPharmacist, q, tab])
+  }, [formatFilter, pharmacists, preferenceByPharmacist, q, tab, now])
 
-  const tabs: TabItem<PhTab>[] = (['all', 'active', 'pending', 'blocked'] as PhTab[]).map((v) => ({
+  const tabs: TabItem<PhTab>[] = (['all', 'active', 'blocked'] as PhTab[]).map((v) => ({
     value: v,
     label: t(TAB_KEYS[v]),
     count: counts[v],
@@ -270,7 +292,7 @@ export default function PharmacistsPage() {
             <ReportDownloadButton
               allowed={access.canExportPharmacists}
               path="/api/admin/reports/pharmacists.xlsx"
-              params={{ status: tab === 'all' ? undefined : tab }}
+              params={{ status: tab === 'blocked' ? 'blocked' : undefined }}
               filename="pharmacists.xlsx"
               label="Excel: реестр"
               note={
@@ -297,315 +319,369 @@ export default function PharmacistsPage() {
         }
       />
 
-      <div className="grid grid-cols-4 gap-4">
-        <Metric
-          label={t('phc.mTotal')}
-          value={formatNum(counts.all)}
-          accent="ink"
-          icon={<IconPharmacist size={18} />}
-        />
-        <Metric label={t('phc.mActive')} value={formatNum(counts.active)} accent="green" />
-        <Metric label={t('phc.mPending')} value={formatNum(counts.pending)} accent="amber" />
-        <Metric
-          label={t('phc.mBalances')}
-          value={totalBalance == null ? '—' : formatKzt(totalBalance)}
-          accent="purple"
-          sub={t('phc.toPayout')}
-        />
-      </div>
-
-      <div className="card flex min-h-[480px] flex-col">
-        <div className="hairline flex flex-wrap items-center gap-3 border-b px-5 py-3">
-          <Tabs<PhTab> items={tabs} value={tab} onChange={setTab} />
-          <SearchInput
-            value={q}
-            onChange={setQ}
-            placeholder={t('phc.search')}
-            className="!h-9 !w-[300px] flex-none"
-          />
-          <Select
-            value={formatFilter}
-            onChange={(value) => setFormatFilter(value as TrainingFormat | 'all' | 'unset')}
-            className="w-[180px]"
-            options={[
-              { value: 'all', label: 'Все форматы' },
-              ...Object.entries(FORMAT_LABEL).map(([value, label]) => ({ value, label })),
-              { value: 'unset', label: 'Формат не задан' },
-            ]}
-          />
-          {canManagePreferences && selectedPharmacists.length > 0 && (
-            <Button size="sm" onClick={() => setPreferenceTargets(selectedPharmacists)}>
-              Изменить формат ({selectedPharmacists.length})
-            </Button>
-          )}
-          {canManageAssignments && assignableSelected.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const params = new URLSearchParams({
-                  action: 'assign',
-                  pharmacists: assignableSelected.map((pharmacist) => pharmacist.id).join(','),
-                })
-                navigate(`/lms?${params.toString()}`)
-              }}
-            >
-              Назначить обучение ({assignableSelected.length})
-            </Button>
-          )}
-        </div>
-
-        {showWarningBanner && (
-          <div className="hairline border-b bg-accent-warning/10 px-5 py-2 text-[12px] font-semibold text-ink-700">
-            {t('common.staleWarn', { e: describeError(error) })}{' '}
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="font-bold text-brand-green-700 underline"
-            >
-              {t('common.retry')}
-            </button>
+      <ViewSwitch
+        view={view}
+        onChange={(next) =>
+          setSearchParams(
+            (current) => {
+              const params = new URLSearchParams(current)
+              if (next === 'coverage') params.set('view', 'coverage')
+              else params.delete('view')
+              return params
+            },
+            { replace: true },
+          )
+        }
+      />
+      {view === 'coverage' ? (
+        <CoverageView />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+            <Metric
+              label={t('phc.mTotal')}
+              value={formatNum(counts.all)}
+              accent="ink"
+              icon={<IconPharmacist size={18} />}
+            />
+            <Metric label={t('phc.mActive')} value={formatNum(counts.active)} accent="green" />
+            <Metric
+              label="Покрытие за 7 дней"
+              value={`${counts.all ? Math.round((counts.active / Math.max(1, counts.all - counts.blocked)) * 100) : 0}%`}
+              accent="amber"
+              sub="подробно во вкладке «Покрытие»"
+            />
+            <Metric
+              label={t('phc.mBalances')}
+              value={totalBalance == null ? '—' : formatKzt(totalBalance)}
+              accent="purple"
+              sub={t('phc.toPayout')}
+            />
           </div>
-        )}
 
-        <div className="scrollbar-thin flex-1 overflow-auto">
-          {isLoading && !hasData ? (
-            <Empty
-              title={t('phc.loading')}
-              body={t('common.connecting')}
-              icon={<IconPharmacist size={26} />}
-            />
-          ) : showFullError ? (
-            <Empty
-              title={t('common.loadFailed')}
-              body={describeError(error)}
-              icon={<IconPharmacist size={26} />}
-              action={<Button onClick={() => refetch()}>{t('common.retry')}</Button>}
-            />
-          ) : filtered.length === 0 ? (
-            <Empty
-              title={q || tab !== 'all' ? t('common.notFound') : t('phc.empty')}
-              body={q || tab !== 'all' ? t('common.notFoundBody') : t('phc.emptyBody')}
-              icon={<IconPharmacist size={26} />}
-            />
-          ) : (
-            <table className="min-w-[1200px] w-full text-[13px]" data-testid="pharmacists-table">
-              <thead className="hairline border-b">
-                <tr className="text-left text-[11px] font-bold uppercase tracking-[0.06em] text-ink-500">
-                  {canSelectPharmacists && (
-                    <th className="w-10 px-3 py-2.5">
-                      <input
-                        type="checkbox"
-                        aria-label="Выбрать всех видимых фармацевтов"
-                        checked={allVisibleSelected}
-                        onChange={toggleVisible}
-                        className="h-4 w-4 accent-brand-green-700"
-                      />
-                    </th>
-                  )}
-                  <th className="px-5 py-2.5">{t('phc.thName')}</th>
-                  <th scope="col" className="w-[132px] whitespace-nowrap px-3 py-2.5">
-                    {t('phc.thIin')}
-                  </th>
-                  <th className="px-3 py-2.5">{t('phc.thPharmacy')}</th>
-                  <th className="px-3 py-2.5">Формат обучения</th>
-                  <th className="px-3 py-2.5">{t('phc.thTier')}</th>
-                  <th className="px-3 py-2.5 text-right">{t('phc.thBalance')}</th>
-                  <th className="px-3 py-2.5 text-right">{t('phc.thReceipts')}</th>
-                  <th className="px-3 py-2.5">{t('phc.thStatus')}</th>
-                  <th className="px-5 py-2.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100">
-                {filtered.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="hover:bg-paper-hover"
-                    data-testid={`pharmacist-row-${p.id}`}
-                  >
-                    {canSelectPharmacists && (
-                      <td className="px-3 py-2.5">
-                        <input
-                          type="checkbox"
-                          aria-label={`Выбрать ${p.name}`}
-                          checked={selectedIds.has(p.id)}
-                          onChange={() => toggleSelection(p.id)}
-                          className="h-4 w-4 accent-brand-green-700"
-                        />
-                      </td>
-                    )}
-                    <td className="px-5 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink-100 text-ink-500">
-                          <IconUsers size={14} />
-                        </span>
-                        <div>
-                          <div className="font-extrabold text-ink-900">{p.name}</div>
-                          <div className="text-[11px] text-ink-500">
-                            {personalDataVisible ? p.phone || '—' : maskedPhone(p.phone)}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="num whitespace-nowrap px-3 py-2.5 text-ink-700">
-                      {personalDataVisible ? p.iin || '—' : maskedIin(p.iin)}
-                      {p.standardNIinMatchStatus === 'MISMATCH' ||
-                      (p.standardNIdentityMatchMethod === 'IIN' &&
-                        p.standardNIdentityMatchStatus === 'MISMATCH') ? (
-                        <div
-                          className="mt-1 max-w-[145px] whitespace-normal text-[11px] font-semibold text-accent-warning"
-                          title={t('phc.standardNIinMismatchHint')}
-                        >
-                          {t('phc.standardNIinMismatch')}
-                        </div>
-                      ) : p.standardNIdentityMatchMethod === 'NAME' &&
-                        (p.standardNIdentityMatchStatus === 'MATCH' ||
-                          p.standardNIdentityMatchStatus === 'MISMATCH') ? (
-                        <div
-                          className={`mt-1 max-w-[145px] whitespace-normal text-[11px] font-semibold ${
-                            p.standardNIdentityMatchStatus === 'MISMATCH'
-                              ? 'text-accent-warning'
-                              : 'text-ink-500'
-                          }`}
-                          title={t(
-                            p.standardNIdentityMatchStatus === 'MISMATCH'
-                              ? 'phc.standardNNameMismatchHint'
-                              : 'phc.standardNNameMatchHint',
-                          )}
-                        >
-                          {t(
-                            p.standardNIdentityMatchStatus === 'MISMATCH'
-                              ? 'phc.standardNNameMismatch'
-                              : 'phc.standardNNameMatch',
-                          )}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2.5 text-ink-700">
-                      <div className={!p.pharmacyName ? 'font-bold text-accent-warning' : ''}>
-                        {p.pharmacyName || t('phc.unassigned')}
-                      </div>
-                      <div className="text-[11px] text-ink-500">{p.city}</div>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {preferenceByPharmacist.has(p.id) ? (
-                        <button
-                          type="button"
-                          onClick={() => setPreferenceTargets([p])}
-                          disabled={!canManagePreferences}
-                          className="chip chip-ink disabled:cursor-default"
-                        >
-                          {FORMAT_LABEL[preferenceByPharmacist.get(p.id)!.defaultFormat]}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPreferenceTargets([p])}
-                          disabled={!canManagePreferences}
-                          className="text-[12px] font-semibold text-ink-400 disabled:cursor-default"
-                        >
-                          Не задан
-                        </button>
+          <div className="card flex min-h-[480px] flex-col">
+            <div className="hairline flex flex-wrap items-center gap-3 border-b px-5 py-3">
+              <Tabs<PhTab>
+                items={tabs}
+                value={tab}
+                onChange={(next) => {
+                  setTab(next)
+                  setShownRows(PAGE_ROWS)
+                }}
+              />
+              <SearchInput
+                value={q}
+                onChange={setQ}
+                placeholder={t('phc.search')}
+                className="!h-9 !w-[300px] flex-none"
+              />
+              <Select
+                value={formatFilter}
+                onChange={(value) => setFormatFilter(value as TrainingFormat | 'all' | 'unset')}
+                className="w-[180px]"
+                options={[
+                  { value: 'all', label: 'Все форматы' },
+                  ...Object.entries(FORMAT_LABEL).map(([value, label]) => ({ value, label })),
+                  { value: 'unset', label: 'Формат не задан' },
+                ]}
+              />
+              {canManagePreferences && selectedPharmacists.length > 0 && (
+                <Button size="sm" onClick={() => setPreferenceTargets(selectedPharmacists)}>
+                  Изменить формат ({selectedPharmacists.length})
+                </Button>
+              )}
+              {canManageAssignments && assignableSelected.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      action: 'assign',
+                      pharmacists: assignableSelected.map((pharmacist) => pharmacist.id).join(','),
+                    })
+                    navigate(`/lms?${params.toString()}`)
+                  }}
+                >
+                  Назначить обучение ({assignableSelected.length})
+                </Button>
+              )}
+            </div>
+
+            {showWarningBanner && (
+              <div className="hairline border-b bg-accent-warning/10 px-5 py-2 text-[12px] font-semibold text-ink-700">
+                {t('common.staleWarn', { e: describeError(error) })}{' '}
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  className="font-bold text-brand-green-700 underline"
+                >
+                  {t('common.retry')}
+                </button>
+              </div>
+            )}
+
+            <div className="scrollbar-thin flex-1 overflow-auto">
+              {isLoading && !hasData ? (
+                <Empty
+                  title={t('phc.loading')}
+                  body={t('common.connecting')}
+                  icon={<IconPharmacist size={26} />}
+                />
+              ) : showFullError ? (
+                <Empty
+                  title={t('common.loadFailed')}
+                  body={describeError(error)}
+                  icon={<IconPharmacist size={26} />}
+                  action={<Button onClick={() => refetch()}>{t('common.retry')}</Button>}
+                />
+              ) : filtered.length === 0 ? (
+                <Empty
+                  title={q || tab !== 'all' ? t('common.notFound') : t('phc.empty')}
+                  body={q || tab !== 'all' ? t('common.notFoundBody') : t('phc.emptyBody')}
+                  icon={<IconPharmacist size={26} />}
+                />
+              ) : (
+                <table
+                  className="min-w-[1200px] w-full text-[13px]"
+                  data-testid="pharmacists-table"
+                >
+                  <thead className="hairline border-b">
+                    <tr className="text-left text-[11px] font-bold uppercase tracking-[0.06em] text-ink-500">
+                      {canSelectPharmacists && (
+                        <th className="w-10 px-3 py-2.5">
+                          <input
+                            type="checkbox"
+                            aria-label="Выбрать всех видимых фармацевтов"
+                            checked={allVisibleSelected}
+                            onChange={toggleVisible}
+                            className="h-4 w-4 accent-brand-green-700"
+                          />
+                        </th>
                       )}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`chip ${
-                          p.tier === 'Platinum'
-                            ? 'chip-purple'
-                            : p.tier === 'Gold'
-                              ? 'chip-amber'
-                              : 'chip-ink'
-                        }`}
+                      <th className="px-5 py-2.5">{t('phc.thName')}</th>
+                      <th scope="col" className="w-[132px] whitespace-nowrap px-3 py-2.5">
+                        {t('phc.thIin')}
+                      </th>
+                      <th className="px-3 py-2.5">{t('phc.thPharmacy')}</th>
+                      <th className="px-3 py-2.5">Формат обучения</th>
+                      <th className="px-3 py-2.5">{t('phc.thTier')}</th>
+                      <th className="px-3 py-2.5 text-right">{t('phc.thBalance')}</th>
+                      <th className="px-3 py-2.5 text-right">{t('phc.thReceipts')}</th>
+                      <th className="whitespace-nowrap px-3 py-2.5">Был в ePharm</th>
+                      <th className="px-3 py-2.5">{t('phc.thStatus')}</th>
+                      <th className="px-5 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {filtered.slice(0, shownRows).map((p) => (
+                      <tr
+                        key={p.id}
+                        className="hover:bg-paper-hover"
+                        data-testid={`pharmacist-row-${p.id}`}
                       >
-                        {p.tier}
-                      </span>
-                    </td>
-                    <td className="num px-3 py-2.5 text-right font-extrabold text-brand-green-700">
-                      {p.balance == null ? '—' : formatKzt(p.balance)}
-                    </td>
-                    <td className="num px-3 py-2.5 text-right">
-                      {p.receipts30d == null ? '—' : formatNum(p.receipts30d)}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`chip ${
-                          p.status === 'active'
-                            ? 'chip-green'
-                            : p.status === 'pending'
-                              ? 'chip-amber'
-                              : 'chip-red'
-                        }`}
-                      >
-                        {p.status === 'active'
-                          ? t('phc.sActive')
-                          : p.status === 'pending'
-                            ? t('phc.sPending')
-                            : t('phc.sBlocked')}
-                      </span>
-                    </td>
-                    <td className="px-5 py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setTrainingProfileId(p.id)}
-                          className="text-[12px] font-bold text-brand-green-700 hover:underline"
-                        >
-                          Обучение
-                        </button>
-                        {canManageCredentials && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPasswordTarget(p)
-                              setPasswordValue('')
-                              setPasswordError(null)
-                            }}
-                            className={`text-[12px] font-bold hover:underline ${p.hasPassword ? 'text-ink-500' : 'text-accent-warning'}`}
-                          >
-                            {p.hasPassword ? 'Сменить пароль' : 'Задать пароль'}
-                          </button>
+                        {canSelectPharmacists && (
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="checkbox"
+                              aria-label={`Выбрать ${p.name}`}
+                              checked={selectedIds.has(p.id)}
+                              onChange={() => toggleSelection(p.id)}
+                              className="h-4 w-4 accent-brand-green-700"
+                            />
+                          </td>
                         )}
-                        {p.status === 'pending' && (
-                          <button
-                            type="button"
-                            onClick={() => setActivating(p)}
-                            disabled={
-                              activatePharmacist.isPending &&
-                              activatePharmacist.variables?.id === p.id
-                            }
-                            className="text-[12px] font-bold text-brand-green-700 hover:underline disabled:opacity-50"
+                        <td className="px-5 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink-100 text-ink-500">
+                              <IconUsers size={14} />
+                            </span>
+                            <div>
+                              <div className="font-extrabold text-ink-900">{p.name}</div>
+                              <div className="text-[11px] text-ink-500">
+                                {personalDataVisible ? p.phone || '—' : maskedPhone(p.phone)}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="num whitespace-nowrap px-3 py-2.5 text-ink-700">
+                          {personalDataVisible ? p.iin || '—' : maskedIin(p.iin)}
+                          {p.standardNIinMatchStatus === 'MISMATCH' ||
+                          (p.standardNIdentityMatchMethod === 'IIN' &&
+                            p.standardNIdentityMatchStatus === 'MISMATCH') ? (
+                            <div
+                              className="mt-1 max-w-[145px] whitespace-normal text-[11px] font-semibold text-accent-warning"
+                              title={t('phc.standardNIinMismatchHint')}
+                            >
+                              {t('phc.standardNIinMismatch')}
+                            </div>
+                          ) : p.standardNIdentityMatchMethod === 'NAME' &&
+                            (p.standardNIdentityMatchStatus === 'MATCH' ||
+                              p.standardNIdentityMatchStatus === 'MISMATCH') ? (
+                            <div
+                              className={`mt-1 max-w-[145px] whitespace-normal text-[11px] font-semibold ${
+                                p.standardNIdentityMatchStatus === 'MISMATCH'
+                                  ? 'text-accent-warning'
+                                  : 'text-ink-500'
+                              }`}
+                              title={t(
+                                p.standardNIdentityMatchStatus === 'MISMATCH'
+                                  ? 'phc.standardNNameMismatchHint'
+                                  : 'phc.standardNNameMatchHint',
+                              )}
+                            >
+                              {t(
+                                p.standardNIdentityMatchStatus === 'MISMATCH'
+                                  ? 'phc.standardNNameMismatch'
+                                  : 'phc.standardNNameMatch',
+                              )}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2.5 text-ink-700">
+                          <div className={!p.pharmacyName ? 'font-bold text-accent-warning' : ''}>
+                            {p.pharmacyName || t('phc.unassigned')}
+                          </div>
+                          <div className="text-[11px] text-ink-500">{p.city}</div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {preferenceByPharmacist.has(p.id) ? (
+                            <button
+                              type="button"
+                              onClick={() => setPreferenceTargets([p])}
+                              disabled={!canManagePreferences}
+                              className="chip chip-ink disabled:cursor-default"
+                            >
+                              {FORMAT_LABEL[preferenceByPharmacist.get(p.id)!.defaultFormat]}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setPreferenceTargets([p])}
+                              disabled={!canManagePreferences}
+                              className="text-[12px] font-semibold text-ink-400 disabled:cursor-default"
+                            >
+                              Не задан
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span
+                            className={`chip ${
+                              p.tier === 'Platinum'
+                                ? 'chip-purple'
+                                : p.tier === 'Gold'
+                                  ? 'chip-amber'
+                                  : 'chip-ink'
+                            }`}
                           >
-                            {t('phc.activate')}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleBlock(p, e)}
-                          // Блокируем ТОЛЬКО эту строку, пока её мутация в полёте
-                          // (variables === p.id) — иначе быстрый двойной клик шлёт
-                          // два block/unblock. Остальная таблица остаётся активной.
-                          disabled={
-                            (blockPharmacist.isPending && blockPharmacist.variables === p.id) ||
-                            (unblockPharmacist.isPending && unblockPharmacist.variables === p.id)
-                          }
-                          className={`text-[12px] font-bold disabled:opacity-50 ${
-                            p.status === 'blocked'
-                              ? 'text-brand-green-700 hover:underline'
-                              : 'text-accent-danger hover:underline'
-                          }`}
-                        >
-                          {p.status === 'blocked' ? t('phc.unblock') : t('phc.block')}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+                            {p.tier}
+                          </span>
+                        </td>
+                        <td className="num px-3 py-2.5 text-right font-extrabold text-brand-green-700">
+                          {p.balance == null ? '—' : formatKzt(p.balance)}
+                        </td>
+                        <td className="num px-3 py-2.5 text-right">
+                          {p.receipts30d == null ? '—' : formatNum(p.receipts30d)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-[12px] text-ink-500">
+                          {lastActiveLabel(p.lastActiveAt, now)}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span
+                            className={`chip ${
+                              p.status === 'active'
+                                ? 'chip-green'
+                                : p.status === 'pending'
+                                  ? 'chip-amber'
+                                  : 'chip-red'
+                            }`}
+                          >
+                            {p.status === 'active'
+                              ? t('phc.sActive')
+                              : p.status === 'pending'
+                                ? t('phc.sPending')
+                                : t('phc.sBlocked')}
+                          </span>
+                        </td>
+                        <td className="px-5 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setTrainingProfileId(p.id)}
+                              className="text-[12px] font-bold text-brand-green-700 hover:underline"
+                            >
+                              Обучение
+                            </button>
+                            {canManageCredentials && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPasswordTarget(p)
+                                  setPasswordValue('')
+                                  setPasswordError(null)
+                                }}
+                                className={`text-[12px] font-bold hover:underline ${p.hasPassword ? 'text-ink-500' : 'text-accent-warning'}`}
+                              >
+                                {p.hasPassword ? 'Сменить пароль' : 'Задать пароль'}
+                              </button>
+                            )}
+                            {p.status === 'pending' && (
+                              <button
+                                type="button"
+                                onClick={() => setActivating(p)}
+                                disabled={
+                                  activatePharmacist.isPending &&
+                                  activatePharmacist.variables?.id === p.id
+                                }
+                                className="text-[12px] font-bold text-brand-green-700 hover:underline disabled:opacity-50"
+                              >
+                                {t('phc.activate')}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleBlock(p, e)}
+                              // Блокируем ТОЛЬКО эту строку, пока её мутация в полёте
+                              // (variables === p.id) — иначе быстрый двойной клик шлёт
+                              // два block/unblock. Остальная таблица остаётся активной.
+                              disabled={
+                                (blockPharmacist.isPending && blockPharmacist.variables === p.id) ||
+                                (unblockPharmacist.isPending &&
+                                  unblockPharmacist.variables === p.id)
+                              }
+                              className={`text-[12px] font-bold disabled:opacity-50 ${
+                                p.status === 'blocked'
+                                  ? 'text-brand-green-700 hover:underline'
+                                  : 'text-accent-danger hover:underline'
+                              }`}
+                            >
+                              {p.status === 'blocked' ? t('phc.unblock') : t('phc.block')}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {filtered.length > shownRows && (
+                <div className="hairline flex items-center justify-between gap-3 border-t px-5 py-3 text-[12.5px] text-ink-500">
+                  <span>
+                    Показано {shownRows} из {filtered.length}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShownRows((rows) => rows + PAGE_ROWS)}
+                  >
+                    Показать ещё {Math.min(PAGE_ROWS, filtered.length - shownRows)}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {activating && (
         <ActivatePharmacistModal
@@ -1035,5 +1111,34 @@ function TrainingPreferenceModal({
         )}
       </div>
     </Modal>
+  )
+}
+
+function ViewSwitch({
+  view,
+  onChange,
+}: {
+  view: 'list' | 'coverage'
+  onChange: (view: 'list' | 'coverage') => void
+}) {
+  return (
+    <div className="hairline flex items-center gap-5 border-b">
+      {(
+        [
+          ['list', 'Список'],
+          ['coverage', 'Покрытие'],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          aria-current={view === value ? 'page' : undefined}
+          className={`tab ${view === value ? 'active' : ''}`}
+          onClick={() => onChange(value)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }

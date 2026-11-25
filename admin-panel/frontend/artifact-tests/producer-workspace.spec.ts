@@ -355,10 +355,13 @@ test('internal placements open for an explicit regional capability without inven
   await page.goto('/merch/placements')
   await expect(page.getByRole('heading', { name: 'Кабинет производителя' })).toBeVisible()
   const sidebar = page.getByRole('complementary', { name: 'Основная навигация' })
-  await expect(sidebar.getByRole('button', { name: 'Календарь и доступность' })).toHaveCount(0)
-  await expect(
-    sidebar.getByRole('button', { name: 'Кабинет производителя', exact: true }),
-  ).toBeEnabled()
+  // One-level sidebar (25.11.2026): modules only. The inventory calendar is offered nowhere, neither
+  // in the sidebar nor as a tab, and the module of this page is the current one.
+  await expect(page.getByRole('button', { name: 'Календарь и доступность' })).toHaveCount(0)
+  await expect(sidebar.getByRole('button', { name: 'Мерчендайзинг', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
   await page.getByRole('button', { name: 'Открыть', exact: true }).click()
   await expect(page.getByText('Сумма по данным сервера: —')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Отправить на подтверждение' })).toHaveCount(0)

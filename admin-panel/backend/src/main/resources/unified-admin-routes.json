@@ -830,6 +830,16 @@
     "mode": "SCOPED"
   },
   {
+    "api": "GET /api/admin/pharmacists/coverage",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "registry",
+      "action": "view",
+      "kind": "ORDINARY"
+    },
+    "mode": "ALL_ONLY"
+  },
+  {
     "api": "GET /api/admin/pharmacists/standardn-directory/status",
     "permission": {
       "module": "pharmacists",

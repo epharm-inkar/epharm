@@ -11,7 +11,7 @@ import {
 } from '@/mocks/fixtures'
 import { IconChevLeft, IconChevRight, IconShield } from '@/ui/icons'
 import { useT } from '@/i18n'
-import { useState, type Ref } from 'react'
+import { type Ref } from 'react'
 import { isTrainingWorkspaceRole } from '@/app/accessPolicy'
 import {
   activeNavigationItem,
@@ -72,68 +72,50 @@ export function Sidebar({
     staffAccess: canViewMerchStaffAccess,
     ledger: canViewLedger,
   })
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const pick = (item: AdminNavigationItem) => {
     if (!item.available) return
     if (onNavigate && item.path) onNavigate(item.path)
     else if (item.trainingTab) onSelectTrainingTab?.(item.trainingTab)
     else if (item.section) onSelect(item.section)
   }
+  // One level only (Grigoriy, 25.11.2026: two navigations were one too many). A module opens on
+  // its first section; the sections themselves are tabs on the page (layout/ModuleTabs).
   const renderModule = (module: AdminNavigationModule) => {
     const selected =
       pathname !== '/account' &&
       module.items.some((item) => activeNavigationItem(item, active, activeTrainingTab, pathname))
-    const open = expanded[module.id] ?? selected
-    const single = module.items.length === 1
     const Icon = module.Icon
+    // A module with no connected section stays in the list but closed, as its sections were
+    // before (merch sections the account has no capability for are «не подключено»).
+    const home = module.items.find((item) => item.available)
+    const name = t(`module.${module.id}`)
     return (
       <div key={module.id} className="px-2 py-0.5">
         <button
           type="button"
-          title={t(`module.${module.id}`)}
-          aria-expanded={collapsed || single ? undefined : open}
-          onClick={() =>
-            collapsed || single
-              ? pick(module.items.find((item) => item.available) ?? module.items[0])
-              : setExpanded((current) => ({ ...current, [module.id]: !open }))
-          }
-          className={`cursor-sidebar__item sidebar-hover flex min-h-[38px] w-full items-center gap-2.5 rounded-md px-2 text-left ${selected ? 'sidebar-active text-white' : 'text-white/75'} ${collapsed ? 'justify-center' : ''}`}
+          disabled={!home}
+          title={home ? name : `${name} · ${t('nav.not_connected')}`}
+          aria-current={selected ? 'page' : undefined}
+          data-module={module.id}
+          onClick={() => {
+            // A module opens on its first section; on that section already, nothing to do.
+            if (home && !activeNavigationItem(home, active, activeTrainingTab, pathname)) pick(home)
+          }}
+          className={`cursor-sidebar__item sidebar-hover flex min-h-[38px] w-full items-center gap-2.5 rounded-md px-2 text-left disabled:cursor-default disabled:opacity-40 ${selected ? 'sidebar-active text-white' : 'text-white/75'} ${collapsed ? 'justify-center' : ''}`}
         >
           <Icon size={18} className="flex-none text-brand-green-200/80" />
           {!collapsed && (
-            <>
-              <span className="min-w-0 flex-1 text-[12.5px] font-bold">
-                {t(`module.${module.id}`)}
-              </span>
-              {!single && <IconChevRight size={12} className={open ? 'rotate-90' : ''} />}
-            </>
+            <span className="min-w-0 flex-1 text-[12.5px] font-bold">
+              {name}
+              {!home && (
+                <>
+                  {' '}
+                  <span className="block text-[10px] font-normal">{t('nav.not_connected')}</span>
+                </>
+              )}
+            </span>
           )}
         </button>
-        {!collapsed && !single && open && (
-          <ul className="ml-4 mt-1 flex flex-col gap-0.5 border-l border-white/10 pl-2">
-            {module.items.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  disabled={!item.available}
-                  onClick={() => pick(item)}
-                  data-training-tab={item.trainingTab}
-                  aria-current={
-                    activeNavigationItem(item, active, activeTrainingTab, pathname)
-                      ? 'page'
-                      : undefined
-                  }
-                  className={`sidebar-hover flex min-h-[32px] w-full flex-col justify-center rounded-md px-2 py-1 text-left text-[12px] font-semibold disabled:cursor-default disabled:opacity-40 ${activeNavigationItem(item, active, activeTrainingTab, pathname) ? 'sidebar-active text-white' : 'text-white/70'}`}
-                >
-                  <span>{item.labelKey ? t(item.labelKey) : item.label}</span>
-                  {!item.available && (
-                    <span className="text-[10px] font-normal">{t('nav.not_connected')}</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     )
   }

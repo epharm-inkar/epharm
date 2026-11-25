@@ -1,6 +1,6 @@
 // E2E: AppShell — Sidebar, Topbar, CommandPalette, role switcher, contract widget.
 
-import { test, expect, openSidebarModule } from './fixtures'
+import { test, expect, moduleTab, openSidebarModule, sidebarModule } from './fixtures'
 
 test.describe('Sidebar — навигация', () => {
   test('доступные Brand Manager разделы кликабельны', async ({ loggedInPage }) => {
@@ -16,21 +16,29 @@ test.describe('Sidebar — навигация', () => {
       { module: 'Аналитика', label: 'Аналитика lift', url: /\/lift/ },
       { label: 'Управление', url: /\/settings/ },
     ]
+    // One level in the sidebar (25.11.2026): a module there, its sections as tabs on the page.
     for (const s of sections) {
-      if (s.module) await openSidebarModule(loggedInPage, s.module)
-      const button = loggedInPage
-        .getByRole('complementary', { name: 'Основная навигация' })
-        .getByRole('button', { name: s.label, exact: true })
-      await button.click()
-      await expect(loggedInPage).toHaveURL(s.url)
-      await expect(button).toHaveClass(/sidebar-active/)
+      if (s.module) {
+        await openSidebarModule(loggedInPage, s.module)
+        const tab = moduleTab(loggedInPage, s.module, s.label)
+        await tab.click()
+        await expect(loggedInPage).toHaveURL(s.url)
+        await expect(tab).toHaveAttribute('aria-current', 'page')
+      } else {
+        const module = sidebarModule(loggedInPage, s.label)
+        await module.click()
+        await expect(loggedInPage).toHaveURL(s.url)
+        await expect(module).toHaveClass(/sidebar-active/)
+      }
     }
   })
 
   test('активный пункт highlighted при текущей странице', async ({ loggedInPage }) => {
     await loggedInPage.goto('/promo')
-    const promoBtn = loggedInPage.getByRole('button', { name: /Промо-кампании/ })
-    await expect(promoBtn).toHaveClass(/sidebar-active/)
+    await expect(sidebarModule(loggedInPage, 'Мотивация фармацевтов')).toHaveClass(/sidebar-active/)
+    await expect(
+      moduleTab(loggedInPage, 'Мотивация фармацевтов', 'Промо-кампании'),
+    ).toHaveAttribute('aria-current', 'page')
   })
 
   test('актуальный брендинг: логотип-глиф + ePharm workspace', async ({ loggedInPage }) => {
@@ -94,7 +102,9 @@ test.describe('Topbar — CommandPalette (⌘K / клик)', () => {
     await loggedInPage.getByRole('button', { name: /Найти раздел или аптеку/i }).click()
     await expect(loggedInPage.getByPlaceholder('Раздел или аптека…', { exact: true })).toBeVisible()
     await loggedInPage.keyboard.press('Escape')
-    await expect(loggedInPage.getByPlaceholder('Раздел или аптека…', { exact: true })).not.toBeVisible()
+    await expect(
+      loggedInPage.getByPlaceholder('Раздел или аптека…', { exact: true }),
+    ).not.toBeVisible()
   })
 
   test('фильтр по тексту работает', async ({ loggedInPage }) => {

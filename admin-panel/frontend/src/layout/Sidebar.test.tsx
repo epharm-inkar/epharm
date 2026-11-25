@@ -48,76 +48,63 @@ describe('Sidebar — навигация', () => {
       'Аналитика',
       'Мотивация фармацевтов',
       'Обучение',
-      'Мерчендайзинг',
       'Аптеки и товары',
       'Фармацевты',
       'Управление',
-    ].forEach((label) => expect(screen.getByRole('button', { name: label })).toBeInTheDocument())
+    ].forEach((label) => expect(screen.getByRole('button', { name: label })).toBeEnabled())
+    // Merch with no connected section stays in the list, closed and labelled (25.11.2026).
+    expect(screen.getByRole('button', { name: 'Мерчендайзинг Не подключено' })).toBeDisabled()
     const bottom = container.querySelector('[aria-label="Управление"]')
     expect(bottom?.querySelector('button')).toHaveTextContent('Управление')
     expect(bottom?.closest('nav')).toBeNull()
   })
 
   it('бизнес-роль не получает обучение; неподключённый мерч не становится доступом', async () => {
-    setup()
+    const { onSelect } = setup()
     expect(screen.queryByRole('button', { name: /^Обучение$/ })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Мерчендайзинг' }))
-    expect(screen.getByRole('button', { name: /Кабинет производителя/ })).toBeDisabled()
-    expect(
-      screen.queryByRole('button', { name: 'Календарь и доступность' }),
-    ).not.toBeInTheDocument()
+    const merch = screen.getByRole('button', { name: /^Мерчендайзинг/ })
+    expect(merch).toBeDisabled()
+    await userEvent.click(merch)
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /Кабинет производителя/ })).not.toBeInTheDocument()
   })
 
-  it('обучение сохраняет все десять вкладок и AI, без финансов и чужих разделов', () => {
+  it('обучение — один пункт без подменю: вкладки живут на странице (25.11.2026)', () => {
     setup({ user: USERS.lms, active: 'lms', activeTrainingTab: 'courses' })
-    ;[
-      'Дашборд',
-      'Программы',
-      'Онлайн-курсы',
-      'Офлайн-мероприятия',
-      'Назначения',
-      'Посещаемость',
-      'Результаты и экзамены',
-      'Сертификаты',
-      'Аналитика',
-      'Настройки обучения',
-      'AI-Экзаменация',
-    ].forEach((label) => expect(screen.getByRole('button', { name: label })).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: 'Онлайн-курсы' })).toHaveAttribute(
-      'aria-current',
-      'page',
+    expect(screen.getByRole('button', { name: 'Обучение' })).toHaveAttribute('aria-current', 'page')
+    ;['Дашборд', 'Онлайн-курсы', 'Посещаемость', 'AI-Экзаменация'].forEach((label) =>
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument(),
     )
     expect(screen.queryByRole('button', { name: 'Мотивация фармацевтов' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Мерчендайзинг' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('contract-widget-empty')).not.toBeInTheDocument()
   })
 
-  it('учебный пункт вызывает отдельную навигацию по вкладке', async () => {
-    const { onSelectTrainingTab } = setup({ user: USERS.lms, active: 'lms' })
-    await userEvent.click(screen.getByRole('button', { name: 'Результаты и экзамены' }))
-    expect(onSelectTrainingTab).toHaveBeenCalledWith('results')
+  it('из AI-экзаменации пункт «Обучение» ведёт на дашборд обучения', async () => {
+    const { onSelectTrainingTab } = setup({ user: USERS.lms, active: 'ai_exam' })
+    await userEvent.click(screen.getByRole('button', { name: 'Обучение' }))
+    expect(onSelectTrainingTab).toHaveBeenCalledWith('overview')
   })
 
-  it('пункты внутри групп сохраняют старый section callback и активность', async () => {
+  it('раздел подсвечен, когда открыт любой его пункт; клик ведёт на первый пункт раздела', async () => {
     const { onSelect } = setup({ active: 'reconcile' })
-    expect(screen.getByRole('button', { name: /Сверка чеков/ })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Мотивация фармацевтов' })).toHaveAttribute(
       'aria-current',
       'page',
     )
+    expect(screen.queryByRole('button', { name: /Сверка чеков/ })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Аналитика' }))
-    await userEvent.click(screen.getByRole('button', { name: /Дашборд аналитики/ }))
     expect(onSelect).toHaveBeenCalledWith('dashboard')
   })
 
-  it('явное серверное право открывает только календарь мерча у регионала', async () => {
+  it('явное серверное право открывает мерч у регионала только через календарь', async () => {
     const { onSelect } = setup({
       user: { ...USERS.lms, role: 'REGIONAL_MANAGER' },
       canViewMerchInventory: true,
-      active: 'merch_inventory',
+      active: 'lms',
     })
-    expect(screen.getByRole('button', { name: 'Календарь и доступность' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Мотивация фармацевтов' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Календарь и доступность' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Мерчендайзинг' }))
     expect(onSelect).toHaveBeenCalledWith('merch_inventory')
   })
 })
