@@ -24,6 +24,12 @@ class PharmacistSelfController(private val service: PharmacistSelfService) {
         @RequestParam(defaultValue = "20") size: Int,
     ) = privateResponse(service.recommendations(principal.pharmacistId, page, size))
 
+    @GetMapping("/top-products")
+    fun topProducts(
+        @AuthenticationPrincipal principal: PharmacistPrincipal,
+        @RequestParam(defaultValue = "30") days: Int,
+    ) = privateResponse(service.topProducts(principal.pharmacistId, days))
+
     private fun <T> privateResponse(body: T): ResponseEntity<T> =
         ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body)
 }

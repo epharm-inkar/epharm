@@ -10,6 +10,8 @@ import io.mockk.verify
 import kz.epharm.catalog.entity.ProductEntity
 import kz.epharm.catalog.repository.ProductRepository
 import kz.epharm.mobile.profile.service.PharmacistSelfService
+import kz.epharm.mobile.profile.service.PharmacistSoldProducts
+import kz.epharm.mobile.profile.service.SoldProduct
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
@@ -323,6 +325,43 @@ class PharmacistSelfServiceTest {
         verify(exactly = 1) { promos.findAllById(any<Iterable<String>>()) }
         verify(exactly = 1) { products.findAllById(any<Iterable<String>>()) }
         confirmVerified(pharmacists, rules, promos, products)
+    }
+
+    @Test
+    fun `top products list what the pharmacist sold most with the till suggestions for each`() {
+        val sold = PharmacistSoldProducts { id, _, limit ->
+            assertEquals(PHARMACIST_ID, id)
+            assertTrue(limit in 1..20)
+            listOf(SoldProduct("trigger", "Чек: товар", 12), SoldProduct("plain", "Без подсказок", 5))
+        }
+        val withSales = PharmacistSelfService(pharmacists, rules, promos, products, sold)
+        stub(
+            configuredRules = listOf(
+                rule("subst", offerId = "offer"),
+                rule("cross", offerId = "second", type = RuleType.crosssell),
+                rule("other", offerId = "offer", trigger = RuleTrigger("product", "someone-else")),
+            ),
+            catalog = listOf(product("offer"), product("second"), product("trigger")),
+        )
+
+        val result = withSales.topProducts(PHARMACIST_ID, days = 30, today = TODAY)
+
+        assertEquals(30, result.days)
+        assertEquals(listOf("trigger", "plain"), result.items.map { it.productId })
+        val first = result.items.first()
+        assertEquals("Товар trigger", first.name) // the catalogue name wins over the receipt text
+        assertEquals(12, first.receipts)
+        assertEquals(setOf("offer", "second"), first.offers.map { it.product.id }.toSet())
+        assertEquals("Без подсказок", result.items[1].name)
+        assertTrue(result.items[1].offers.isEmpty())
+    }
+
+    @Test
+    fun `top products need an active account and work without sales data`() {
+        stub(configuredRules = emptyList())
+        assertTrue(service.topProducts(PHARMACIST_ID, today = TODAY).items.isEmpty())
+        account.status = PharmacistStatus.blocked
+        assertThrows(AppException::class.java) { service.topProducts(PHARMACIST_ID, today = TODAY) }
     }
 
     private fun feed(page: Int = 0, size: Int = 20) =
