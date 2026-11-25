@@ -44,6 +44,7 @@ public partial class MainWindow
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Открыть ePharm", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => _ = OpenStaffSelfAsync())));
         menu.Items.Add("Мой кабинет в браузере", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => _ = OpenCabinetAsync())));
+        menu.Items.Add("Задания аптеки", null, (_, _) => Dispatcher.BeginInvoke(new Action(() => OpenTaskKiosk(activate: true))));
         _selfTray.ContextMenuStrip = menu;
 
         _selfStatusTimer.Tick += async (_, _) => await RefreshSelfStatusAsync();
@@ -51,6 +52,8 @@ public partial class MainWindow
         _selfWindowRefresh.Tick += async (_, _) => await RefreshOpenSelfWindowAsync();
         Closed += (_, _) => DisposeStaffSelfTray();
         Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _ = RefreshSelfStatusAsync()));
+        // The tasks icon started first: one icon is enough.
+        if (_taskKioskTray != null) { _taskKioskTray.Visible = false; _taskKioskTray.Dispose(); _taskKioskTray = null; }
     }
 
     private void DisposeStaffSelfTray()
@@ -94,9 +97,21 @@ public partial class MainWindow
     {
         if (_selfTray == null) return;
         _selfProfileComplete = complete;
+        _selfTrayName = RecommendationWindow.ShortName(name);
         _selfTray.Icon = complete == false ? _selfIconAlert : _selfIconPlain;
-        var shortName = RecommendationWindow.ShortName(name);
-        var text = complete == false ? "ePharm: заполните профиль" : shortName.Length > 0 ? "ePharm: " + shortName : "ePharm: мой кабинет";
+        UpdateSelfTrayText();
+    }
+
+    private string _selfTrayName = "";
+
+    /// <summary>Tooltip of the one ePharm icon: who is known, whether the profile needs filling, open tasks.</summary>
+    private void UpdateSelfTrayText()
+    {
+        if (_selfTray == null) return;
+        var text = _selfProfileComplete == false ? "ePharm: заполните профиль"
+            : _selfTrayName.Length > 0 ? "ePharm: " + _selfTrayName : "ePharm: мой кабинет";
+        var tasks = TasksCountForSelf() ?? 0;
+        if (tasks > 0) text += " · заданий: " + tasks;
         _selfTray.Text = text.Length <= 63 ? text : text[..63];
     }
 
@@ -112,6 +127,7 @@ public partial class MainWindow
         }
         var window = new StaffSelfWindow(model, PharmacistScreen());
         window.OpenCabinetRequested += () => _ = OpenCabinetAsync();
+        window.OpenTasksRequested += () => OpenTaskKiosk(activate: true);
         window.SaveContactRequested += (phone, password) => _ = SaveSelfContactAsync(phone, password);
         window.Closed += (_, _) => { _selfWindowRefresh.Stop(); if (ReferenceEquals(_selfWindow, window)) _selfWindow = null; };
         _selfWindow = window;
@@ -123,9 +139,13 @@ public partial class MainWindow
     {
         var request = SelfRequest(link: true);
         if (request == null)
-            return new StaffSelfModel { Notice = "Войдите в Стандарт-Н под своим пользователем: ePharm узнает вас автоматически, отдельный вход не нужен." };
+            return new StaffSelfModel
+            {
+                Notice = "Войдите в Стандарт-Н под своим пользователем: ePharm узнает вас автоматически, отдельный вход не нужен.",
+                TasksCount = TasksCountForSelf(), TasksOnline = _taskKioskOnline,
+            };
         var result = await _epharm!.GetSelfAsync(request);
-        if (!result.Ok) return new StaffSelfModel { Notice = result.Error };
+        if (!result.Ok) return new StaffSelfModel { Notice = result.Error, TasksCount = TasksCountForSelf(), TasksOnline = _taskKioskOnline };
         var self = result.Value!;
         SetSelfTrayState(self.PhoneBound && self.PasswordSet, self.FullName);
         return new StaffSelfModel
@@ -139,7 +159,22 @@ public partial class MainWindow
             PhoneBound = self.PhoneBound,
             PasswordSet = self.PasswordSet,
             CabinetUrl = self.CabinetUrl,
+            TasksCount = TasksCountForSelf(),
+            TasksOnline = _taskKioskOnline,
         };
+    }
+
+    /// <summary>Pharmacy tasks shown in the personal window; null when this till has no task feed.</summary>
+    private int? TasksCountForSelf() => _taskKiosk == null ? null : _taskKioskItems.Count;
+
+    /// <summary>One ePharm icon by the clock: the personal icon replaces the separate «Задания аптеки» icon.</summary>
+    internal bool PersonalTrayReplacesTasksTray => _selfTray != null;
+
+    /// <summary>The task feed changed: the tooltip and an open personal window show the new count.</summary>
+    private void OnTasksChangedForSelf()
+    {
+        UpdateSelfTrayText();
+        if (_selfWindow != null && _selfWindow.IsLoaded) _selfWindow.UpdateTasks(TasksCountForSelf(), _taskKioskOnline);
     }
 
     private async Task RefreshOpenSelfWindowAsync()
@@ -162,6 +197,7 @@ public partial class MainWindow
         if (request == null) { _selfWindow.ShowStatus("Войдите в Стандарт-Н, чтобы сохранить профиль.", error: true); return; }
         var result = await _epharm.SaveSelfContactAsync(request);
         if (!result.Ok) { _selfWindow.ShowStatus(result.Error ?? "Не удалось сохранить.", error: true); return; }
+        _selfWindow.ClearContactInputs();
         _selfWindow.Update(await LoadSelfModelAsync());
         _selfWindow.ShowStatus("Сохранено.", error: false);
         Log("ePharm: профиль фармацевта обновлён с кассы (" + (cleanPhone != null ? "телефон" : "") +

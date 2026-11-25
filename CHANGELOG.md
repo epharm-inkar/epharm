@@ -7,6 +7,11 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- POSM 1.0.94, one ePharm icon by the clock: the personal window (name, earnings, profile, cabinet) also shows
+  the pharmacy tasks («Задания аптеки», opens the tasks window), so the separate «i» tasks icon is gone. A «?»
+  button explains what ePharm is, that no registration is needed, how the bonus per package is earned and that the
+  month's earnings are paid out at the start of the next month. The window never grows taller than the screen
+  (the body scrolls), keeps typed phone and password across refreshes, and updates the task count in place.
 - No ePharm registration (Grigoriy and Dmitry, 24.11.2026): the pharmacist card is created from the central
   Standard-N directory (IIN, name, pharmacy) the first time the person sells or gets a recommendation at a till
   (`pharmacists.account_source = standardn`, phone unique only when set). `/api/posm/self` serves the till's

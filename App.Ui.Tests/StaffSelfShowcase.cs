@@ -24,6 +24,7 @@ internal static partial class Program
             BalanceKzt = 18650,
             PhoneBound = false,
             PasswordSet = false,
+            TasksCount = 0,
             CabinetUrl = "https://epharm.inkar.kz/learn/enter#t=onetime-demo-token-onetime-demo-token-0001",
             Recent = new List<StaffSelfReward>
             {
@@ -41,6 +42,7 @@ internal static partial class Program
             BalanceKzt = 12050,
             PhoneBound = true,
             PasswordSet = true,
+            TasksCount = 2,
             CabinetUrl = "https://epharm.inkar.kz/learn/enter#t=onetime-demo-token-onetime-demo-token-0002",
             Recent = new List<StaffSelfReward>
             {
@@ -97,6 +99,15 @@ internal static partial class Program
                 SaveOwnWindow(refreshed, "staff-self-5-after-refresh");
                 Console.WriteLine(Path.Combine(Output, "staff-self-5-after-refresh.png"));
                 refreshed.Close();
+                // «?» opened: what ePharm is and how the money works.
+                var help = new StaffSelfWindow(StaffSelfScenarios[0].Model, _screen);
+                help.Show();
+                help.ToggleHelp();
+                help.UpdateTasks(1, online: true);
+                await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                SaveOwnWindow(help, "staff-self-6-help-open");
+                Console.WriteLine(Path.Combine(Output, "staff-self-6-help-open.png"));
+                help.Close();
             }
             catch (Exception error)
             {
