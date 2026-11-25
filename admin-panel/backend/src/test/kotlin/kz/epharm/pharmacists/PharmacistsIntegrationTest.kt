@@ -237,8 +237,9 @@ class PharmacistsIntegrationTest {
             }
         }
 
+        // JSON carries no charset: read it as UTF-8, or «№» and Cyrillic names arrive garbled (ISO-8859-1 default).
         val body = mockMvc.perform(get("/api/admin/pharmacists").header("Authorization", bearer))
-            .andExpect(status().isOk).andReturn().response.contentAsString
+            .andExpect(status().isOk).andReturn().response.getContentAsString(Charsets.UTF_8)
         val rows = objectMapper.readTree(body).associateBy { it["id"].asText() }
 
         val active = rows.getValue("u_active")
