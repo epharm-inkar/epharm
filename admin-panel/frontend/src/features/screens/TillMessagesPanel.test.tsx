@@ -82,7 +82,8 @@ describe('TillMessagesPanel', () => {
 
     const dialog = screen.getByRole('dialog')
     expect(dialog).toHaveTextContent('Кому: всем фармацевтам. Показывать на кассах: 7 дней.')
-    expect(dialog).toHaveTextContent('Его увидят все фармацевты сети.')
+    expect(dialog).toHaveTextContent('Его увидят фармацевты на всех кассах с ePharm 1.0.99 и новее')
+    expect(screen.getByText(/Уведомления видны только на кассах с ePharm 1\.0\.99 и новее/)).toBeInTheDocument()
     expect(sendMutate).not.toHaveBeenCalled()
     await user.click(within(dialog).getByTestId('till-message-confirm'))
     expect(sendMutate).toHaveBeenCalledWith(
