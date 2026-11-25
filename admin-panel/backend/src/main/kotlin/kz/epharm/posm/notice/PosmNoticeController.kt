@@ -3,6 +3,7 @@ package kz.epharm.posm.notice
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Size
 import kz.epharm.auth.security.AdminPrincipal
+import kz.epharm.posm.messages.PosmMessageService
 import kz.epharm.posm.service.PosmDeviceAuthenticationService
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
@@ -28,11 +29,13 @@ data class PosmNoticeRequest(
 class PosmNoticeController(
     private val deviceAuthentication: PosmDeviceAuthenticationService,
     private val notices: PosmNoticeService,
+    private val messages: PosmMessageService,
 ) {
+    /** The works switch for this till, plus when HQ last sent or withdrew a notice to pharmacists (read outside it). */
     @GetMapping("/api/posm/notice")
     fun tillNotice(@RequestHeader(name = "X-Posm-Key", required = false) key: String?): ResponseEntity<PosmTillNotice> =
         ResponseEntity.ok().cacheControl(CacheControl.noStore())
-            .body(notices.forTill(deviceAuthentication.authenticate(key)))
+            .body(notices.forTill(deviceAuthentication.authenticate(key)).copy(messagesAt = messages.changeStamp()))
 
     @GetMapping("/api/admin/posm-notice")
     fun adminNotice(): PosmNotice = notices.current()

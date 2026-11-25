@@ -36,6 +36,11 @@ data class PharmacistTaskFeedDto(
     val newCount: Int,
     /** Tasks not done yet: new, in progress and overdue. */
     val openCount: Int,
+    /**
+     * Required courses the person has not finished (new, in progress or overdue; paused by HQ not counted). The till
+     * (1.0.99) keeps a red dot on the ePharm icon while this is above zero; it goes once the course is completed.
+     */
+    val requiredOpenCount: Int = 0,
 )
 
 /** One training assignment with its program, as the feed reads it from the database. */
@@ -125,8 +130,13 @@ object PharmacistTaskFeed {
             tasks = tasks,
             newCount = tasks.count { it.status == PharmacistTaskStatus.NEW },
             openCount = tasks.count { it.status != PharmacistTaskStatus.DONE },
+            requiredOpenCount = open.count { (row, _) -> isRequiredUnfinished(row) },
         )
     }
+
+    /** A required course the person still has to finish: HQ paused ones wait and do not light the till's red dot. */
+    fun isRequiredUnfinished(row: PharmacistTaskRow): Boolean =
+        row.required && row.status != TrainingAssignmentStatus.paused && row.status != TrainingAssignmentStatus.completed
 
     /** How to take the course, in the words of the till and the cabinet, plus what the program is about. */
     fun instructions(programName: String, shortDescription: String, description: String): String {
