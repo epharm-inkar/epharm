@@ -223,15 +223,18 @@ class PharmacistsIntegrationTest {
         wallet("adjustment-now", "admin_adjustment", 300, 0, observed)
 
         val actor = adminUserRepository.findAll().single().id
-        val program = UUID.randomUUID()
-        val version = UUID.randomUUID()
-        jdbc.update("""INSERT INTO training_programs(id,name,allowed_formats,status,created_by)
-            VALUES(?,'Синтетическая программа','online','published',?)""", program, actor)
-        jdbc.update("""INSERT INTO training_program_versions(id,program_id,version_no,allowed_formats,snapshot_json,created_by)
-            VALUES(?,?,1,'online','{}',?)""", version, program, actor)
-        listOf("in_progress", "scheduled", "completed", "cancelled").forEachIndexed { index, status ->
-            jdbc.update("""INSERT INTO training_assignments(id,program_version_id,pharmacist_id,format,status,assigned_by,repeat_no)
-                VALUES(?,?,'u_active','online',?,?,?)""", UUID.randomUUID(), version, status, actor, index + 1)
+        // One open assignment per program version (ux_training_assignment_active): two programs, two open, two closed.
+        for ((open, closed) in listOf("in_progress" to "completed", "scheduled" to "cancelled")) {
+            val program = UUID.randomUUID()
+            val version = UUID.randomUUID()
+            jdbc.update("""INSERT INTO training_programs(id,name,allowed_formats,status,created_by)
+                VALUES(?,?,'online','published',?)""", program, "Синтетическая программа $open", actor)
+            jdbc.update("""INSERT INTO training_program_versions(id,program_id,version_no,allowed_formats,snapshot_json,created_by)
+                VALUES(?,?,1,'online','{}',?)""", version, program, actor)
+            listOf(open, closed).forEachIndexed { index, status ->
+                jdbc.update("""INSERT INTO training_assignments(id,program_version_id,pharmacist_id,format,status,assigned_by,repeat_no)
+                    VALUES(?,?,'u_active','online',?,?,?)""", UUID.randomUUID(), version, status, actor, index + 1)
+            }
         }
 
         val body = mockMvc.perform(get("/api/admin/pharmacists").header("Authorization", bearer))
