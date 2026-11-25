@@ -27,3 +27,22 @@ export function videoProgressToSave(
 ): number {
   return gatesDone ? watchedPct : Math.min(watchedPct, Math.max(0, threshold - 1))
 }
+
+/** The browser's record of what played (`HTMLMediaElement.played`) as [start, end] pairs, seconds. */
+export type PlayedRange = readonly [number, number]
+
+/**
+ * The furthest point reached by continuous playback, from the browser's own record of what played.
+ * Event timing does not matter here: on a busy till a timeupdate can come seconds late, and a jump
+ * that large used to be taken for a seek, so «Просмотрено» froze for the rest of the clip (26.11.2026,
+ * reproduced with the page blocked 2.5 s every 4 s: the clip played to the end, the page said 2%).
+ * A played range counts only when it starts within the tolerance of what was already watched, so a
+ * forward seek, which the page snaps back, never adds to it.
+ */
+export function watchedFromPlayed(ranges: readonly PlayedRange[], watched: number): number {
+  let next = watched
+  for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    if (start <= next + SEEK_TOLERANCE_SECONDS && end > next) next = end
+  }
+  return next
+}

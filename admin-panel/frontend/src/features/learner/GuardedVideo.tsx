@@ -1,5 +1,21 @@
 import { useEffect, useRef } from 'react'
-import { allowedSeekTarget, nextWatchedSeconds, PLAYBACK_STEP_SECONDS } from './guardedVideoRules'
+import {
+  allowedSeekTarget,
+  nextWatchedSeconds,
+  PLAYBACK_STEP_SECONDS,
+  watchedFromPlayed,
+  type PlayedRange,
+} from './guardedVideoRules'
+
+function playedRanges(element: HTMLVideoElement): PlayedRange[] {
+  const played = element.played
+  if (!played) return []
+  const ranges: PlayedRange[] = []
+  for (let index = 0; index < played.length; index += 1) {
+    ranges.push([played.start(index), played.end(index)])
+  }
+  return ranges
+}
 
 /**
  * A lesson video that has to be watched (Grigoriy, 25.11.2026: «видео нельзя промотать до конца
@@ -48,8 +64,23 @@ export function GuardedVideo({
     watched.current = Math.max(0, resumeAtSeconds ?? 0)
   }, [src, resumeAtSeconds])
 
+  // Ordinary playback moves the watched point: by the timeupdate step, and by what the browser
+  // recorded as played, which still holds when a busy page delivers the event seconds late.
+  const advance = (element: HTMLVideoElement) => {
+    if (unrestricted) {
+      watched.current = Math.max(watched.current, element.currentTime)
+      return
+    }
+    if (seeking.current) return
+    watched.current = Math.max(
+      nextWatchedSeconds(watched.current, element.currentTime, false),
+      watchedFromPlayed(playedRanges(element), watched.current),
+    )
+  }
+
   const snapshot = (element: HTMLVideoElement): GuardedVideoProgress => {
-    const duration = Number.isFinite(element.duration) && element.duration > 0 ? element.duration : 0
+    const duration =
+      Number.isFinite(element.duration) && element.duration > 0 ? element.duration : 0
     const watchedSeconds = Math.min(watched.current, duration || watched.current)
     return {
       durationSeconds: duration,
@@ -86,19 +117,23 @@ export function GuardedVideo({
         seeking.current = false
       }}
       onRateChange={(event) => {
-        if (!unrestricted && event.currentTarget.playbackRate !== 1) event.currentTarget.playbackRate = 1
+        if (!unrestricted && event.currentTarget.playbackRate !== 1)
+          event.currentTarget.playbackRate = 1
       }}
       onPlay={(event) => onPlay?.(snapshot(event.currentTarget))}
       onTimeUpdate={(event) => {
         const element = event.currentTarget
-        watched.current = unrestricted
-          ? Math.max(watched.current, element.currentTime)
-          : nextWatchedSeconds(watched.current, element.currentTime, seeking.current)
+        advance(element)
         onProgress(snapshot(element))
       }}
-      onPause={(event) => onProgress(snapshot(event.currentTarget))}
+      onPause={(event) => {
+        const element = event.currentTarget
+        advance(element)
+        onProgress(snapshot(element))
+      }}
       onEnded={(event) => {
         const element = event.currentTarget
+        advance(element)
         // The last timeupdate can land a fraction before the end; reaching «ended» by playback is the end.
         if (!seeking.current && element.duration - watched.current <= PLAYBACK_STEP_SECONDS + 1) {
           watched.current = element.duration
