@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/react'
 import { GuardedVideo } from './GuardedVideo'
-import { allowedSeekTarget, nextWatchedSeconds } from './guardedVideoRules'
+import { allowedSeekTarget, nextWatchedSeconds, videoProgressToSave } from './guardedVideoRules'
 
 describe('GuardedVideo: the clip has to be watched', () => {
   it('counts ordinary playback and ignores jumps', () => {
@@ -51,5 +51,14 @@ describe('GuardedVideo: the clip has to be watched', () => {
     video.currentTime = 95
     fireEvent.seeking(video)
     expect(video.currentTime).toBe(95)
+  })
+})
+
+describe('a video lesson with reading and a self-check', () => {
+  it('saves the watched figure just under the threshold until both are done', () => {
+    expect(videoProgressToSave(100, 95, false)).toBe(94)
+    expect(videoProgressToSave(60, 95, false)).toBe(60)
+    expect(videoProgressToSave(100, 95, true)).toBe(100)
+    expect(videoProgressToSave(0, 1, false)).toBe(0)
   })
 })

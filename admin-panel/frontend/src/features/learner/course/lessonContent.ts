@@ -313,3 +313,24 @@ export function readingSeconds(section: ContentSection): number {
     section.blocks.reduce((sum, block) => sum + blockWords(block), 0) + (section.title ? 4 : 0)
   return Math.min(40, Math.max(5, Math.round(words / 3.2)))
 }
+
+/** Minutes to read the whole text at about 190 words a minute (0 for a short note). */
+export function readingMinutes(content: string): number {
+  const words = parseLessonContent(content).reduce((sum, block) => sum + blockWords(block), 0)
+  return Math.round(words / 190)
+}
+
+/**
+ * What a lesson takes: its set minutes, and for a video lesson with a text also the reading
+ * (26.11.2026: a fire-safety module is a one-minute clip and 3-5 minutes of text).
+ */
+export function lessonMinutes(lesson: {
+  kind?: string | null
+  videoUrl?: string | null
+  durationMin?: number | null
+  content?: string | null
+}): number {
+  const base = lesson.durationMin ?? 0
+  const video = lesson.kind === 'video' || !!lesson.videoUrl
+  return video && lesson.content?.trim() ? base + readingMinutes(lesson.content) : base
+}

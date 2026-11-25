@@ -14,3 +14,16 @@ export function nextWatchedSeconds(watched: number, current: number, seeking: bo
 export function allowedSeekTarget(watched: number, target: number): number {
   return target > watched + SEEK_TOLERANCE_SECONDS ? watched : target
 }
+
+/**
+ * The figure saved for a video lesson. At the threshold the server completes the lesson, so while the
+ * reading or the self-check of the same lesson is unfinished the saved figure stays just under it and
+ * «Урок изучен, дальше» sends the full one (26.11.2026: a module is video, then text, then self-check).
+ */
+export function videoProgressToSave(
+  watchedPct: number,
+  threshold: number,
+  gatesDone: boolean,
+): number {
+  return gatesDone ? watchedPct : Math.min(watchedPct, Math.max(0, threshold - 1))
+}
