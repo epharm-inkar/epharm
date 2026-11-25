@@ -73,6 +73,15 @@ class NoRegistrationSelfIntegrationTest {
     private fun request(phone: String? = null, password: String? = null) =
         PosmSelfRequest(pharmacyId = pharmacy, standardNUserId = "34", phone = phone, password = password)
 
+    private fun passwordHash(): String? =
+        jdbc.queryForObject("SELECT password_hash FROM pharmacists WHERE iin = ?", String::class.java, iin)
+
+    private fun activeSessions(): Int = jdbc.queryForObject(
+        """SELECT count(*) FROM mobile_refresh_tokens t JOIN pharmacists p ON p.id = t.pharmacist_id
+           WHERE p.iin = ? AND t.revoked_at IS NULL AND t.expires_at > now()""",
+        Int::class.java, iin,
+    )!!
+
     @Test fun `a card is created once from the directory, without phone or password, and reused`() {
         val person = StandardNDirectoryPerson(iin, "Синтетикова Айгерим Нурлановна", 0)
         val first = accounts.ensure(person, pharmacy)!!
@@ -112,18 +121,75 @@ class NoRegistrationSelfIntegrationTest {
         assertEquals("self_declared", row["phone_verification_status"])
     }
 
-    @Test fun `the till fills an empty profile but never replaces a phone or password`() {
+    @Test fun `the till never replaces a bound phone`() {
         self.saveContact(device, request(phone = "+7 701 555 12 34", password = "synthetic-pass-1"))
-        val hash = jdbc.queryForObject("SELECT password_hash FROM pharmacists WHERE iin = ?", String::class.java, iin)
-        val password = assertThrows(AppException::class.java) { self.saveContact(device, request(password = "synthetic-pass-2")) }
-        assertEquals(409, password.status.value())
+        val hash = passwordHash()
         val phone = assertThrows(AppException::class.java) { self.saveContact(device, request(phone = "+7 701 555 00 00")) }
         assertEquals(409, phone.status.value())
+        // A rejected phone rolls the whole request back, a password sent with it included.
+        assertThrows(AppException::class.java) { self.saveContact(device, request(phone = "+7 701 555 00 00", password = "synthetic-pass-2")) }
         // The same number typed again is not a change.
         assertTrue(self.saveContact(device, request(phone = "87015551234")).phoneBound)
         val row = jdbc.queryForMap("SELECT phone, password_hash FROM pharmacists WHERE iin = ?", iin)
         assertEquals("+77015551234", row["phone"])
         assertEquals(hash, row["password_hash"])
+    }
+
+    @Test fun `the till changes a password that is already set, and only the new one signs in`() {
+        self.saveContact(device, request(phone = "+7 701 555 12 34", password = "synthetic-pass-1"))
+        val first = passwordHash()
+        val changed = self.saveContact(device, request(password = "synthetic-pass-2"))
+        assertTrue(changed.passwordSet)
+        assertTrue(changed.phoneBound)
+        assertNotEquals(first, passwordHash())
+        assertEquals(changed.fullName, auth.login(iin, "synthetic-pass-2").pharmacist.name)
+        assertEquals(401, assertThrows(AppException::class.java) { auth.login(iin, "synthetic-pass-1") }.status.value())
+        // The phone saved at the till signs in too, in the format people type.
+        assertTrue(auth.loginByPhone("8 701 555 12 34", "synthetic-pass-2").tokens.accessToken.isNotBlank())
+    }
+
+    @Test fun `a password changed at the till ends the person's cabinet sessions`() {
+        self.saveContact(device, request(password = "synthetic-pass-1"))
+        val byPassword = auth.login(iin, "synthetic-pass-1").tokens
+        val byLink = auth.loginWithCabinetLink(self.view(device, request()).cabinetUrl!!.substringAfter("#t=")).tokens
+        self.saveContact(device, request(password = "synthetic-pass-2"))
+        for (session in listOf(byPassword, byLink)) {
+            val refused = assertThrows(AppException::class.java) { auth.refresh(session.refreshToken) }
+            assertEquals(401, refused.status.value())
+        }
+        assertEquals(0, activeSessions())
+        // A new sign-in after the change works as usual.
+        auth.refresh(auth.login(iin, "synthetic-pass-2").tokens.refreshToken)
+    }
+
+    @Test fun `the first password and the same password sent again keep the sessions`() {
+        val byLink = auth.loginWithCabinetLink(self.view(device, request()).cabinetUrl!!.substringAfter("#t=")).tokens
+        self.saveContact(device, request(password = "synthetic-pass-1"))
+        val hash = passwordHash()
+        val next = auth.refresh(byLink.refreshToken).tokens
+        // A retry of the same request is not a change: same hash, sessions stay.
+        self.saveContact(device, request(password = "synthetic-pass-1"))
+        assertEquals(hash, passwordHash())
+        auth.refresh(next.refreshToken)
+        assertEquals(1, activeSessions())
+    }
+
+    @Test fun `the till password follows the POSM rules`() {
+        for (refused in listOf("123", "    ", "я".repeat(37))) {
+            val error = assertThrows(AppException::class.java) { self.saveContact(device, request(password = refused)) }
+            assertEquals(400, error.status.value())
+        }
+        assertNull(jdbc.queryForObject("SELECT password_hash FROM pharmacists WHERE iin = ?", String::class.java, iin))
+        assertTrue(self.saveContact(device, request(password = "1234")).passwordSet)
+    }
+
+    @Test fun `a number another card holds in an older format is refused too`() {
+        jdbc.update(
+            """INSERT INTO pharmacists(id,name,iin,phone,tier,status,pharmacy_id,city) VALUES ('nr-legacy','Legacy','000101500066','8 (701) 555-99-99','Silver','active',?,'')""",
+            pharmacy,
+        )
+        val error = assertThrows(AppException::class.java) { self.saveContact(device, request(phone = "+7 701 555 99 99")) }
+        assertEquals(409, error.status.value())
     }
 
     @Test fun `the cabinet activation by SMS binds phone and password to a card made from Standard-N`() {

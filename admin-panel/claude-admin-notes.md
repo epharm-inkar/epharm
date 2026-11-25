@@ -122,6 +122,12 @@ POSM:
 - Real SMS provider is not connected; dev OTP may be used in pilot by decision.
 - Storefront/PIM is external Medusa; this repo consumes it through backend proxy.
 - Medusa images may be HTTP; browser/mobile should use backend media proxy.
+- No ePharm registration (24-25.11.2026): the card comes from the Standard-N directory; phone and password are
+  set at the till (`POST /api/posm/self/contact`). The till may change the password (all mobile refresh tokens of
+  the person are revoked), never a bound phone (409, support changes it). Till password minimum = POSM rule, 4.
+- Cabinet `/learn` signs in by IIN or phone + password (`/api/mobile/auth/login` with `{iin}` or `{phone}`); the
+  phone must match exactly one card in any stored format (`PharmacistPhoneOwners`) and spends that card's IIN
+  attempt budget. No SMS activation, registration or reset in the cabinet UI; those endpoints stay for old clients.
 
 ## Design
 

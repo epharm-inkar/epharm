@@ -42,6 +42,16 @@ class PhoneUtilTest {
     }
 
     @Test
+    fun `canonicalOrNull принимает привычные форматы казахстанского номера и отказывает остальным`() {
+        for (typed in listOf("+7 701 234 56 78", "87012345678", "7012345678", "+7 (701) 234-56-78", " 8-701-234-56-78 ")) {
+            assertThat(PhoneUtil.canonicalOrNull(typed)).isEqualTo("+77012345678")
+        }
+        for (typed in listOf("", "12345", "+1 202 555 0100", "070123456789", "abc")) {
+            assertThat(PhoneUtil.canonicalOrNull(typed)).isNull()
+        }
+    }
+
+    @Test
     fun `mask прячет середину номера`() {
         assertThat(PhoneUtil.mask("+77012345678")).isEqualTo("+7 (701) ***-**-78")
     }

@@ -390,7 +390,8 @@ describe('learner training portal', () => {
     await user.click(screen.getByRole('button', { name: 'Қаз' }))
 
     expect(screen.getByRole('heading', { name: 'Фармацевтке кіру' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'ЖСН' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'ЖСН немесе телефон нөмірі' })).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent('Құпиясөз жоқ па?')
     expect(localStorage.getItem('epharm.lang')).toBe('kk')
     expect(document.documentElement.lang).toBe('kk')
   })
@@ -401,9 +402,6 @@ describe('learner training portal', () => {
       const user = userEvent.setup()
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
         const path = String(input)
-        if (path === '/api/mobile/auth/activation/status') {
-          return json({ passwordSet: true, phoneMasked: '+7 (***) ***-00-00' })
-        }
         if (path === '/api/mobile/auth/login') {
           return json({
             tokens,
@@ -432,10 +430,11 @@ describe('learner training portal', () => {
       })
       renderPortal()
 
-      const iinInput = screen.getByRole('textbox', { name: 'ИИН' })
-      await user.type(iinInput, '061007500024')
-      expect(iinInput).toHaveValue('061007 500024')
-      await user.click(screen.getByRole('button', { name: 'Продолжить' }))
+      // One form: the IIN and the password together, no IIN check step before the password.
+      await user.type(
+        screen.getByRole('textbox', { name: 'ИИН или номер телефона' }),
+        '061007 500024',
+      )
       expect(screen.getByLabelText('Пароль')).toHaveAttribute('minlength', '4')
       await user.type(screen.getByLabelText('Пароль'), password.slice(0, 3))
       expect(screen.getByRole('button', { name: 'Войти' })).toBeDisabled()
@@ -454,6 +453,10 @@ describe('learner training portal', () => {
       })
       expect(await screen.findByRole('heading', { name: 'Айжан' })).toBeInTheDocument()
       expect(JSON.parse(localStorage.getItem('epharm.learner.tokens') || '{}')).toEqual(tokens)
+      const activation = fetchMock.mock.calls.some(([path]) =>
+        String(path).includes('/activation/'),
+      )
+      expect(activation).toBe(false)
     },
   )
 
@@ -898,85 +901,23 @@ describe('learner training portal', () => {
     )
   })
 
-  it('rejects oversized UTF-8 initial passwords without consuming activation and accepts the exact boundary', async () => {
+  it.each([
+    ['+7 747 079 93 53', '+77470799353'],
+    ['8 (747) 079-93-53', '+77470799353'],
+    ['7470799353', '+77470799353'],
+  ])('enters the pharmacist portal with the phone %s and a password', async (typed, phone) => {
     const user = userEvent.setup()
+    const pharmacist = {
+      id: 'ph-1',
+      name: 'Василий',
+      phone,
+      pharmacyName: 'Аптека',
+      city: 'Рудный',
+    }
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const path = String(input)
-      if (path === '/api/mobile/auth/activation/status')
-        return json({ passwordSet: false, phoneMasked: '+7 (***) ***-00-00' })
-      if (path === '/api/mobile/auth/activation/sms/request')
-        return json({ sent: true, phoneMasked: '+7 (***) ***-00-00', ttlSeconds: 300 })
-      if (path === '/api/mobile/auth/activation/sms/verify') return json({ verified: true })
-      return json({ code: 'VALIDATION_FAILED', message: 'Test response' }, 400)
-    })
-    renderPortal()
-    await user.type(screen.getByRole('textbox', { name: 'ИИН' }), '061007500024')
-    await user.click(screen.getByRole('button', { name: 'Продолжить' }))
-    await user.type(await screen.findByRole('textbox', { name: 'Номер телефона' }), '7070000000')
-    await user.click(screen.getByRole('button', { name: 'Получить код' }))
-    await user.type(await screen.findByRole('textbox', { name: 'Код из SMS' }), '123456')
-    await user.click(screen.getByRole('button', { name: 'Подтвердить код' }))
-    const password = await screen.findByLabelText('Новый пароль')
-    const confirmation = screen.getByLabelText('Повторите пароль')
-    fireEvent.change(password, { target: { value: 'я'.repeat(37) } })
-    fireEvent.change(confirmation, { target: { value: 'я'.repeat(37) } })
-    await user.click(screen.getByRole('button', { name: 'Создать пароль и войти' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('72 байт')
-    expect(password).toHaveValue('я'.repeat(37))
-    expect(confirmation).toHaveValue('я'.repeat(37))
-    expect(
-      fetchMock.mock.calls.some(([path]) => String(path).endsWith('/activation/password')),
-    ).toBe(false)
-    fireEvent.change(password, { target: { value: 'я'.repeat(36) } })
-    fireEvent.change(confirmation, { target: { value: 'я'.repeat(36) } })
-    await user.click(screen.getByRole('button', { name: 'Создать пароль и войти' }))
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/mobile/auth/activation/password',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          iin: '061007500024',
-          phone: '+77070000000',
-          password: 'я'.repeat(36),
-        }),
-      }),
-    )
-  })
-
-  it('lets a pharmacist create a password on the first login after SMS verification', async () => {
-    const user = userEvent.setup()
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const path = String(input)
-      if (path === '/api/mobile/auth/activation/status') {
-        return json({ passwordSet: false, phoneMasked: '+7 (747) ***-**-53' })
-      }
-      if (path === '/api/mobile/auth/activation/sms/request') {
-        return json({ sent: true, phoneMasked: '+7 (747) ***-**-53', ttlSeconds: 300 })
-      }
-      if (path === '/api/mobile/auth/activation/sms/verify') {
-        return json({ verified: true, phoneMasked: '+7 (747) ***-**-53' })
-      }
-      if (path === '/api/mobile/auth/activation/password') {
-        return json({
-          tokens,
-          pharmacist: {
-            id: 'ph-1',
-            name: 'Василий',
-            phone: '+77470799353',
-            pharmacyName: 'Аптека',
-            city: 'Рудный',
-          },
-        })
-      }
-      if (path === '/api/mobile/auth/me') {
-        return json({
-          id: 'ph-1',
-          name: 'Василий',
-          phone: '+77470799353',
-          pharmacyName: 'Аптека',
-          city: 'Рудный',
-        })
-      }
+      if (path === '/api/mobile/auth/login') return json({ tokens, pharmacist })
+      if (path === '/api/mobile/auth/me') return json(pharmacist)
       if (path === '/api/mobile/training')
         return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
       if (path === '/api/mobile/promotions') return json([])
@@ -984,202 +925,101 @@ describe('learner training portal', () => {
     })
     renderPortal()
 
-    await user.type(screen.getByRole('textbox', { name: 'ИИН' }), '061007500024')
-    await user.click(screen.getByRole('button', { name: 'Продолжить' }))
-    const phoneInput = await screen.findByRole('textbox', { name: 'Номер телефона' })
-    await user.type(phoneInput, '7470799353')
-    await user.click(screen.getByRole('button', { name: 'Получить код' }))
-    await user.type(await screen.findByRole('textbox', { name: 'Код из SMS' }), '5445')
-    await user.click(screen.getByRole('button', { name: 'Подтвердить код' }))
-    await user.type(await screen.findByLabelText('Новый пароль'), 'NewFarm123!')
-    await user.type(screen.getByLabelText('Повторите пароль'), 'NewFarm123!')
-    await user.click(screen.getByRole('button', { name: 'Создать пароль и войти' }))
+    await user.type(screen.getByRole('textbox', { name: 'ИИН или номер телефона' }), typed)
+    await user.type(screen.getByLabelText('Пароль'), '1234')
+    await user.click(screen.getByRole('button', { name: 'Войти' }))
 
     expect(await screen.findByRole('heading', { name: 'Василий' })).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/mobile/auth/activation/password',
+      '/api/mobile/auth/login',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({
-          iin: '061007500024',
-          phone: '+77470799353',
-          password: 'NewFarm123!',
-        }),
+        body: JSON.stringify({ phone, password: '1234' }),
       }),
     )
+    expect(fetchMock.mock.calls.some(([path]) => String(path).includes('/activation/'))).toBe(false)
+    expect(JSON.parse(localStorage.getItem('epharm.learner.tokens') || '{}')).toEqual(tokens)
   })
 
-  it('registers a previously unknown IIN after phone verification', async () => {
-    const user = userEvent.setup()
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const path = String(input)
-      if (path === '/api/mobile/auth/activation/status') {
-        return json({ passwordSet: false, phoneMasked: '', registrationRequired: true })
+  it.each([
+    [
+      'ru',
+      'Нет пароля? Задайте его в программе ePharm на кассе: значок ePharm у часов, затем «Мой профиль».',
+      'ИИН или номер телефона',
+      'Войти',
+    ],
+    [
+      'kk',
+      'Құпиясөз жоқ па? Оны кассадағы ePharm бағдарламасында орнатыңыз: сағат жанындағы ePharm белгішесі, содан кейін «Мой профиль».',
+      'ЖСН немесе телефон нөмірі',
+      'Кіру',
+    ],
+  ] as const)(
+    'points to the till for a missing password in %s and offers no SMS activation or reset',
+    async (language, hint, field, submit) => {
+      useUiStore.setState({ language })
+      const fetchMock = vi.spyOn(globalThis, 'fetch')
+      renderPortal()
+
+      expect(screen.getByRole('note')).toHaveTextContent(hint)
+      expect(screen.getByRole('textbox', { name: field })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: submit })).toBeDisabled()
+      for (const removed of [
+        /Забыли пароль|ұмыттыңыз/,
+        /Получить код|Код алу/,
+        /Продолжить|Жалғастыру/,
+        /Создать пароль|Құпиясөз жасап/,
+        /SMS/,
+      ]) {
+        expect(screen.queryByRole('button', { name: removed })).not.toBeInTheDocument()
+        expect(screen.queryByText(removed)).not.toBeInTheDocument()
       }
-      if (path === '/api/mobile/auth/activation/sms/request') {
-        return json({ sent: true, phoneMasked: '+7 (777) ***-**-22', ttlSeconds: 300 })
-      }
-      if (path === '/api/mobile/auth/activation/sms/verify') {
-        return json({ verified: true, phoneMasked: '+7 (777) ***-**-22' })
-      }
-      if (path === '/api/mobile/auth/activation/password') {
-        return json({
-          tokens,
-          pharmacist: {
-            id: 'ph-new',
-            name: 'Новый Фармацевт',
-            phone: '+77770001122',
-            pharmacyName: null,
-            city: '',
-          },
-        })
-      }
-      if (path === '/api/mobile/auth/me') {
-        return json({
-          id: 'ph-new',
-          name: 'Новый Фармацевт',
-          phone: '+77770001122',
-          pharmacyName: null,
-          city: '',
-        })
-      }
-      if (path === '/api/mobile/training')
-        return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
-      if (path === '/api/mobile/promotions') return json([])
-      return json({ message: `Unexpected request: ${path}` }, 500)
-    })
+      expect(screen.getAllByRole('textbox')).toHaveLength(1)
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps «Войти» disabled until the login is an IIN or a phone and the password has 4 characters', () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
     renderPortal()
+    const login = screen.getByRole('textbox', { name: 'ИИН или номер телефона' })
+    const password = screen.getByLabelText('Пароль')
+    const submit = screen.getByRole('button', { name: 'Войти' })
 
-    await user.type(screen.getByRole('textbox', { name: 'ИИН' }), '910228400016')
-    await user.click(screen.getByRole('button', { name: 'Продолжить' }))
-    expect(await screen.findByText(/Новый ИИН/)).toBeInTheDocument()
-    await user.type(screen.getByRole('textbox', { name: 'Номер телефона' }), '7770001122')
-    await user.click(screen.getByRole('button', { name: 'Получить код' }))
-    await user.type(await screen.findByRole('textbox', { name: 'Код из SMS' }), '5445')
-    await user.click(screen.getByRole('button', { name: 'Подтвердить код' }))
-    await user.type(await screen.findByRole('textbox', { name: 'ФИО' }), 'Новый Фармацевт')
-    await user.type(screen.getByLabelText('Новый пароль'), 'NewFarm123!')
-    await user.type(screen.getByLabelText('Повторите пароль'), 'NewFarm123!')
-    await user.click(screen.getByRole('button', { name: 'Создать пароль и войти' }))
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/mobile/auth/activation/password',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          iin: '910228400016',
-          phone: '+77770001122',
-          password: 'NewFarm123!',
-          name: 'Новый Фармацевт',
-        }),
-      }),
-    )
-    expect(await screen.findByRole('heading', { name: 'Новый Фармацевт' })).toBeInTheDocument()
+    fireEvent.change(password, { target: { value: '1234' } })
+    for (const incomplete of ['06100750002', '+7 747 079 93 5', '+8 747 079 93 53', 'abc']) {
+      fireEvent.change(login, { target: { value: incomplete } })
+      expect(submit).toBeDisabled()
+    }
+    // Letters are dropped as they are typed.
+    expect(login).toHaveValue('')
+    fireEvent.change(login, { target: { value: '061007 500024' } })
+    expect(submit).toBeEnabled()
+    fireEvent.change(login, { target: { value: '+7 747 079 93 53' } })
+    expect(submit).toBeEnabled()
+    fireEvent.change(password, { target: { value: '123' } })
+    expect(submit).toBeDisabled()
+    fireEvent.submit(submit.closest('form')!)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('returns to password login when a stale activation screen meets an already created password', async () => {
+  it('shows the server refusal and keeps the typed login and password', async () => {
     const user = userEvent.setup()
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const path = String(input)
-      if (path === '/api/mobile/auth/activation/status') {
-        return json({ passwordSet: false, phoneMasked: '+7 (747) ***-**-53' })
-      }
-      if (path === '/api/mobile/auth/activation/sms/request') {
-        return json({ code: 'CONFLICT', message: 'Пароль уже создан' }, 409)
-      }
-      return json({ message: `Unexpected request: ${path}` }, 500)
-    })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      json({ code: 'INVALID_CREDENTIALS', message: 'Неверный номер телефона или пароль' }, 401),
+    )
     renderPortal()
+    const login = screen.getByRole('textbox', { name: 'ИИН или номер телефона' })
 
-    await user.type(screen.getByRole('textbox', { name: 'ИИН' }), '061007500024')
-    await user.click(screen.getByRole('button', { name: 'Продолжить' }))
-    await user.type(await screen.findByRole('textbox', { name: 'Номер телефона' }), '7470799353')
-    await user.click(screen.getByRole('button', { name: 'Получить код' }))
+    await user.type(login, '87470799353')
+    await user.type(screen.getByLabelText('Пароль'), 'Wrong123!')
+    await user.click(screen.getByRole('button', { name: 'Войти' }))
 
-    expect(await screen.findByLabelText('Пароль')).toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('Пароль для этого ИИН уже создан')
-    expect(screen.queryByLabelText('Новый пароль')).not.toBeInTheDocument()
-  })
-
-  it('resets a forgotten password through the phone already bound to the IIN', async () => {
-    const user = userEvent.setup()
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const path = String(input)
-      if (path === '/api/mobile/auth/activation/status') {
-        return json({ passwordSet: true, phoneMasked: '+7 (747) ***-**-53' })
-      }
-      if (path === '/api/mobile/auth/password-reset/request') {
-        return json({
-          challengeId: '31242cc8-c92a-4c3b-920e-940e59b48ade',
-          phoneMasked: '+7 (747) ***-**-53',
-          ttlSeconds: 300,
-        })
-      }
-      if (path === '/api/mobile/auth/password-reset/verify') {
-        return json({
-          resetToken: 'r'.repeat(43),
-          expiresAt: new Date(Date.now() + 300000).toISOString(),
-          phoneMasked: '+7 (747) ***-**-53',
-        })
-      }
-      if (path === '/api/mobile/auth/password-reset/complete') {
-        return json({
-          tokens,
-          pharmacist: {
-            id: 'ph-1',
-            name: 'Василий',
-            phone: '+77470799353',
-            pharmacyName: 'Аптека',
-            city: 'Рудный',
-          },
-        })
-      }
-      if (path === '/api/mobile/auth/me') {
-        return json({
-          id: 'ph-1',
-          name: 'Василий',
-          phone: '+77470799353',
-          pharmacyName: 'Аптека',
-          city: 'Рудный',
-        })
-      }
-      if (path === '/api/mobile/training')
-        return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
-      if (path === '/api/mobile/promotions') return json([])
-      return json({ message: `Unexpected request: ${path}` }, 500)
-    })
-    renderPortal()
-
-    await user.type(screen.getByRole('textbox', { name: 'ИИН' }), '061007500024')
-    await user.click(screen.getByRole('button', { name: 'Продолжить' }))
-    await user.click(await screen.findByRole('button', { name: 'Забыли пароль?' }))
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/mobile/auth/password-reset/request',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ iin: '061007500024' }) }),
-    )
-    expect(await screen.findByText(/Код отправлен на привязанный номер/)).toHaveTextContent(
-      '+7 (747) ***-**-53',
-    )
-
-    await user.type(screen.getByRole('textbox', { name: 'Код из SMS' }), '5445')
-    await user.click(screen.getByRole('button', { name: 'Подтвердить код' }))
-    await user.type(await screen.findByLabelText('Новый пароль'), 'ResetFarm123!')
-    await user.type(screen.getByLabelText('Повторите пароль'), 'ResetFarm123!')
-    await user.click(screen.getByRole('button', { name: 'Сохранить новый пароль и войти' }))
-
-    expect(await screen.findByRole('heading', { name: 'Василий' })).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/mobile/auth/password-reset/complete',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          iin: '061007500024',
-          resetToken: 'r'.repeat(43),
-          password: 'ResetFarm123!',
-        }),
-      }),
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('Неверный номер телефона или пароль')
+    expect(login).toHaveValue('87470799353')
+    expect(screen.getByLabelText('Пароль')).toHaveValue('Wrong123!')
+    expect(screen.getByRole('button', { name: 'Войти' })).toBeEnabled()
+    expect(localStorage.getItem('epharm.learner.tokens')).toBeNull()
   })
 
   it('saves the final lesson through the server progress endpoint', async () => {

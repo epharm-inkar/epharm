@@ -21,6 +21,12 @@ interface PharmacyPharmacistCountRow {
     val count: Long
 }
 
+interface PharmacistPhoneRow {
+    val id: String
+    val iin: String
+    val phone: String
+}
+
 @Repository
 interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
     fun findAllByOrderByNameAsc(): List<PharmacistEntity>
@@ -41,6 +47,19 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
     @Query("SELECT p FROM PharmacistEntity p WHERE p.id = :id")
     fun findByIdForUpdate(@Param("id") id: String): PharmacistEntity?
     fun findByPhone(phone: String): PharmacistEntity?
+
+    /**
+     * Cards whose stored phone ends with these ten digits, in whatever format it was stored: current writers keep
+     * `+7XXXXXXXXXX`, an older or HQ-typed row may keep `8 (7XX) …`. Callers compare `PhoneUtil.normalize` exactly.
+     * One sequential scan of a small table (about two thousand cards).
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT p.id AS "id", p.iin AS "iin", p.phone AS "phone"
+        FROM pharmacists p
+        WHERE p.phone <> '' AND right(regexp_replace(p.phone, '[^0-9]', '', 'g'), 10) = :tenDigits
+    """)
+    fun findPhoneCandidates(@Param("tenDigits") tenDigits: String): List<PharmacistPhoneRow>
+
     fun countByStatusRaw(statusRaw: String): Long
     fun countByPharmacyId(pharmacyId: String): Long
 

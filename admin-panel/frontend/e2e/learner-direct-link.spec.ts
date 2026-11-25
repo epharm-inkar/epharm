@@ -59,9 +59,6 @@ for (const target of [
       const json = (body: unknown, status = 200) =>
         route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 
-      if (path === '/api/mobile/auth/activation/status') {
-        return json({ passwordSet: true, phoneMasked: '+7 (700) ***-**-01' })
-      }
       if (path === '/api/mobile/auth/login') {
         const credentials = request.postDataJSON() as { iin?: string; password?: string }
         if (credentials.iin !== '000101500011' || credentials.password !== 'TestPass123!') {
@@ -114,8 +111,7 @@ for (const target of [
     })
 
     await page.goto('/learn/course/assignment-link')
-    await page.getByRole('textbox', { name: 'ИИН' }).fill('000101500011')
-    await page.getByRole('button', { name: 'Продолжить' }).click()
+    await page.getByRole('textbox', { name: 'ИИН или номер телефона' }).fill('000101500011')
     await page.getByRole('textbox', { name: /^Пароль/ }).fill('TestPass123!')
     await page.getByRole('button', { name: 'Войти' }).click()
 

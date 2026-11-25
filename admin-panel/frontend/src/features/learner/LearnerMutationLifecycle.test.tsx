@@ -44,8 +44,6 @@ function fixture(refreshPending = false) {
     if (path === startPath) return mutation.promise
     if (path === '/api/mobile/auth/refresh')
       return refreshPending ? refresh.promise : json({ tokens: oldTokens })
-    if (path === '/api/mobile/auth/activation/status')
-      return json({ passwordSet: true, phoneMasked: '', registrationRequired: false })
     if (path === '/api/mobile/auth/login')
       return json({
         tokens: newTokens,
@@ -96,9 +94,11 @@ async function start(user: ReturnType<typeof userEvent.setup>) {
 }
 async function changeAccount(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Выйти', exact: true }))
-  await user.type(await screen.findByRole('textbox', { name: 'ИИН' }), '000000000002')
-  await user.click(screen.getByRole('button', { name: 'Продолжить' }))
-  await user.type(await screen.findByLabelText('Пароль'), 'SyntheticPassword123!')
+  await user.type(
+    await screen.findByRole('textbox', { name: 'ИИН или номер телефона' }),
+    '000000000002',
+  )
+  await user.type(screen.getByLabelText('Пароль'), 'SyntheticPassword123!')
   await user.click(screen.getByRole('button', { name: 'Войти', exact: true }))
   await screen.findByRole('heading', { name: 'New learner' })
   await waitFor(() => expect(screen.queryByText('Загружаем обучение…')).not.toBeInTheDocument())
