@@ -81,6 +81,7 @@ export default function DashboardPage() {
           sub={t('dash.conv', { v: s?.convRate ?? 0 })}
           accent="green"
           icon={<IconCheck size={16} />}
+          meta={t('dash.acceptsMeta')}
         />
         <Metric
           label={t('dash.mActiveRules')}
