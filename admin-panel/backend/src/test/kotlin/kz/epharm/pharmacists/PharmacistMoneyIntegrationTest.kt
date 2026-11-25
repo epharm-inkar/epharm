@@ -53,11 +53,15 @@ class PharmacistMoneyIntegrationTest {
 
     private val now: Instant = Instant.now()
 
-    private fun pharmacy(id: String) = jdbc.update(
-        """INSERT INTO pharmacies(id,name,chain_id,chain_name,city,"group") VALUES (?,?,'money-chain','TEST','TEST','pilot')
-            ON CONFLICT DO NOTHING""",
-        id, id,
-    )
+    private fun pharmacy(id: String) {
+        // pharmacies.chain_id references chains: the chain goes first (as in MerchRewardsIntegrationTest).
+        jdbc.update("""INSERT INTO chains(id,name,"group") VALUES ('money-chain','TEST','pilot') ON CONFLICT DO NOTHING""")
+        jdbc.update(
+            """INSERT INTO pharmacies(id,name,chain_id,chain_name,city,"group") VALUES (?,?,'money-chain','TEST','TEST','pilot')
+                ON CONFLICT DO NOTHING""",
+            id, id,
+        )
+    }
 
     private fun pharmacist(id: String, iin: String, pharmacyId: String) = jdbc.update(
         """INSERT INTO pharmacists(id,name,iin,phone,pharmacy_id,pharmacy_name,tier,status,balance,earned_30d)
