@@ -163,15 +163,17 @@ class RulesIntegrationTest {
     @Test
     fun `rule metrics come from the tip events of the analytics window, not from stored counters`() {
         jdbc.update("delete from recommendation_events where rule_id in ('r_seed_1', 'r_seed_2')")
-        fun event(sold: Boolean, daysAgo: Int) = jdbc.update(
-            """insert into recommendation_events (id, session_id, pharmacist_id, pharmacy_id, rule_id, kind, recommend_sku, shown_at, sold_at)
-               values (?, 's', 'ph', 'pharmacy', 'r_seed_1', 'substitution', 'p_aqm_norm_s', now() - make_interval(days => ?),
+        fun event(sold: Boolean, daysAgo: Int, pharmacy: String = "pharmacy") = jdbc.update(
+            """insert into recommendation_events
+                   (id, session_id, pharmacist_id, pharmacy_id, rule_id, kind, recommend_sku, expected_amount, shown_at, sold_at)
+               values (?, 's', 'ph', ?, 'r_seed_1', 'substitution', 'p_aqm_norm_s', 1000, now() - make_interval(days => ?),
                        case when ? then now() - make_interval(days => ?) end)""",
-            "ev_${UUID.randomUUID()}", daysAgo, sold, daysAgo,
+            "ev_${UUID.randomUUID()}", pharmacy, daysAgo, sold, daysAgo,
         )
-        repeat(3) { event(sold = false, daysAgo = 2) }
+        repeat(2) { event(sold = false, daysAgo = 2) }
+        event(sold = false, daysAgo = 3, pharmacy = "pharmacy-2")
         event(sold = true, daysAgo = 1)
-        event(sold = true, daysAgo = 200) // older than the 90-day window
+        event(sold = true, daysAgo = 200, pharmacy = "pharmacy-3") // older than the 90-day window
         ruleRepository.findById("r_seed_1").orElseThrow().also { it.impressions = 9_999; it.accepts = 9_999; ruleRepository.save(it) }
 
         mockMvc.perform(get("/api/admin/rules/r_seed_1").header("Authorization", bearer))
@@ -179,6 +181,9 @@ class RulesIntegrationTest {
             .andExpect(jsonPath("$.impressions").value(4))
             .andExpect(jsonPath("$.accepts").value(1))
             .andExpect(jsonPath("$.convRate").value(25.0))
+            // Offer prices of the accepted tips and the pharmacies that saw the tip, from the same window.
+            .andExpect(jsonPath("$.revenue").value(1000))
+            .andExpect(jsonPath("$.pharmacies").value(2))
         mockMvc.perform(get("/api/admin/rules/r_seed_2").header("Authorization", bearer))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.impressions").value(0))

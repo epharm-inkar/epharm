@@ -1780,8 +1780,9 @@ function PortalNavigation({
         </div>
       </div>
       {/* Each tab at least as wide as its label, the rest shared equally: «Сертификаты» and
-          «Сертификаттар» were cut at phone width (26.11.2026). Below 320 px equal columns again. */}
-      <div className="mx-auto grid max-w-6xl grid-cols-[repeat(5,minmax(max-content,1fr))] gap-1 max-[319px]:grid-cols-5 lg:mx-0 lg:flex lg:w-full lg:flex-col lg:gap-1">
+          «Сертификаттар» were cut at phone width (26.11.2026). Below 320 px equal columns again; with
+          enlarged system text the bar scrolls sideways instead of pushing a tab off-screen. */}
+      <div className="mx-auto grid max-w-6xl grid-cols-[repeat(5,minmax(max-content,1fr))] gap-1 overflow-x-auto no-scrollbar max-[319px]:grid-cols-5 lg:mx-0 lg:overflow-visible lg:flex lg:w-full lg:flex-col lg:gap-1">
         {items.map(({ id, label, icon: Icon }) => (
           <button
             key={id}

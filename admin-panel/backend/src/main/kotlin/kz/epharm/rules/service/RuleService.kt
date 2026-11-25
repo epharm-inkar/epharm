@@ -44,7 +44,13 @@ class RuleService(
 
     private fun toDto(e: RuleEntity, events: Map<String, RuleAggRow> = eventTotals()): RuleDto {
         val row = events[e.id]
-        return RuleDto.of(e, impressions = row?.impressions?.toInt() ?: 0, accepts = row?.accepts?.toInt() ?: 0)
+        return RuleDto.of(
+            e,
+            impressions = row?.impressions?.toInt() ?: 0,
+            accepts = row?.accepts?.toInt() ?: 0,
+            revenue = row?.revenue ?: 0,
+            pharmacies = row?.pharmacies?.toInt() ?: 0,
+        )
     }
 
     @Transactional(readOnly = true)

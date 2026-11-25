@@ -1420,7 +1420,9 @@ function CertificatesTab({
         <tbody className="divide-y divide-ink-100">
           {certificates.map((certificate) => (
             <tr key={certificate.id} className="hover:bg-paper-hover">
-              <td className="num px-5 py-3 font-bold text-ink-900">{certificate.number}</td>
+              <td className="num whitespace-nowrap px-5 py-3 font-bold text-ink-900">
+                {certificate.number}
+              </td>
               <td className="px-3 py-3 font-semibold text-ink-800">{certificate.pharmacistName}</td>
               <td className="px-3 py-3 text-ink-700">{certificate.programName}</td>
               <td className="num px-3 py-3">
