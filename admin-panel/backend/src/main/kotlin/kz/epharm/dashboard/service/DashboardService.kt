@@ -29,6 +29,11 @@ import org.springframework.transaction.annotation.Transactional
  *
  * Метрики считаются за окно `app.analytics.window-days` (по умолчанию 90 дней).
  * Денормализованные поля rules/pharmacies больше НЕ читаются (они не наполнялись событиями).
+ *
+ * «Принято» = рекомендованный товар попал в чек (`sold_at`), а не нажатие в попапе: касса не шлёт
+ * `outcome` с POSM 1.0.13 (см. `ACCEPTED_SQL` в PosmRepositories.kt). Так же устроен счётчик
+ * «Рекомендации с продажей» в журнале показов и продаж на этой странице (там все правила, здесь только
+ * не архивные).
  */
 @Service
 class DashboardService(
