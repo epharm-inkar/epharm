@@ -8,6 +8,19 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 
+/**
+ * «Рекомендация принята» для счётчиков «Принято» (Dashboard, Lift, реестр аптек).
+ *
+ * С POSM 1.0.13 (26.06.2026) попап кассы информационный: клавиш «принять/пропустить» нет, касса
+ * `/outcome` не вызывает, поэтому `outcome='accepted'` в проде не появляется никогда (0 из 113 тыс.
+ * показов на 25.11.2026). Источник истины — реальный чек: когда касса присылает продажу той же сессии
+ * с рекомендованным товаром, [kz.epharm.posm.service.RecommendationAttributionService] ставит `sold_at`.
+ * Поэтому принятой считаем рекомендацию с проданным товаром; историческое `outcome='accepted'` тоже
+ * учитывается (OR, одна строка считается один раз). Сам `outcome` атрибуция не трогает: от него зависят
+ * резерв бонуса и сверка выплат.
+ */
+private const val ACCEPTED_SQL = "(outcome = 'accepted' OR sold_at IS NOT NULL)"
+
 // ── Проекции для агрегации аналитики (реальные данные из таблицы событий) ────
 // Алиасы колонок в кавычках ("ruleId") — чтобы PostgreSQL сохранил camelCase и
 // Spring Data сопоставил их с геттерами проекции один-в-один.
@@ -319,13 +332,15 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
     // ── Агрегация для аналитики (реальные данные, ТЗ §3.2) ───────────────────
     // FILTER (WHERE ...) — стандарт PostgreSQL; быстрее, чем несколько запросов.
 
+    // «Принято» везде — [ACCEPTED_SQL]: проданный по чеку товар или историческое outcome='accepted'.
+
     /** Показы/принятия по правилу за период (для convRate и топа правил). */
     @Query(
         nativeQuery = true,
         value = """
             SELECT rule_id AS "ruleId",
                    COUNT(*) AS "impressions",
-                   COUNT(*) FILTER (WHERE outcome = 'accepted') AS "accepts"
+                   COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts"
             FROM recommendation_events
             WHERE shown_at >= :since
             GROUP BY rule_id
@@ -339,8 +354,8 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
         value = """
             SELECT recommend_sku AS "sku",
                    MIN(recommend_name) AS "name",
-                   COUNT(*) FILTER (WHERE outcome = 'accepted') AS "accepts",
-                   COALESCE(SUM(expected_amount) FILTER (WHERE outcome = 'accepted'), 0) AS "revenue"
+                   COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts",
+                   COALESCE(SUM(expected_amount) FILTER (WHERE $ACCEPTED_SQL), 0) AS "revenue"
             FROM recommendation_events
             WHERE shown_at >= :since
             GROUP BY recommend_sku
@@ -354,7 +369,7 @@ interface RecommendationEventRepository : JpaRepository<RecommendationEventEntit
         value = """
             SELECT pharmacy_id AS "pharmacyId",
                    COUNT(*) AS "impressions",
-                   COUNT(*) FILTER (WHERE outcome = 'accepted') AS "accepts"
+                   COUNT(*) FILTER (WHERE $ACCEPTED_SQL) AS "accepts"
             FROM recommendation_events
             WHERE shown_at >= :since
             GROUP BY pharmacy_id
