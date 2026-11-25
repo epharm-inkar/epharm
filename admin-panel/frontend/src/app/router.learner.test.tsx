@@ -96,9 +96,11 @@ beforeEach(() => {
             ? { balanceKzt: 31415, currency: 'KZT' }
             : path.startsWith('/api/mobile/me/recommendations?')
               ? feed
-              : path === '/api/mobile/merch/tasks/visits/branches'
-                ? []
-                : undefined
+              : path.startsWith('/api/mobile/me/top-products?')
+                ? { items: [], days: 30 }
+                : path === '/api/mobile/merch/tasks/visits/branches'
+                  ? []
+                  : undefined
     if (
       (!authorized && !publicRequest) ||
       body === undefined ||
@@ -127,7 +129,11 @@ describe('real AppRouter learner personal data routes', () => {
     localStorage.setItem('epharm.learner.tokens', JSON.stringify(learnerTokens))
     renderRouter('/learn/recommendations')
     expect(
-      await screen.findByRole('heading', { name: 'Предложение из API', exact: true }, { timeout: 5000 }),
+      await screen.findByRole(
+        'heading',
+        { name: 'Предложение из API', exact: true },
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument()
     expect(screen.getByTestId('current-learner-path')).toHaveTextContent('/learn/recommendations')
     expect(screen.queryByRole('textbox', { name: 'Email', exact: true })).not.toBeInTheDocument()
@@ -138,9 +144,13 @@ describe('real AppRouter learner personal data routes', () => {
     localStorage.setItem('epharm.learner.tokens', JSON.stringify(learnerTokens))
     renderRouter('/learn')
     expect((await screen.findAllByText(/31\s*415\s*₸/))[0]).toBeInTheDocument()
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Рекомендации', exact: true }))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Советы', exact: true }))
     expect(
-      await screen.findByRole('heading', { name: 'Предложение из API', exact: true }, { timeout: 5000 }),
+      await screen.findByRole(
+        'heading',
+        { name: 'Предложение из API', exact: true },
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument()
     expect(screen.getByTestId('current-learner-path')).toHaveTextContent('/learn/recommendations')
   })
