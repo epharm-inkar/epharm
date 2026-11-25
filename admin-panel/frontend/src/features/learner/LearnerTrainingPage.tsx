@@ -2889,6 +2889,7 @@ function OverviewView({
                     </>
                   ) : (
                     <>
+                      <span className="font-semibold text-ink-600">{statusText(assignment.status)}</span>
                       {assignment.dueAt && (
                         <span className="flex items-center gap-1">
                           <CalendarDays size={13} />{' '}
