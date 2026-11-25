@@ -71,11 +71,35 @@ dependencies {
     testImplementation(libs.springmockk)
 }
 
+// CI deals the suite out over machines: -PtestShards=8 -PtestShard=0..7, and -PtestForks=2 test JVMs on each.
+// Every integration test class starts its own PostgreSQL container, so classes are independent. Integration and
+// plain classes are dealt out separately, in name order, so each machine gets an even share of the slow ones.
+val testShards = providers.gradleProperty("testShards").map(String::toInt).getOrElse(1)
+val testShard = providers.gradleProperty("testShard").map(String::toInt).getOrElse(0)
+val testForks = providers.gradleProperty("testForks").map(String::toInt).getOrElse(1)
+
 tasks.withType<Test> {
     useJUnitPlatform()
     maxHeapSize = "1g"
     forkEvery = 12
+    maxParallelForks = testForks
     systemProperty("spring.test.context.cache.maxSize", "6")
+    if (testShards > 1) {
+        require(testShard in 0 until testShards) { "testShard must be 0..${testShards - 1}" }
+        val classesDirs = testClassesDirs
+        val shardOf: Map<String, Int> by lazy {
+            val names = sortedSetOf<String>()
+            classesDirs.asFileTree.matching { include("**/*.class") }.visit {
+                if (!isDirectory) names += relativePath.pathString.removeSuffix(".class").substringBefore('$')
+            }
+            val (slow, plain) = names.partition { it.endsWith("IntegrationTest") }
+            (slow + plain).withIndex().associate { (index, name) -> name to index % testShards }
+        }
+        exclude { element ->
+            !element.isDirectory && element.name.endsWith(".class") &&
+                shardOf[element.relativePath.pathString.removeSuffix(".class").substringBefore('$')] != testShard
+        }
+    }
 }
 
 // Стабильное имя исполняемого jar — чтобы Dockerfile копировал build/libs/app.jar
