@@ -1,5 +1,6 @@
 package kz.epharm.posm.notice
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import kz.epharm.appupdate.service.AppReleaseService
 import kz.epharm.posm.service.PosmDeviceIdentity
 import kz.epharm.shared.error.AppException
@@ -20,12 +21,17 @@ data class PosmNotice(
     val updatedBy: String? = null,
 )
 
-/** What one till shows: a pilot till stays live while `pilotLive` is on. */
+/**
+ * What one till shows: a pilot till stays live while `pilotLive` is on. `messagesAt` (POSM 1.0.99) is when HQ last
+ * sent or withdrew a notice to pharmacists; a till that sees a newer time asks for its person's notices at once.
+ * Absent while there has never been a notice; older tills ignore it.
+ */
 data class PosmTillNotice(
     val maintenance: Boolean,
     val title: String,
     val message: String,
     val changedAt: Instant?,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val messagesAt: Instant? = null,
 )
 
 @Service

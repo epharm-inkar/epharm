@@ -3,6 +3,7 @@
 //     Заполненные слоты образуют один упорядоченный плейлист на всех кассах;
 //     кассы подхватывают его поллингом /api/posm/playlists/active и шлют heartbeat.
 //   • «Баннеры приложения» — управление баннерами главного экрана (BannersPanel).
+//   • «Уведомления на кассах» (только HQ) — уведомления фармацевтам на кассах (TillMessagesPanel).
 
 import { useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -35,8 +36,11 @@ import { describeError } from '@/lib/describeError'
 import { resolveEpharmMediaUrl } from '@/lib/media'
 import type { ActiveSlideDto, PharmacyDto } from '@/lib/api-types'
 import { useT } from '@/i18n'
+import { canManageTills } from '@/app/accessPolicy'
+import { useUiStore } from '@/app/store'
 import { BannersPanel, type BannerEditing } from './BannersPanel'
 import { FleetPanel } from './FleetPanel'
+import { TillMessagesPanel } from './TillMessagesPanel'
 import { staffAuthStatusLabel } from './staffAuthStatus'
 import { staffSourceStatusLabel } from './staffSourceStatus'
 
@@ -46,15 +50,20 @@ const TARGETED_PROFILE_ID = 'pl_broadcast_targeted'
 type BroadcastViewMode = 'grid' | 'list'
 type PharmacyPickerView = 'all' | 'selected'
 
-type ScreensTab = 'screens' | 'fleet' | 'banners'
-const SCREENS_TABS: readonly ScreensTab[] = ['screens', 'fleet', 'banners']
+type ScreensTab = 'screens' | 'fleet' | 'banners' | 'messages'
+const SCREENS_TABS: readonly ScreensTab[] = ['screens', 'fleet', 'banners', 'messages']
 
 export default function ScreensPage() {
   const t = useT()
   // Вкладка живёт в адресе (?tab=fleet), чтобы на «Все кассы» можно было дать ссылку.
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') as ScreensTab | null
-  const tab: ScreensTab = requestedTab && SCREENS_TABS.includes(requestedTab) ? requestedTab : 'screens'
+  // Уведомления на кассах отправляет только HQ: остальные роли вкладку не видят.
+  const manageTills = canManageTills(useUiStore((s) => s.authedUser?.role))
+  const tab: ScreensTab =
+    requestedTab && SCREENS_TABS.includes(requestedTab) && (requestedTab !== 'messages' || manageTills)
+      ? requestedTab
+      : 'screens'
   const setTab = (next: ScreensTab) =>
     setSearchParams(
       (current) => {
@@ -76,6 +85,7 @@ export default function ScreensPage() {
           { value: 'screens', label: t('scr.tabScreens') },
           { value: 'fleet', label: t('scr.tabFleet') },
           { value: 'banners', label: t('scr.tabBanners') },
+          ...(manageTills ? [{ value: 'messages' as const, label: t('scr.tabMessages') }] : []),
         ]}
         value={tab}
         onChange={setTab}
@@ -100,6 +110,8 @@ export default function ScreensPage() {
         </div>
       ) : tab === 'fleet' ? (
         <FleetPanel />
+      ) : tab === 'messages' ? (
+        <TillMessagesPanel />
       ) : (
         <BannersPanel editing={bannerEditing} setEditing={setBannerEditing} />
       )}

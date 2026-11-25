@@ -72,11 +72,12 @@ export function useRevokeStandardNPharmacistMapping() {
   })
 }
 
-export function usePharmacists(filter: PharmacistListFilter = {}) {
+export function usePharmacists(filter: PharmacistListFilter = {}, enabled = true) {
   return useQuery<PharmacistDto[]>({
     queryKey: pharmacistKeys.list(filter),
     queryFn: () =>
       api.get<PharmacistDto[]>('/api/admin/pharmacists', { params: filter }).then((r) => r.data),
+    enabled,
   })
 }
 

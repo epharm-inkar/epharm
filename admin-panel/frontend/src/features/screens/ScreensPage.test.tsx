@@ -1,13 +1,14 @@
 // Тесты ScreensPage — онлайн-кассы + 12 независимых рекламных слотов,
 // образующих один эфирный плейлист. Плюс переключение на вкладку «Баннеры».
 
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { ToastHost } from '@/ui'
 import type { BroadcastProfileDto } from '@/lib/api-types'
+import { useUiStore } from '@/app/store'
 import ScreensPage from './ScreensPage'
 
 const screenHooks = vi.hoisted(() => ({
@@ -39,6 +40,18 @@ const bannerHooks = vi.hoisted(() => ({
   useUploadBannerImage: vi.fn(),
 }))
 vi.mock('@/lib/queries/banners', () => bannerHooks)
+
+// Вкладка «Уведомления на кассах» (только HQ) рендерит TillMessagesPanel.
+const messageHooks = vi.hoisted(() => ({
+  usePosmMessages: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+  useSendPosmMessage: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useWithdrawPosmMessage: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+}))
+vi.mock('@/lib/queries/posmMessages', () => messageHooks)
+const pharmacistHooks = vi.hoisted(() => ({
+  usePharmacists: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+}))
+vi.mock('@/lib/queries/pharmacists', () => pharmacistHooks)
 
 const uploadMutate = vi.fn()
 const removeMutate = vi.fn()
@@ -693,5 +706,32 @@ describe('ScreensPage — вкладки', () => {
     await user.click(screen.getByRole('button', { name: /Баннеры приложения/i }))
     expect(screen.getByTestId('banners-create')).toBeInTheDocument()
     expect(screen.queryByTestId('broadcast-card')).not.toBeInTheDocument()
+  })
+})
+
+describe('ScreensPage — уведомления на кассах', () => {
+  const signIn = (role: 'HQ_HEAD' | 'CATEGORY_LEAD') =>
+    useUiStore.setState({ authedUser: { id: 'u1', email: 'hq@example.test', name: 'HQ', role, company: 'INKAR' } })
+  afterEach(() => useUiStore.setState({ authedUser: null }))
+
+  it('HQ видит вкладку и открывает её кнопкой и прямой ссылкой ?tab=messages', async () => {
+    signIn('HQ_HEAD')
+    const user = userEvent.setup()
+    const { unmount } = renderPage()
+    await user.click(screen.getByRole('button', { name: 'Уведомления на кассах' }))
+    expect(screen.getByTestId('till-messages')).toBeInTheDocument()
+    expect(screen.queryByTestId('broadcast-card')).not.toBeInTheDocument()
+    unmount()
+
+    renderPage(['/screens?tab=messages'])
+    expect(screen.getByText('Новое уведомление')).toBeInTheDocument()
+  })
+
+  it('другие роли вкладку не видят, а ссылка открывает эфир', () => {
+    signIn('CATEGORY_LEAD')
+    renderPage(['/screens?tab=messages'])
+    expect(screen.queryByRole('button', { name: 'Уведомления на кассах' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('till-messages')).not.toBeInTheDocument()
+    expect(screen.getByTestId('broadcast-card')).toBeInTheDocument()
   })
 })

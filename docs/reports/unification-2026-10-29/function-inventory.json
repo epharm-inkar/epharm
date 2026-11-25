@@ -4080,7 +4080,13 @@
       "api": [
         "GET /api/posm/notice",
         "GET /api/admin/posm-notice",
-        "PUT /api/admin/posm-notice"
+        "PUT /api/admin/posm-notice",
+        "GET /api/admin/posm-messages",
+        "POST /api/admin/posm-messages",
+        "POST /api/admin/posm-messages/{id}/withdraw",
+        "POST /api/posm/self/messages",
+        "POST /api/posm/self/messages/{id}/shown",
+        "POST /api/posm/self/messages/{id}/closed"
       ],
       "jobs": [],
       "data": [

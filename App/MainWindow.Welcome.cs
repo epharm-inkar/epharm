@@ -1,50 +1,68 @@
 using System;
 using System.IO;
-using System.Text.Json;
 using System.Windows.Threading;
+using CustomerDisplay.Services;
 
 namespace CustomerDisplay;
 
 /// <summary>
-/// «Вход в ePharm выполнен» (1.0.96, Grigoriy 25.11): when a person signs in to Standard-N and the server knows them,
-/// a card in the corner greets them by name once a day: «Доброе утро, …! Вход в ePharm выполнен». A click opens the
-/// personal window; the card closes itself and never takes the focus from the cashier program. Not during the works;
-/// the «снова работает» card counts as today's greeting.
+/// The greeting (1.0.99, Grigoriy 25.11.2026): when the server knows the person signed in to Standard-N at this till,
+/// the first sign-in of their shift brings «Доброе утро, Имя Отчество! Желаем хорошего дня» with two lines on how ePharm
+/// helps and «Что такое ePharm». Once per person per shift (again only after 8 hours without them at this till; a night
+/// shift is greeted once), also across restarts; never during the works, never over an open recommendation (it waits
+/// for the popup to close) and never takes the focus. The «снова работает» card counts as the shift's greeting.
 /// </summary>
 public partial class MainWindow
 {
-    private string? _welcomeStatePath;
-    private string _welcomedUser = "";
-    private DateTime _welcomedDay = DateTime.MinValue;
+    private string? _greetingLogPath;
+    private GreetingLog? _greetingLog;
     private (string User, string Name)? _pendingWelcome;
-    private EpharmToastWindow? _welcomeToast;
+    private EpharmGreetingWindow? _greetingWindow;
 
     /// <summary>Called after the server named the person signed in at this till.</summary>
     private void MaybeWelcome(string standardNUserId, string? fullName)
     {
-        if (string.IsNullOrWhiteSpace(standardNUserId)) return;
-        LoadWelcomeState();
-        var today = DateTime.Today;
-        if (_welcomedUser == standardNUserId && _welcomedDay == today) return;
-        // The works state is not known yet (first minute after start): greet once it is.
-        if (_noticeState?.Maintenance == null) { _pendingWelcome = (standardNUserId, fullName ?? ""); return; }
+        if (string.IsNullOrWhiteSpace(standardNUserId) || _hqMessagesDisposed) return;
+        var log = GreetingLogState();
+        var now = DateTime.Now;
+        if (!log.ShouldGreet(standardNUserId, now)) return;
+        // The works state is not known yet (first minute after start), or a recommendation is on screen: greet later.
+        if (_noticeState?.Maintenance == null || _recoWindow != null) { _pendingWelcome = (standardNUserId, fullName ?? ""); return; }
         if (EpharmPaused) return;
+        // Someone else signed in meanwhile: the waiting greeting is not theirs.
+        if (!string.Equals(CurrentSelfUserId(), standardNUserId, StringComparison.OrdinalIgnoreCase)) { _pendingWelcome = null; return; }
         _pendingWelcome = null;
-        RememberWelcome(standardNUserId, today);
-        var name = RecommendationWindow.ShortName(fullName);
-        _welcomeToast?.Close();
-        var toast = new EpharmToastWindow(
-            Greeting(DateTime.Now) + (name.Length > 0 ? ", " + name : "") + "!",
-            "Вход в ePharm выполнен. Подсказки по заменам будут появляться здесь. Нажмите, чтобы открыть свой кабинет. Хорошего дня!",
-            PharmacistScreen());
-        toast.Clicked += () => Dispatcher.BeginInvoke(new Action(() => _ = OpenStaffSelfAsync()));
-        toast.Closed += (_, _) => { if (ReferenceEquals(_welcomeToast, toast)) _welcomeToast = null; };
-        _welcomeToast = toast;
-        toast.Show();
-        Log("ePharm: приветствие показано (вход в ePharm выполнен)");
+        log.Remember(standardNUserId, now);
+        log.Save(_greetingLogPath!, Log);
+        _greetingWindow?.Close();
+        var window = new EpharmGreetingWindow(
+            PharmacistGreeting.Title(now, fullName),
+            PharmacistGreeting.Words(now).Wish,
+            PharmacistGreeting.HelpLines,
+            PharmacistScreen(),
+            PharmacistGreeting.Lifetime);
+        window.WhatIsEpharmRequested += () => Dispatcher.BeginInvoke(new Action(ShowWhatIsEpharm));
+        window.Closed += (_, _) =>
+        {
+            if (!ReferenceEquals(_greetingWindow, window)) return;
+            _greetingWindow = null;
+            // A notice from HQ waited for the greeting to go.
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(ShowNextHqMessage));
+        };
+        _greetingWindow = window;
+        try
+        {
+            window.Show();
+            Log("ePharm: приветствие показано");
+        }
+        catch (Exception error)
+        {
+            _greetingWindow = null;
+            Log("ePharm: приветствие не удалось показать: " + error.Message);
+        }
     }
 
-    /// <summary>The works state became known: a greeting that waited for it goes out now.</summary>
+    /// <summary>The works state became known or the recommendation closed: a greeting that waited goes out now.</summary>
     private void FlushPendingWelcome()
     {
         if (_pendingWelcome is { } pending && !EpharmPaused) MaybeWelcome(pending.User, pending.Name);
@@ -55,49 +73,33 @@ public partial class MainWindow
     private void CountLiveToastAsWelcome()
     {
         var user = CurrentSelfUserId();
-        if (user.Length > 0) RememberWelcome(user, DateTime.Today);
+        if (user.Length == 0) return;
+        var log = GreetingLogState();
+        log.Remember(user, DateTime.Now);
+        log.Save(_greetingLogPath!, Log);
     }
 
-    public static string Greeting(DateTime now) => now.Hour switch
-    {
-        >= 5 and < 12 => "Доброе утро",
-        >= 12 and < 18 => "Добрый день",
-        >= 18 and < 23 => "Добрый вечер",
-        _ => "Доброй ночи",
-    };
+    /// <summary>Kept for the 1.0.96 showcase: the hello word by the time of day.</summary>
+    public static string Greeting(DateTime now) => PharmacistGreeting.Words(now).Hello;
 
-    private void LoadWelcomeState()
+    private GreetingLog GreetingLogState()
     {
-        if (_welcomeStatePath != null) return;
-        _welcomeStatePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Epharm", "welcome-state.json");
-        try
-        {
-            if (!File.Exists(_welcomeStatePath)) return;
-            using var doc = JsonDocument.Parse(File.ReadAllText(_welcomeStatePath));
-            _welcomedUser = doc.RootElement.GetProperty("user").GetString() ?? "";
-            _welcomedDay = DateTime.Parse(doc.RootElement.GetProperty("day").GetString() ?? "", System.Globalization.CultureInfo.InvariantCulture);
-        }
-        catch
-        {
-            _welcomedUser = "";
-            _welcomedDay = DateTime.MinValue;
-        }
+        if (_greetingLog != null) return _greetingLog;
+        var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Epharm");
+        _greetingLogPath = Path.Combine(folder, "greeting-state.json");
+        _greetingLog = GreetingLog.Load(_greetingLogPath, Path.Combine(folder, "welcome-state.json"), DateTime.Now);
+        return _greetingLog;
     }
 
-    private void RememberWelcome(string user, DateTime day)
+    /// <summary>
+    /// The person is signed in at this till now (every status check, whatever the server answers): keeps their shift
+    /// going, so a night shift is not greeted again in the morning and a slow server never starts a new shift.
+    /// </summary>
+    private void NoteSignedInForGreeting(string standardNUserId)
     {
-        LoadWelcomeState();
-        _welcomedUser = user;
-        _welcomedDay = day;
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_welcomeStatePath!)!);
-            File.WriteAllText(_welcomeStatePath!, JsonSerializer.Serialize(new { user, day = day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) }));
-        }
-        catch (Exception error)
-        {
-            Log("ePharm: не удалось сохранить приветствие: " + error.Message);
-        }
+        if (string.IsNullOrWhiteSpace(standardNUserId) || _hqMessagesDisposed) return;
+        var log = GreetingLogState();
+        log.Seen(standardNUserId, DateTime.Now);
+        log.Save(_greetingLogPath!, Log);
     }
 }

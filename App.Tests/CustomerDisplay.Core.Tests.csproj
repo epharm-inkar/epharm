@@ -35,6 +35,10 @@
     <Compile Include="..\Models\Posm\PosmNoticeDto.cs" Link="Models\PosmNoticeDto.cs" />
     <Compile Include="..\Models\Posm\TillCommandDto.cs" Link="Models\TillCommandDto.cs" />
     <Compile Include="..\App\Services\EpharmNoticeState.cs" Link="Services\EpharmNoticeState.cs" />
+    <Compile Include="..\App\Services\PharmacistGreeting.cs" Link="Services\PharmacistGreeting.cs" />
+    <Compile Include="..\App\Services\PharmacistMessageInbox.cs" Link="Services\PharmacistMessageInbox.cs" />
+    <Compile Include="..\App\Services\EpharmAttention.cs" Link="Services\EpharmAttention.cs" />
+    <Compile Include="..\App\Services\EpharmHelpContent.cs" Link="Services\EpharmHelpContent.cs" />
     <Compile Include="..\App\Services\TillDiagnostics.cs" Link="Services\TillDiagnostics.cs" />
     <Compile Include="..\Models\Posm\Playlist.cs" Link="Models\Playlist.cs" />
     <Compile Include="..\Models\Posm\Cdp.cs" Link="Models\Cdp.cs" />

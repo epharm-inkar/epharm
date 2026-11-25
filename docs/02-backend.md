@@ -822,6 +822,8 @@ All POSM endpoints require `X-Posm-Key`.
 - `POST /api/posm/cdp/register`
 - `POST /api/posm/commands/next`, `POST /api/posm/commands/{id}/result`: remote till commands
   (per-device key only, see [Remote till commands](#remote-till-commands))
+- `POST /api/posm/self/messages`, `POST /api/posm/self/messages/{id}/shown|closed`: notices from HQ for the person at
+  the till (see [Notices to pharmacists at the till](#notices-to-pharmacists-at-the-till-posm-1099))
 
 ### Shared Public
 
@@ -1095,6 +1097,38 @@ rehearsal database. `MERCH_STAFF_ACCESS_ENABLED` defaults to false.
   presence counts a device online for `app.posm.heartbeat-ttl-seconds` (`POSM_HEARTBEAT_TTL`, default 150 s).
 - `pharmacists.standard_n_*` IIN and name observation is rewritten only when the result changes,
   otherwise its check time is refreshed at most once an hour.
+
+## Notices to pharmacists at the till (POSM 1.0.99)
+
+HQ writes a notice to pharmacists (25.11.2026, package `posm.messages`, tables `posm_messages`,
+`posm_message_targets`, `posm_message_receipts`, V122). Rules: `PosmMessageRules` (pure, `PosmMessageRulesTest`).
+
+- `POST /api/admin/posm-messages` `{title, text, audience: all|pharmacies|pharmacists, pharmacyIds?, pharmacistIds?,
+  days?}` -> 201. SYSTEM_ADMIN and HQ_HEAD only (`@PreAuthorize`). Title up to 120 characters (one line), text up to
+  1000 (paragraphs kept, control characters dropped), days 1-30 (7 by default). Only the list of the chosen audience
+  is used; unknown pharmacy or pharmacist ids get 400 naming them. `recipientsTotal` = active cards in scope at
+  sending (all active; active cards of the chosen pharmacies; chosen cards not blocked).
+- `GET /api/admin/posm-messages?limit=` (default 50, at most 200), newest first, `no-store`: each notice with
+  `targetCount`, the first five `targetNames`, `shownCount` (people who saw it on a till), `closedCount` (closed it
+  with ×), `expiresAt`, `withdrawnAt/By` and `active`.
+- `POST /api/admin/posm-messages/{id}/withdraw`: tills stop showing it; repeated calls keep the first time; 404 for
+  an unknown id.
+- `POST /api/posm/self/messages` (device key, body as `/api/posm/self`): the person signed in to Standard-N at the
+  till (same resolution and errors as the tasks feed, `PosmSelfPersonResolver`) gets every notice of the last 30
+  days for them, newest first, at most 20 but every open one included: `{messages: [{id, title, text, sentAt,
+  closedAt, pending}], pendingCount}`. Withdrawn notices are left out; an unclosed one past its last day stays in the
+  history with `pending=false`.
+- `POST /api/posm/self/messages/{id}/shown` and `.../closed` -> `{id, shownAt, closedAt}`: first report wins, repeats
+  change nothing; a close also counts as shown. A notice not for this person gets 404; a withdrawn one gets 404 for
+  `shown` but a close is still recorded.
+- Who gets a notice: `all`, everyone; `pharmacies`, whoever signs in at a till of a chosen pharmacy and the staff
+  of a chosen pharmacy (card's pharmacy) at any till; `pharmacists`, the chosen cards at any till.
+- `GET /api/posm/notice` carries `messagesAt` (when a notice was last sent or withdrawn; cached 30 seconds, reset
+  after the commit of a change). Tills from 1.0.99 fetch their person's notices at once when it changes; older tills
+  ignore it.
+
+`POST /api/posm/self/tasks` gains `requiredOpenCount`: required courses not finished (new, in progress or overdue;
+paused ones not counted). The till keeps its red dot while it is above zero.
 
 ## Remote till commands
 

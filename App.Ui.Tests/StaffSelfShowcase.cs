@@ -116,14 +116,14 @@ internal static partial class Program
                 SaveOwnWindow(refreshed, "staff-self-5-after-refresh");
                 Console.WriteLine(Path.Combine(Output, "staff-self-5-after-refresh.png"));
                 refreshed.Close();
-                // «?» opened: what ePharm is and how the money works.
-                var help = new StaffSelfWindow(StaffSelfScenarios[0].Model, _screen);
+                // 1.0.99: the «?» panel became the «Что такое ePharm» page, opened from the entry under the header.
+                var help = new EpharmPageWindow(
+                    CustomerDisplay.Services.EpharmHelpContent.PageTitle, CustomerDisplay.Services.EpharmHelpContent.Lead,
+                    CustomerDisplay.Services.EpharmHelpContent.Sections, _screen);
                 help.Show();
-                help.ToggleHelp();
-                help.UpdateTasks(1, online: true);
                 await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
-                SaveOwnWindow(help, "staff-self-6-help-open");
-                Console.WriteLine(Path.Combine(Output, "staff-self-6-help-open.png"));
+                SaveOwnWindow(help, "staff-self-6-what-is-epharm");
+                Console.WriteLine(Path.Combine(Output, "staff-self-6-what-is-epharm.png"));
                 help.Close();
                 // 1.0.96: password already set, «Сменить пароль» opens two fields.
                 var change = new StaffSelfWindow(StaffSelfScenarios[1].Model, _screen);
