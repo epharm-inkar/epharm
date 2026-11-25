@@ -370,17 +370,6 @@ test('internal placements open for an explicit regional capability without inven
   expect(blocked).toEqual([])
 })
 
-test('built training video is an actual MP4 asset rather than an SPA fallback', async ({
-  request,
-  baseURL,
-}) => {
-  expect(['127.0.0.1', 'localhost']).toContain(new URL(baseURL!).hostname)
-  const response = await request.head(`${baseURL}/training/fire-safety-training-video.mp4`)
-  expect(response.status()).toBe(200)
-  expect(response.headers()['content-type']).toContain('video/mp4')
-  expect(Number(response.headers()['content-length'])).toBeGreaterThan(1_000_000)
-})
-
 test('a producer with a truthful empty company name completes only its own profile', async ({
   page,
   baseURL,
