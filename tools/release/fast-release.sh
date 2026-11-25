@@ -42,7 +42,7 @@ build_poll="${RELEASE_BUILD_POLL_SECONDS:-10}"
 # What the two images and the staged release hold. A change elsewhere (the tills, the mobile app, docs) needs no server
 # release; the till package goes its own way.
 server_paths=(admin-panel/backend admin-panel/frontend docker-compose.prod.yml tools)
-migrations_path=admin-panel/backend/src/main/resources/db/migration
+migrations_path='admin-panel/backend/src/main/resources/db/migration'
 declare -A took=()
 mode=release checks_given=() fresh="" tag="" token="" state="" main="" remote_file="" python=""
 
@@ -457,8 +457,8 @@ main() {
       --check) [ $# -ge 2 ] || stop "--check needs a page"; checks_given+=("$2"); shift 2 ;;
       --check=*) checks_given+=("${1#--check=}"); shift ;;
       --prebuild) mode=prebuild; shift ;;
-      --dry-run) mode=dry-run; shift ;;
-      --checks-only) mode=checks-only; shift ;;
+      --dry-run) mode='dry-run'; shift ;;
+      --checks-only) mode='checks-only'; shift ;;
       *) stop "unknown option «$1» (the options are at the top of tools/release/fast-release.sh)" ;;
     esac
   done
