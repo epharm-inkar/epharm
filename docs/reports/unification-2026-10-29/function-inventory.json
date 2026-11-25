@@ -1111,7 +1111,7 @@
         "admin-panel/frontend/src/features/pharmacists/CreatePharmacistModal.tsx",
         "admin-panel/frontend/src/features/pharmacists/ActivatePharmacistModal.tsx"
       ],
-      "api": ["GET /api/admin/pharmacists", "GET /api/admin/pharmacists/{id}"],
+      "api": ["GET /api/admin/pharmacists", "GET /api/admin/pharmacists/coverage", "GET /api/admin/pharmacists/{id}"],
       "jobs": [],
       "data": ["pharmacists", "standardn_pharmacist_directory"],
       "files": [
