@@ -239,7 +239,7 @@ for (const viewport of [
 ]) {
   test.describe(viewport.name, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } })
-    test('training has its own route, home keeps the current course and card linking stays a safe preview', async ({
+    test('training has its own route, home keeps the current course and the card shows a payouts notice', async ({
       page,
       learnerApi,
     }, testInfo) => {
@@ -360,10 +360,10 @@ for (const viewport of [
       await expect(page.getByText(/36\s*941\s*₸/).first()).toBeVisible()
       const requestCount = learnerApi.requests.length
       const storage = await page.evaluate(() => JSON.stringify({ ...localStorage }))
-      await card.getByRole('button', { name: 'Как подключить карту', exact: true }).click()
-      await expect(card.getByRole('status')).toHaveText(
-        'Привязка карты появится позже. Сейчас реквизиты не запрашиваются, выплаты на карту недоступны.',
-      )
+      // Payouts are in development: the notice is always shown, nothing offers to link a card.
+      await expect(card.getByRole('status')).toContainText('Функционал выплат находится в разработке')
+      await expect(card.getByRole('status')).toContainText('Реквизиты не запрашиваются и не сохраняются.')
+      await expect(card.getByRole('button')).toHaveCount(0)
       await expect(card.locator('input, textarea, select, iframe, form')).toHaveCount(0)
       await expect(card.getByText('Не подключена', { exact: true })).toBeVisible()
       expect(learnerApi.requests).toHaveLength(requestCount)

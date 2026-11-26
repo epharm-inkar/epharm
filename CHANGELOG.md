@@ -26,6 +26,21 @@ All notable production changes to Epharm are recorded here. The format follows
   «Заработано за месяц» and last entries ("Премия за продажи, ноябрь 2026") and the cabinet balance include it; the
   HQ ledger report filters both new sources. Tables `sales_premium_pending`, `sales_premium_imports`, ledger
   constraints widened (V123). Payouts are not changed: a payout batch reserves the whole balance, premium included.
+- Admin Analytics opens with «Фармацевты в ePharm» (owner, 26.11.2026): how many pharmacists are in the system
+  (everyone except blocked), how many worked with ePharm today and in the last 7 days with the shares, and two
+  charts by day since the launch (people, and their share of the system). «Скачать график» saves both charts with the
+  figures as one PNG for management. The data and the rule are those of the pharmacists «Покрытие» tab.
+  `GET /api/admin/pharmacists/coverage` reaches back up to 366 days (was 120) and every day carries `active1d` and
+  `coverage1dPct`, the response `activeToday` and `coverageTodayPct`; an older backend shows «нет данных» for today.
+  The empty blocks «Динамика принятых рекомендаций» (Pilot vs Control) and «Карта активности» are gone.
+- Admin «Обучение» → «Онлайн-курсы»: the course drawer has a tab «Как видит фармацевт» (the first one for roles that
+  cannot edit): the course on a phone screen as the pharmacist's cabinet draws it, with its path of lessons, the
+  reading in parts, the self-check, the video and the graded test, and a selector and arrows to walk the lessons.
+  It is the cabinet's own lesson screen in a preview mode (nothing is saved or sent, no lesson is locked, the video can
+  be wound forward, the text does not wait for its reading time, a test is graded in the browser, a live lesson is a
+  card). The phone is a frame with the page's own stylesheets, so the layout answers to the phone's width. Only the
+  open lesson loads media. The lessons tab no longer dumps a player and raw text into every row: one line says what a
+  lesson holds.
 - POSM 1.0.99 (Grigoriy, 25.11.2026), built for the pilot: the greeting at the first Standard-N sign-in of a shift
   says «Доброе утро, Имя Отчество! Желаем хорошего дня» (by the time of day), two lines on how ePharm helps and «Что
   такое ePharm»; once per person per shift (again only after 8 hours without them at the till), also after a restart;
@@ -171,6 +186,10 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Changed
 
+- Payouts are in development (owner, 26.11.2026): «Финансы / выплаты» shows «Функционал выплат находится в
+  разработке» at the top, «Сформировать выплату» and «Утвердить выплату» are disabled with the reason as a tooltip, and
+  reading the batches and the Excel report stays. The pharmacist cabinet's profile shows the same notice instead of
+  «Как подключить карту». Only the screens changed: the server routes and the 1st and 16th cron are as they were.
 - Automatic recommendation reward: a recommended product counts when it is added after the actual display in the same
   checkout and stays in the paid receipt; the 120-second addition cutoff is gone (Grigoriy's decision 24.11.2026).
   Producer reports keep their separate 0–120-second metric.
