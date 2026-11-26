@@ -19,6 +19,13 @@ interface MediaStorage {
     /** Читает объект только из управляемого хранилища. Внешние URL не запрашиваются. */
     fun read(url: String): ByteArray?
 
+    /**
+     * Reads up to [length] bytes of a video object of this storage from [offset] (fewer near the end of the
+     * object), so that its header can be looked at without downloading it. Null when the URL is not a video
+     * object of this storage, the object is missing or the read fails. External URLs are never requested.
+     */
+    fun readRange(url: String, offset: Long, length: Int): ByteArray? = null
+
     /** Удаляет объект по ранее возвращённому URL (best-effort). */
     fun delete(url: String)
 }
@@ -44,4 +51,10 @@ class InMemoryMediaStorage : MediaStorage {
 
     override fun read(url: String): ByteArray? =
         store.entries.firstOrNull { url.endsWith(it.key) }?.value
+
+    override fun readRange(url: String, offset: Long, length: Int): ByteArray? {
+        val bytes = store.entries.firstOrNull { url.endsWith(it.key) }?.value ?: return null
+        if (offset < 0 || length <= 0 || offset >= bytes.size) return null
+        return bytes.copyOfRange(offset.toInt(), minOf(bytes.size.toLong(), offset + length).toInt())
+    }
 }

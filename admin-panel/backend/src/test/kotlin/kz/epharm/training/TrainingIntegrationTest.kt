@@ -25,6 +25,8 @@ import kz.epharm.pharmacies.repository.PharmacyRepository
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.shared.media.TestMp4
+import kz.epharm.shared.storage.MediaStorage
 import kz.epharm.training.repository.TrainingCertificateRepository
 import kz.epharm.training.repository.TrainingAssessmentResultRepository
 import kz.epharm.training.repository.TrainingAssignmentStageRepository
@@ -101,6 +103,7 @@ class TrainingIntegrationTest {
     @Autowired private lateinit var lessonProgressRepository: TrainingLessonProgressRepository
     @Autowired private lateinit var assignmentStageRepository: TrainingAssignmentStageRepository
     @Autowired private lateinit var assignmentRepository: TrainingAssignmentRepository
+    @Autowired private lateinit var mediaStorage: MediaStorage
 
     private lateinit var adminBearer: String
     private lateinit var pharmacistBearer: String
@@ -1501,6 +1504,80 @@ class TrainingIntegrationTest {
             .header("Authorization", adminBearer).contentType(MediaType.APPLICATION_JSON)
             .content("""{"score":$score,"passed":$passed,"feedback":"Synthetic attempt"}"""))
             .andExpect(status().isOk).andReturn().response.contentAsString)
+
+    @Test
+    fun `a clip shorter than the planned minutes is finished once it has been watched`() {
+        // 26.11.2026: a 6 s clip planned as 2 min answered every save with 409 although it had been watched whole.
+        val path = startedVideoLesson(mediaStorage.upload(TestMp4.clip(6), "video/mp4", "how-to.mp4"), plannedMinutes = 2)
+
+        mockMvc.perform(
+            patch(path).header("Authorization", pharmacistBearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"progressPct":100,"positionSeconds":6,"mediaDurationSeconds":6}"""),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.stages[0].course.lessons[0].progressPct").value(100))
+            .andExpect(jsonPath("$.stages[0].course.lessons[0].completedAt").isNotEmpty)
+    }
+
+    @Test
+    fun `a clip the server can measure cannot be skipped whatever the browser reports`() {
+        val path = startedVideoLesson(mediaStorage.upload(TestMp4.clip(90), "video/mp4", "module.mp4"), plannedMinutes = 2)
+
+        mockMvc.perform(
+            patch(path).header("Authorization", pharmacistBearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"progressPct":100,"positionSeconds":90,"mediaDurationSeconds":1}"""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("Видео засчитается через ")))
+            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Досмотрите"))))
+        assertEquals(
+            0,
+            lessonProgressRepository.findAll().maxOfOrNull { it.progressPct } ?: 0,
+        )
+    }
+
+    @Test
+    fun `a clip that cannot be measured keeps the planned minutes and the refusal names the wait`() {
+        val path = startedVideoLesson("https://epharm.inkar.kz/s3/training-intro.mp4", plannedMinutes = 2)
+
+        mockMvc.perform(
+            patch(path).header("Authorization", pharmacistBearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"progressPct":100,"positionSeconds":6,"mediaDurationSeconds":6}"""),
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("Видео засчитается через ")))
+    }
+
+    /** Assigns the program, starts it and opens the video lesson: the first save, at 0%, is what starts the clock. */
+    private fun startedVideoLesson(videoUrl: String, plannedMinutes: Int): String {
+        val lesson = courseLessonRepository.findById("cls_training_intro").orElseThrow()
+        lesson.videoUrl = videoUrl
+        lesson.durationMin = plannedMinutes
+        courseLessonRepository.save(lesson)
+        val programId = createPublishedProgram()["id"].asText()
+        val assigned = mockMvc.perform(
+            post("/api/admin/training/assignments")
+                .header("Authorization", adminBearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"programId":"$programId","pharmacistIds":["ph_training"],"format":"online","duplicatePolicy":"skip"}"""),
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val assignmentId = objectMapper.readTree(assigned)["assignments"][0]["id"].asText()
+        val started = mockMvc.perform(
+            post("/api/mobile/training/assignments/$assignmentId/start").header("Authorization", pharmacistBearer),
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val onlineStage = objectMapper.readTree(started)["stages"].first { it["type"].asText() == "online_course" }
+        val path = "/api/mobile/training/assignments/$assignmentId/stages/${onlineStage["id"].asText()}" +
+            "/lessons/${onlineStage["course"]["lessons"][0]["id"].asText()}"
+        mockMvc.perform(
+            patch(path).header("Authorization", pharmacistBearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"progressPct":0,"positionSeconds":0}"""),
+        ).andExpect(status().isOk)
+        return path
+    }
 
     private fun createPublishedProgram(): JsonNode {
         val body = """
