@@ -1,15 +1,28 @@
-// «Уведомления на кассах» (Григорий, 25.11.2026): HQ пишет уведомление, выбирает адресатов (всем, аптекам или
-// сотрудникам) и отправляет. Касса ePharm 1.0.99+ показывает его фармацевту в углу экрана, пока тот не закроет
-// крестиком; справа видно, сколько человек увидели и закрыли. Отправка и снятие только у HQ.
+// «Уведомления на кассах» (Григорий, 25.11.2026): HQ пишет уведомление, выбирает адресатов и отправляет. Касса
+// ePharm 1.0.99+ показывает его фармацевту в углу экрана, пока тот не закроет крестиком; справа видно, сколько
+// человек увидели и закрыли. Отправка и снятие только у HQ.
+//
+// 26.11.2026: кому можно отправить «не прошли курс» (и одной кнопкой «Напомнить о курсе»), конкретным людям (поиск по
+// фамилии, имени, телефону, ИИН, аптеке) и любым адресатам «только тем, кто сейчас за кассой». До отправки сервер
+// считает, сколько человек получат и сколько из них за кассой сейчас.
 
 import { useMemo, useState } from 'react'
-import { Button, Field, Input, Modal, SectionCard, Select, useToast } from '@/ui'
+import { Button, Field, Input, Modal, SectionCard, Select, Toggle, useToast } from '@/ui'
 import { useT } from '@/i18n'
 import { describeError } from '@/lib/describeError'
 import { usePharmacies } from '@/lib/queries/pharmacies'
-import { usePharmacists } from '@/lib/queries/pharmacists'
-import { usePosmMessages, useSendPosmMessage, useWithdrawPosmMessage } from '@/lib/queries/posmMessages'
-import type { PosmMessageAudience, PosmMessageDto } from '@/lib/api-types'
+import {
+  POSM_PREVIEW_DEBOUNCE_MS,
+  usePosmCourses,
+  usePosmMessagePreview,
+  usePosmMessages,
+  useSendPosmMessage,
+  useWithdrawPosmMessage,
+} from '@/lib/queries/posmMessages'
+import type { PosmAudienceRequest, PosmMessageAudience, PosmMessageDto, PosmPersonDto } from '@/lib/api-types'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
+import { AudiencePreview } from './AudiencePreview'
+import { PharmacistSearchPicker } from './PharmacistSearchPicker'
 import { RecipientPicker, type PickerItem } from './RecipientPicker'
 import { TillMessagesList } from './TillMessagesList'
 import {
@@ -18,17 +31,22 @@ import {
   TEXT_MAX,
   TITLE_MAX,
   audienceLabel,
+  buildAudienceRequest,
   buildRequest,
+  courseReminder,
   draftError,
   type TillMessageDraft,
 } from './tillMessages'
 
-const AUDIENCES: PosmMessageAudience[] = ['all', 'pharmacies', 'pharmacists']
+const AUDIENCES: PosmMessageAudience[] = ['all', 'pharmacies', 'pharmacists', 'course']
 
 export function TillMessagesPanel() {
   const t = useT()
   const toast = useToast()
   const [draft, setDraft] = useState<TillMessageDraft>(EMPTY_DRAFT)
+  const [people, setPeople] = useState<PosmPersonDto[]>([])
+  // Заголовок и текст, которые подставила кнопка «Напомнить о курсе»: пока их не правили, смена курса их обновляет.
+  const [autoFilled, setAutoFilled] = useState<{ title: string; text: string } | null>(null)
   const [tried, setTried] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [withdrawing, setWithdrawing] = useState<PosmMessageDto | null>(null)
@@ -36,7 +54,16 @@ export function TillMessagesPanel() {
   const send = useSendPosmMessage()
   const withdraw = useWithdrawPosmMessage()
   const pharmacies = usePharmacies({}, draft.audience === 'pharmacies')
-  const pharmacists = usePharmacists({ status: 'active' }, draft.audience === 'pharmacists')
+  const courses = usePosmCourses()
+  const courseList = courses.data ?? []
+
+  const audienceRequest = buildAudienceRequest(draft)
+  const wantedKey = JSON.stringify(audienceRequest)
+  // Подсчёт просим, когда выбор перестали менять: каждый щелчок по галочке не должен давать свой запрос.
+  const requestKey = useDebouncedValue(wantedKey, POSM_PREVIEW_DEBOUNCE_MS)
+  const preview = usePosmMessagePreview(requestKey === 'null' ? null : (JSON.parse(requestKey) as PosmAudienceRequest))
+  // Число показываем, только когда оно про нынешний выбор: пока считают, старое число было бы про другой.
+  const previewData = requestKey === wantedKey && !preview.isPlaceholderData ? preview.data : undefined
 
   const pharmacyItems = useMemo<PickerItem[]>(
     () =>
@@ -47,36 +74,57 @@ export function TillMessagesPanel() {
       })),
     [pharmacies.data],
   )
-  const pharmacistItems = useMemo<PickerItem[]>(
-    () =>
-      (pharmacists.data ?? []).map((pharmacist) => ({
-        id: pharmacist.id,
-        title: pharmacist.name,
-        subtitle: [pharmacist.pharmacyName, pharmacist.city].filter(Boolean).join(' · '),
-      })),
-    [pharmacists.data],
-  )
 
   const error = draftError(draft)
+  const nobody = previewData?.frozen === true && previewData.recipients === 0
   const update = (patch: Partial<TillMessageDraft>) => setDraft((current) => ({ ...current, ...patch }))
   const daysLabel = t(`msg.day${draft.days}`)
+  const course = courseList.find((item) => item.id === draft.programId)
   // Аптеки сети часто называются одинаково: в подтверждении рядом с названием город и адрес.
   const chosenNames =
     draft.audience === 'pharmacies'
       ? pharmacyItems
           .filter((item) => draft.pharmacyIds.includes(item.id))
           .map((item) => [item.title, item.subtitle].filter(Boolean).join(', '))
-      : pharmacistItems.filter((item) => draft.pharmacistIds.includes(item.id)).map((item) => item.title)
+      : people.map((person) => person.name)
   const chosenCount = draft.audience === 'pharmacies' ? draft.pharmacyIds.length : draft.pharmacistIds.length
   const summary = audienceLabel(t, {
     audience: draft.audience,
     targetCount: chosenCount,
     targetNames: chosenNames.slice(0, 5),
+    onlyAtTill: draft.onlyAtTill,
+    programName: course?.name,
   })
+
+  const choosePeople = (next: PosmPersonDto[]) => {
+    setPeople(next)
+    update({ pharmacistIds: next.map((person) => person.id) })
+  }
+
+  // Одна кнопка: курс, который больше всего людей ещё не прошли, только тем, кто сейчас за кассой, и готовый текст.
+  const remind = () => {
+    const picked = courseList.find((item) => item.id === draft.programId) ?? courseList[0]
+    if (!picked) return
+    const filled = courseReminder(picked)
+    setAutoFilled(filled)
+    update({ audience: 'course', programId: picked.id, onlyAtTill: true, title: filled.title, text: filled.text })
+  }
+
+  const chooseCourse = (programId: string) => {
+    const picked = courseList.find((item) => item.id === programId)
+    const untouched = autoFilled !== null && draft.title === autoFilled.title && draft.text === autoFilled.text
+    if (picked && untouched) {
+      const filled = courseReminder(picked)
+      setAutoFilled(filled)
+      update({ programId, title: filled.title, text: filled.text })
+    } else {
+      update({ programId })
+    }
+  }
 
   const askToSend = () => {
     setTried(true)
-    if (!error) setConfirming(true)
+    if (!error && !nobody) setConfirming(true)
   }
 
   const confirmSend = () => {
@@ -86,6 +134,8 @@ export function TillMessagesPanel() {
         setConfirming(false)
         setTried(false)
         setDraft(EMPTY_DRAFT)
+        setPeople([])
+        setAutoFilled(null)
       },
       onError: (e) => {
         setConfirming(false)
@@ -112,6 +162,28 @@ export function TillMessagesPanel() {
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" data-testid="till-messages">
       <SectionCard title={t('msg.composeTitle')} subtitle={t('msg.composeSubtitle')}>
         <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-ink-200 bg-paper-hover p-3" data-testid="till-message-remind">
+            <div className="text-[13px] font-bold text-ink-900">{t('msg.remindTitle')}</div>
+            <div className="mt-0.5 text-[12px] text-ink-500">{t('msg.remindHint')}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={remind}
+                disabled={courseList.length === 0}
+                data-testid="till-message-remind-button"
+              >
+                {t('msg.remindButton')}
+              </Button>
+              {courses.isError && <span className="text-[12px] text-accent-danger">{t('msg.courseLoadError')}</span>}
+              {!courses.isError && courses.isLoading && <span className="text-[12px] text-ink-400">{t('msg.remindLoading')}</span>}
+              {!courses.isError && !courses.isLoading && courseList.length === 0 && (
+                <span className="text-[12px] text-ink-500" data-testid="till-message-remind-none">
+                  {t('msg.remindNone')}
+                </span>
+              )}
+            </div>
+          </div>
+
           <Field label={t('msg.title')} hint={t('msg.counter', { n: [...draft.title].length, max: TITLE_MAX })}>
             <Input
               value={draft.title}
@@ -168,16 +240,31 @@ export function TillMessagesPanel() {
             />
           )}
           {draft.audience === 'pharmacists' && (
-            <RecipientPicker
-              items={pharmacistItems}
-              selected={draft.pharmacistIds}
-              onChange={(pharmacistIds) => update({ pharmacistIds })}
-              loading={pharmacists.isLoading}
-              failed={pharmacists.isError}
-              searchPlaceholder={t('msg.searchPharmacists')}
-              testId="till-message-pharmacists"
-            />
+            <PharmacistSearchPicker selected={people} onChange={choosePeople} testId="till-message-pharmacists" />
           )}
+          {draft.audience === 'course' && (
+            <Field label={t('msg.course')}>
+              <Select
+                ariaLabel={t('msg.course')}
+                value={draft.programId}
+                placeholder={courses.isLoading ? t('msg.loading') : courseList.length === 0 ? t('msg.courseNone') : t('msg.coursePlaceholder')}
+                onChange={chooseCourse}
+                options={courseList.map((item) => ({ value: item.id, label: t('msg.courseOption', { name: item.name, n: item.openCount }) }))}
+              />
+            </Field>
+          )}
+
+          <div className="flex flex-col gap-1" data-testid="till-message-only-at-till">
+            <Toggle on={draft.onlyAtTill} onChange={(onlyAtTill) => update({ onlyAtTill })} label={t('msg.onlyAtTill')} />
+            <div className="text-[12px] text-ink-500">{t('msg.onlyAtTillHint', { n: previewData?.windowMinutes ?? 20 })}</div>
+          </div>
+
+          <AudiencePreview
+            enabled={audienceRequest !== null}
+            data={previewData}
+            loading={preview.isLoading || preview.isFetching || requestKey !== wantedKey}
+            failed={preview.isError}
+          />
 
           <Field label={t('msg.days')}>
             <Select
@@ -190,9 +277,9 @@ export function TillMessagesPanel() {
 
           <Preview title={draft.title} text={draft.text} />
 
-          {tried && error && (
+          {tried && (error || nobody) && (
             <div className="text-[12px] font-semibold text-accent-danger" role="alert" data-testid="till-message-error">
-              {t(error)}
+              {t(error ?? 'msg.errNobody')}
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -229,7 +316,14 @@ export function TillMessagesPanel() {
         <div className="flex flex-col gap-2 text-[13px] text-ink-700">
           <div className="font-bold text-ink-900">{draft.title.trim()}</div>
           <div>{t('msg.confirmBody', { audience: summary, days: daysLabel })}</div>
-          {draft.audience === 'all' && <div className="font-semibold text-ink-900">{t('msg.confirmAll')}</div>}
+          {previewData && (
+            <div className="font-semibold text-ink-900" data-testid="till-message-confirm-count">
+              {t('msg.countLine', { n: previewData.recipients, atTill: previewData.atTillNow })}
+            </div>
+          )}
+          {draft.onlyAtTill && <div>{t('msg.confirmOnlyAtTill')}</div>}
+          {draft.audience === 'course' && <div>{t('msg.confirmCourse')}</div>}
+          {draft.audience === 'all' && !draft.onlyAtTill && <div className="font-semibold text-ink-900">{t('msg.confirmAll')}</div>}
         </div>
       </Modal>
 

@@ -19,6 +19,31 @@ in `i18n/identityClaimsDict.ts` (ru and kk, the same keys); data hooks in `lib/q
 «внесено в офисе», and the directory no longer rewrites it. The cabinet profile shows the same sources and, for a card
 whose name has fewer than two words, a field «Укажите ФИО полностью» (`features/learner/IdentityNameClaim.tsx`).
 
+## 26.11.2026: course reminders, notices to people at a till, «Сейчас за кассой»
+
+**Screens** → «Уведомления на кассах» (`TillMessagesPanel`, HQ only). The audience is «Всем фармацевтам», «Аптекам»,
+«Сотрудникам» or «Не прошли курс»; under it a switch «Только тем, кто сейчас за кассой» works with any of them. The
+button «Напомнить о курсе» at the top does it in one click: it takes the course that most people have not finished,
+chooses «Не прошли курс», switches «только за кассой» on and puts «Пройдите курс «…» до ДД.ММ: Мой кабинет → Обучение»
+into the text (the date only when every open task has the same due day and it is not past); the owner can change the
+text, the course or the switch, and a text he has edited is not overwritten when the course changes. «Сотрудникам» has a
+search (`PharmacistSearchPicker`) by surname, name, patronymic, phone digits, IIN, pharmacy or address, several people or
+one; each result shows whether the person is at a till now or when they were. Before sending, the server counts
+(`AudiencePreview`, `POST /api/admin/posm-messages/preview`): «Получат: 37. Сейчас за кассой: 21.» with the first names
+when the people are chosen at sending; with nobody to send to the button asks nothing and says why. The list of sent
+notices names the course and «только тем, кто был за кассой при отправке» and keeps the seen and closed counters.
+
+**Screens** → «Сейчас за кассой» (`AtTillPanel`, HQ only, `?tab=attill`): the number of pharmacists at a till now, a
+refresh button, a search (any part of the name, phone digits, IIN, pharmacy) and a pharmacy filter, then a table (cards
+on a phone) with the person, the pharmacy of the till, the till, since when and when the till last named them. The page
+updates itself once a minute. A person from another pharmacy shows where they belong.
+
+**Pharmacists**: the activity column of the roster shows «за кассой сейчас» or «был за кассой 26.11 14:05»
+(`TillSeenBadge`); nothing for a person no till has named. Strings are in `i18n/dict.ts` (`msg.*`, `att.*`, `phc.*`,
+ru and kk). Hooks: `lib/queries/posmMessages.ts`, `lib/queries/atTill.ts`. Tests: `TillMessagesPanel.test.tsx`,
+`AtTillPanel.test.tsx`, `atTillFormat.test.ts`, `tillMessages.test.ts`, `ScreensPage.test.tsx`,
+`PharmacistsPage.test.tsx`.
+
 ## 26.11.2026: analytics start, course preview, payouts in development
 
 **Analytics** (`features/dashboard`). The page opens with «Фармацевты в ePharm» (`PharmacistsUsage`): pharmacists in
@@ -455,7 +480,7 @@ redirects to `/screens` because banners are now a tab/panel in the Screens secti
 | Dashboard   | HQ summary/KPI entrypoint and paginated 90-day journal of recommendation shows and POS sales.                                                                                                    |
 | Promo       | Product campaign CRUD, Medusa product picker, gallery/cover, tiers, dates, goals, campaign rules, grid/list view.                                                                                |
 | Rules       | Read-only/global rules view plus rule builders/components; campaign rules are edited from Promo.                                                                                                 |
-| Screens     | Connected cash desks, «Все кассы» (HQ: diagnostics and restart of a till without AnyDesk), «Уведомления на кассах» (HQ: notices to pharmacists with seen and closed counts), Excel inventory of POSM/client screens, 12-slot playlists, banners. |
+| Screens     | Connected cash desks, «Все кассы» (HQ: diagnostics and restart of a till without AnyDesk), «Уведомления на кассах» (HQ: notices to pharmacists, to people who have not finished a course and to people at a till now, with seen and closed counts), «Сейчас за кассой» (HQ: who sits at a till now), Excel inventory of POSM/client screens, 12-slot playlists, banners. |
 | Pharmacies  | Chains/pharmacies, CRUD, detail page, real Medusa-derived pharmacy seed data.                                                                                                                    |
 | Pharmacists | Registry, pending-profile activation with pharmacy assignment, block/unblock, status/balance data.                                                                                               |
 | Reconcile   | Receipt moderation queue, claimed promos, POS/Excel source columns, approve/reject.                                                                                                              |

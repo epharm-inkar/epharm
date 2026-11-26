@@ -4,6 +4,7 @@
 //     кассы подхватывают его поллингом /api/posm/playlists/active и шлют heartbeat.
 //   • «Баннеры приложения» — управление баннерами главного экрана (BannersPanel).
 //   • «Уведомления на кассах» (только HQ) — уведомления фармацевтам на кассах (TillMessagesPanel).
+//   • «Сейчас за кассой» (только HQ): какие фармацевты сидят за кассой в эту минуту (AtTillPanel).
 
 import { useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -39,6 +40,7 @@ import { useT } from '@/i18n'
 import { canManageTills } from '@/app/accessPolicy'
 import { useUiStore } from '@/app/store'
 import { BannersPanel, type BannerEditing } from './BannersPanel'
+import { AtTillPanel } from './AtTillPanel'
 import { FleetPanel } from './FleetPanel'
 import { TillMessagesPanel } from './TillMessagesPanel'
 import { staffAuthStatusLabel } from './staffAuthStatus'
@@ -50,18 +52,20 @@ const TARGETED_PROFILE_ID = 'pl_broadcast_targeted'
 type BroadcastViewMode = 'grid' | 'list'
 type PharmacyPickerView = 'all' | 'selected'
 
-type ScreensTab = 'screens' | 'fleet' | 'banners' | 'messages'
-const SCREENS_TABS: readonly ScreensTab[] = ['screens', 'fleet', 'banners', 'messages']
+type ScreensTab = 'screens' | 'fleet' | 'banners' | 'messages' | 'attill'
+const SCREENS_TABS: readonly ScreensTab[] = ['screens', 'fleet', 'banners', 'messages', 'attill']
+/** Вкладки только для HQ: остальные роли их не видят и по адресу не открывают. */
+const HQ_TABS: readonly ScreensTab[] = ['messages', 'attill']
 
 export default function ScreensPage() {
   const t = useT()
   // Вкладка живёт в адресе (?tab=fleet), чтобы на «Все кассы» можно было дать ссылку.
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab') as ScreensTab | null
-  // Уведомления на кассах отправляет только HQ: остальные роли вкладку не видят.
+  // Уведомления на кассах отправляет и «Сейчас за кассой» видит только HQ: остальные роли вкладки не видят.
   const manageTills = canManageTills(useUiStore((s) => s.authedUser?.role))
   const tab: ScreensTab =
-    requestedTab && SCREENS_TABS.includes(requestedTab) && (requestedTab !== 'messages' || manageTills)
+    requestedTab && SCREENS_TABS.includes(requestedTab) && (!HQ_TABS.includes(requestedTab) || manageTills)
       ? requestedTab
       : 'screens'
   const setTab = (next: ScreensTab) =>
@@ -85,7 +89,12 @@ export default function ScreensPage() {
           { value: 'screens', label: t('scr.tabScreens') },
           { value: 'fleet', label: t('scr.tabFleet') },
           { value: 'banners', label: t('scr.tabBanners') },
-          ...(manageTills ? [{ value: 'messages' as const, label: t('scr.tabMessages') }] : []),
+          ...(manageTills
+            ? [
+                { value: 'messages' as const, label: t('scr.tabMessages') },
+                { value: 'attill' as const, label: t('scr.tabAtTill') },
+              ]
+            : []),
         ]}
         value={tab}
         onChange={setTab}
@@ -112,6 +121,8 @@ export default function ScreensPage() {
         <FleetPanel />
       ) : tab === 'messages' ? (
         <TillMessagesPanel />
+      ) : tab === 'attill' ? (
+        <AtTillPanel />
       ) : (
         <BannersPanel editing={bannerEditing} setEditing={setBannerEditing} />
       )}

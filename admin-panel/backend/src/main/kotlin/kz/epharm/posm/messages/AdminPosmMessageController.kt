@@ -25,11 +25,38 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api/admin/posm-messages")
 @PreAuthorize("hasAnyRole('SYSTEM_ADMIN','HQ_HEAD')")
-class AdminPosmMessageController(private val messages: PosmMessageService) {
+class AdminPosmMessageController(
+    private val messages: PosmMessageService,
+    private val audiences: PosmMessageAudiences,
+) {
     /** Newest first, with how many people saw each notice on a till and how many closed it. */
     @GetMapping
     fun list(@RequestParam(required = false) limit: Int?): ResponseEntity<List<PosmMessageAdminDto>> =
         ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(messages.list(limit))
+
+    /**
+     * Who a notice would reach, before it is sent: the count, how many of them are at a till now and the first names.
+     * The body is the one of the send, without a title and a text.
+     */
+    @PostMapping("/preview")
+    fun preview(@RequestBody request: CreatePosmMessageRequest): ResponseEntity<PosmMessagePreviewDto> =
+        ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(messages.preview(request))
+
+    /** The courses with people who have not finished them: what HQ can send a reminder about. */
+    @GetMapping("/courses")
+    fun courses(): ResponseEntity<List<PosmCourseOptionDto>> =
+        ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(audiences.courses())
+
+    /**
+     * The picker's search: by surname, name, patronymic, phone (digits), IIN, pharmacy name or address. Phones and IINs
+     * are searched but never returned, only the last four digits of the phone.
+     */
+    @GetMapping("/pharmacists")
+    fun pharmacists(
+        @RequestParam(required = false) q: String?,
+        @RequestParam(required = false) limit: Int?,
+    ): ResponseEntity<PosmPharmacistSearchDto> =
+        ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(audiences.search(q, limit))
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

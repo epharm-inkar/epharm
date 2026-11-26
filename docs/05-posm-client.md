@@ -92,6 +92,11 @@ The owner's requests of 25.11.2026, built for the pilot (not released):
   closed notice back; `.../{id}/shown` and `.../{id}/closed` are resent until the server answers (400, 403, 404 and
   409 end the retries). The personal window has a «Уведомления» row (new ones in red) and the icon menu an item;
   both open the history page (last 30 days, newest first, open ones marked «Новое»).
+  From 26.11.2026 the server also sends such a notice to the people who have not finished a course and to the people
+  who sit at a till at that moment, and HQ sees who is at a till now (`docs/02-backend.md`, «Notices to people who have
+  not finished a course»). The till changes nothing: the check it already sends names the person, the server records
+  who sits at it, and a course notice stops reaching a person who finishes the course (at the next check the card
+  leaves the screen like a withdrawn one).
 - **Red dot for training.** `POST /api/posm/self/tasks` now carries `requiredOpenCount` (required courses not
   finished; paused by HQ not counted). The icon keeps its red dot while it is above zero, as well as for an unclosed
   notice; the dot goes with the next check after the course is completed (15 minutes at most, at once when the

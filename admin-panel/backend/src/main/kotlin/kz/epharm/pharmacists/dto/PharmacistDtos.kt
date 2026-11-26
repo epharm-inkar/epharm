@@ -36,6 +36,10 @@ data class PharmacistDto(
     val standardNIdentityMatchMethod: String? = "NONE",
     val standardNIdentityMatchStatus: String? = "UNKNOWN",
     val standardNIdentityCheckedAt: Instant? = null,
+    /** At a till right now: its till is online and named this pharmacist within the last 20 minutes (AtTillService). */
+    val atTillNow: Boolean = false,
+    /** The last time a till named this pharmacist as its Standard-N user; null when never. */
+    val lastTillSeenAt: Instant? = null,
     /** Last time the pharmacist worked with ePharm in the last 30 days: a sale, a tip shown, a cabinet sign-in. */
     val lastActiveAt: Instant? = null,
     /** Sum of [receipts30d], ₸: the pharmacist's own receipts at the current pharmacy, refunds excluded. */

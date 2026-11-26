@@ -365,6 +365,10 @@ export interface PharmacistCoverageDto {
 export interface PharmacistDto {
   /** Last time the pharmacist worked with ePharm in the last 30 days (sale, tip shown, cabinet). */
   lastActiveAt?: string | null
+  /** Сейчас за кассой (26.11.2026): касса на связи и назвала этого человека за последние 20 минут. Старый backend не шлёт. */
+  atTillNow?: boolean
+  /** Когда касса последний раз назвала этого человека; null: ни разу. */
+  lastTillSeenAt?: string | null
   id: string
   name: string
   iin: string | null
@@ -1281,7 +1285,7 @@ export interface TillCommandDto {
 }
 
 // ─── Уведомления фармацевтам на кассах (POSM 1.0.99, /api/admin/posm-messages, только HQ) ───
-export type PosmMessageAudience = 'all' | 'pharmacies' | 'pharmacists'
+export type PosmMessageAudience = 'all' | 'pharmacies' | 'pharmacists' | 'course'
 
 export interface CreatePosmMessageRequest {
   title: string
@@ -1291,7 +1295,14 @@ export interface CreatePosmMessageRequest {
   pharmacistIds?: string[]
   /** Сколько дней кассы показывают уведомление (1-30, по умолчанию 7). */
   days?: number
+  /** Курс для «не прошли курс» (id программы обучения). */
+  programId?: string
+  /** Любым адресатам: только тем, кто сидит за кассой в момент отправки. */
+  onlyAtTill?: boolean
 }
+
+/** Кому уйдёт уведомление: то же тело, что у отправки, без заголовка, текста и срока (для подсчёта до отправки). */
+export type PosmAudienceRequest = Omit<CreatePosmMessageRequest, 'title' | 'text' | 'days'>
 
 export interface PosmMessageDto {
   id: string
@@ -1315,6 +1326,89 @@ export interface PosmMessageDto {
   withdrawnBy: string | null
   /** Кассы ещё показывают: не снято и срок не прошёл. */
   active: boolean
+  /** Ушло только тем, кто был за кассой в момент отправки; людей выбрали тогда и запомнили. Старый backend не шлёт. */
+  onlyAtTill?: boolean
+  /** Курс уведомления «не прошли курс» и его название на момент отправки. */
+  programId?: string | null
+  programName?: string | null
+}
+
+/** Фармацевт в поиске адресатов: только то, чем отличить однофамильцев (телефон и ИИН ищутся, но не приходят). */
+export interface PosmPersonDto {
+  id: string
+  name: string
+  pharmacyName: string
+  city: string
+  address: string
+  /** Последние четыре цифры телефона. */
+  phoneTail: string | null
+  status: PharmacistStatus
+  /** Сейчас за кассой. */
+  atTillNow: boolean
+  /** Когда последний раз был за кассой; null: ни разу. */
+  lastTillSeenAt: string | null
+}
+
+/** GET /api/admin/posm-messages/pharmacists: всего найдено и первые из них. */
+export interface PosmPharmacistSearchDto {
+  total: number
+  items: PosmPersonDto[]
+}
+
+/** GET /api/admin/posm-messages/courses: курс, который ещё не прошли. */
+export interface PosmCourseOptionDto {
+  id: string
+  name: string
+  /** Сколько человек ещё не прошли (не завершено, не на паузе, не отменено). */
+  openCount: number
+  /** Единый срок всех открытых заданий (дата, Алматы); null: сроки разные или их нет. */
+  dueOn: string | null
+}
+
+/** POST /api/admin/posm-messages/preview: кому уйдёт уведомление, до отправки. */
+export interface PosmMessagePreviewDto {
+  audience: PosmMessageAudience
+  /** Сколько человек получат. */
+  recipients: number
+  /** Из адресатов сейчас за кассой: они увидят уведомление за минуту-две. */
+  atTillNow: number
+  /** true: людей выбирают при отправке и запоминают (курс или «только за кассой»). */
+  frozen: boolean
+  /** Первые по алфавиту; пусто для «всем» и «аптекам». */
+  sample: PosmPersonDto[]
+  sampleMore: number
+  /** Сколько минут после проверки кассы человек считается «за кассой». */
+  windowMinutes: number
+}
+
+// ─── «Сейчас за кассой» (GET /api/admin/posm-at-till, только HQ) ───
+export interface AtTillItemDto {
+  pharmacistId: string
+  name: string
+  phoneTail: string | null
+  homePharmacyId: string | null
+  homePharmacyName: string
+  /** Аптека кассы, за которой человек сидит сейчас (может быть не его). */
+  pharmacyId: string
+  pharmacyName: string
+  city: string
+  address: string
+  /** Имя компьютера кассы. */
+  deviceId: string
+  /** С какого времени человек за этой кассой (без перерыва дольше 20 минут). */
+  since: string
+  /** Когда касса последний раз назвала этого человека. */
+  seenAt: string
+}
+
+export interface AtTillListDto {
+  observedAt: string
+  windowMinutes: number
+  /** Всего за кассами сейчас, до фильтров. */
+  total: number
+  /** После фильтров. */
+  shown: number
+  items: AtTillItemDto[]
 }
 
 // ─── AI-Exam (Этап 3.6) — банк вопросов (результаты/сертификаты в Этапе 4) ───

@@ -233,6 +233,9 @@ app:
     fiscal-artifact-trusted-sources: ${POSM_FISCAL_ARTIFACT_TRUSTED_SOURCES:standardn-kkm-sdk,ofd-api}
     # Сколько секунд пульс кассы считается «живым» (T4, GET /screens/connected).
     heartbeat-ttl-seconds: ${POSM_HEARTBEAT_TTL:150}
+    # Сколько минут после последней проверки кассы её фармацевт считается «сейчас за кассой»: проверка раз в
+    # 15 минут и запас (26.11.2026, «Сейчас за кассой» и уведомления только тем, кто за кассой).
+    person-presence-minutes: ${POSM_PERSON_PRESENCE_MINUTES:20}
     commands:
       # Diagnostics archives from tills (V117): private bucket in the same MinIO, created on first upload.
       # Never the public media bucket (bucket-receipts is anonymous-readable through /s3).

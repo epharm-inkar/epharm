@@ -4,6 +4,21 @@ import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
+
+/** The «to whom» part of a notice, checked and cleaned: all the count preview needs, without a title and a text. */
+data class PosmAudienceChoice(
+    val audience: PosmMessageAudience,
+    val pharmacyIds: List<String>,
+    val pharmacistIds: List<String>,
+    /** The course of audience «course»; null for the others. */
+    val programId: UUID?,
+    /** Only the people at a till when the notice is sent. */
+    val onlyAtTill: Boolean,
+) {
+    /** The people are chosen once, when the notice is sent, and kept with it. */
+    val frozen: Boolean get() = onlyAtTill || audience == PosmMessageAudience.COURSE
+}
 
 /** A notice as written by HQ, checked and cleaned. */
 data class PosmMessageDraft(
@@ -13,13 +28,21 @@ data class PosmMessageDraft(
     val pharmacyIds: List<String>,
     val pharmacistIds: List<String>,
     val days: Int,
-)
+    val programId: UUID? = null,
+    val onlyAtTill: Boolean = false,
+) {
+    val choice: PosmAudienceChoice get() = PosmAudienceChoice(audience, pharmacyIds, pharmacistIds, programId, onlyAtTill)
+}
 
-/** What a till learns about one notice for one person. */
+/**
+ * What a till learns about one notice for one person. [recipientIds] is the list kept with a frozen notice (a course,
+ * or «only at a till»); null for a notice whose audience is judged live.
+ */
 data class PosmMessageTarget(
     val audience: PosmMessageAudience,
     val pharmacyIds: Set<String>,
     val pharmacistIds: Set<String>,
+    val recipientIds: Set<String>? = null,
 )
 
 /**
@@ -45,30 +68,66 @@ object PosmMessageRules {
     const val DEFAULT_LIST_LIMIT = 50
     const val MAX_LIST_LIMIT = 200
 
+    /** The picker's search shows this many people by default and at most this many. */
+    const val DEFAULT_SEARCH_LIMIT = 50
+    const val MAX_SEARCH_LIMIT = 100
+
+    /** The people of a frozen notice: at most this many, a guard against a mistake that would write the whole table. */
+    const val MAX_RECIPIENTS = 20_000
+
+    /** People shown in the count before sending. */
+    const val PREVIEW_SAMPLE = 8
+
     /** Names of chosen pharmacies or pharmacists shown per notice in the admin list. */
     const val TARGET_NAMES = 5
 
     private val BLANK_LINES = Regex("\n{3,}")
     private val INNER_SPACES = Regex("[ \t]+")
+    private val UUID_TEXT = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
     fun draft(request: CreatePosmMessageRequest): PosmMessageDraft {
         val title = title(request.title)
         val text = text(request.text)
-        val audience = PosmMessageAudience.fromWire(request.audience)
-            ?: invalid("audience: допустимы all, pharmacies и pharmacists")
+        val audience = audience(request)
         val days = days(request.days)
+        val choice = choice(audience, request)
+        return PosmMessageDraft(
+            title, text, audience, choice.pharmacyIds, choice.pharmacistIds, days, choice.programId, choice.onlyAtTill,
+        )
+    }
+
+    /** The audience part of a request alone, for the count before sending (no title and no text yet). */
+    fun choice(request: CreatePosmMessageRequest): PosmAudienceChoice = choice(audience(request), request)
+
+    private fun audience(request: CreatePosmMessageRequest): PosmMessageAudience =
+        PosmMessageAudience.fromWire(request.audience) ?: invalid("audience: допустимы all, pharmacies, pharmacists и course")
+
+    private fun choice(audience: PosmMessageAudience, request: CreatePosmMessageRequest): PosmAudienceChoice {
+        val onlyAtTill = request.onlyAtTill == true
         return when (audience) {
-            PosmMessageAudience.ALL -> PosmMessageDraft(title, text, audience, emptyList(), emptyList(), days)
-            PosmMessageAudience.PHARMACIES -> PosmMessageDraft(
-                title, text, audience, ids(request.pharmacyIds, "pharmacyIds", MAX_PHARMACIES, "Выберите хотя бы одну аптеку"),
-                emptyList(), days,
+            PosmMessageAudience.ALL -> PosmAudienceChoice(audience, emptyList(), emptyList(), null, onlyAtTill)
+            PosmMessageAudience.PHARMACIES -> PosmAudienceChoice(
+                audience, ids(request.pharmacyIds, "pharmacyIds", MAX_PHARMACIES, "Выберите хотя бы одну аптеку"),
+                emptyList(), null, onlyAtTill,
             )
-            PosmMessageAudience.PHARMACISTS -> PosmMessageDraft(
-                title, text, audience, emptyList(),
-                ids(request.pharmacistIds, "pharmacistIds", MAX_PHARMACISTS, "Выберите хотя бы одного сотрудника"), days,
+            PosmMessageAudience.PHARMACISTS -> PosmAudienceChoice(
+                audience, emptyList(),
+                ids(request.pharmacistIds, "pharmacistIds", MAX_PHARMACISTS, "Выберите хотя бы одного сотрудника"), null, onlyAtTill,
             )
+            PosmMessageAudience.COURSE -> PosmAudienceChoice(audience, emptyList(), emptyList(), programId(request.programId), onlyAtTill)
         }
     }
+
+    /** The course id as a UUID in its usual spelling; empty or anything else is refused. */
+    fun programId(raw: String?): UUID {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty()) invalid("Выберите курс")
+        if (!UUID_TEXT.matches(text)) invalid("programId: неверный идентификатор курса")
+        return UUID.fromString(text)
+    }
+
+    /** Most people the picker shows at once. */
+    fun searchLimit(raw: Int?): Int = (raw ?: DEFAULT_SEARCH_LIMIT).coerceIn(1, MAX_SEARCH_LIMIT)
 
     /** One line: control characters removed, spaces collapsed, at most 120 characters. */
     fun title(raw: String?): String {
@@ -112,13 +171,17 @@ object PosmMessageRules {
      * Whether a notice is for this person at this till. «pharmacies» reaches whoever signs in at a till of a chosen
      * pharmacy and the staff of a chosen pharmacy wherever they sign in (their card's pharmacy).
      */
-    fun isFor(target: PosmMessageTarget, pharmacistId: String, homePharmacyId: String?, tillPharmacyId: String): Boolean =
-        when (target.audience) {
+    fun isFor(target: PosmMessageTarget, pharmacistId: String, homePharmacyId: String?, tillPharmacyId: String): Boolean {
+        // A frozen notice (a course, or «only at a till») goes to the people kept with it, whatever its audience was.
+        target.recipientIds?.let { return pharmacistId in it }
+        return when (target.audience) {
             PosmMessageAudience.ALL -> true
             PosmMessageAudience.PHARMACIES ->
                 tillPharmacyId in target.pharmacyIds || (homePharmacyId != null && homePharmacyId in target.pharmacyIds)
             PosmMessageAudience.PHARMACISTS -> pharmacistId in target.pharmacistIds
+            PosmMessageAudience.COURSE -> false
         }
+    }
 
     /** Still delivered to tills: not withdrawn and not past its last day. */
     fun isActive(expiresAt: Instant, withdrawnAt: Instant?, now: Instant): Boolean = withdrawnAt == null && expiresAt.isAfter(now)
