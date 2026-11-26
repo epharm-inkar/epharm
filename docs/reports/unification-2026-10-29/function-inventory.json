@@ -4248,6 +4248,7 @@
         "admin-panel/backend/src/main/resources/db/migration/V126__pharmacist_identity_claims.sql",
         "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimIntegrationTest.kt",
         "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimSubmissionServiceTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimHttpIntegrationTest.kt",
         "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimRulesTest.kt",
         "App/Services/IdentityClaimRules.cs",
         "App.Tests/IdentityClaimRulesTests.cs"
@@ -8366,6 +8367,7 @@
         "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/MobileIdentityController.kt",
         "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimSubmissionService.kt",
         "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimRules.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimHttpIntegrationTest.kt",
         "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimSubmissionServiceTest.kt",
         "admin-panel/frontend/src/features/learner/IdentityNameClaim.test.tsx"
       ]
@@ -17138,6 +17140,7 @@
         "admin-panel/backend/src/main/kotlin/kz/epharm/pharmacists/service/StandardNPharmacistSyncService.kt",
         "admin-panel/backend/src/main/resources/unified-admin-routes.json",
         "admin-panel/backend/src/main/resources/db/migration/V126__pharmacist_identity_claims.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimHttpIntegrationTest.kt",
         "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimIntegrationTest.kt",
         "admin-panel/frontend/src/features/pharmacists/IdentityClaimsModal.test.tsx"
       ]
