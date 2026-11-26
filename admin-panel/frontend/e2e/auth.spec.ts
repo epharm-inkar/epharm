@@ -42,12 +42,12 @@ test.describe('Auth — валидация на клиенте', () => {
 })
 
 test.describe('Auth — submit', () => {
-  test('валидный логин → редирект на /rules + имя в Topbar', async ({ freshPage }) => {
+  test('валидный логин → редирект на /dashboard + имя в Topbar', async ({ freshPage }) => {
     await freshPage.goto('/login')
     await freshPage.getByLabel(/Email/i).fill(ACCOUNTS.damir.email)
     await freshPage.getByLabel(/Пароль/i).fill(ACCOUNTS.damir.password)
     await freshPage.getByRole('button', { name: /^Войти/i }).click()
-    await expect(freshPage).toHaveURL(/\/rules$/)
+    await expect(freshPage).toHaveURL(/\/dashboard$/)
     await expect(freshPage.getByRole('banner').getByRole('button', { name: new RegExp(ACCOUNTS.damir.name) })).toBeVisible()
   })
 
@@ -64,7 +64,7 @@ test.describe('Auth — submit', () => {
     await freshPage.getByLabel(/Email/i).fill('Damir@jadran.com')
     await freshPage.getByLabel(/Пароль/i).fill(ACCOUNTS.damir.password)
     await freshPage.getByRole('button', { name: /^Войти/i }).click()
-    await expect(freshPage).toHaveURL(/\/rules$/)
+    await expect(freshPage).toHaveURL(/\/dashboard$/)
   })
 })
 
@@ -129,7 +129,7 @@ test.describe('Auth — switching между учётками', () => {
   test('login as aigerim → name в Topbar обновляется', async ({ freshPage }) => {
     await loginViaUI(freshPage, ACCOUNTS.aigerim)
     await expect(freshPage.getByRole('banner').getByRole('button', { name: new RegExp(ACCOUNTS.aigerim.name) })).toBeVisible()
-    await expect(freshPage).toHaveURL(/\/rules$/)
+    await expect(freshPage).toHaveURL(/\/dashboard$/)
   })
 
   test('logout damir → login aigerim → видит свои данные, не damir', async ({

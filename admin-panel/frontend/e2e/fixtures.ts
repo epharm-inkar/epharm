@@ -32,7 +32,7 @@ export async function loginViaUI(page: Page, acc: DevAccount = ACCOUNTS.damir): 
   await page.getByLabel(/Email/i).fill(acc.email)
   await page.getByLabel(/Пароль/i).fill(acc.password)
   await page.getByRole('button', { name: /^Войти/i }).click()
-  await page.waitForURL('**/rules', { timeout: 10_000 })
+  await page.waitForURL('**/dashboard', { timeout: 10_000 })
 }
 
 /** The sidebar lists modules only (25.11.2026); a module opens on its first section. */

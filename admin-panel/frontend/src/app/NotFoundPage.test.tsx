@@ -20,7 +20,7 @@ describe('NotFoundPage', () => {
     expect(screen.getByTestId('not-found')).toBeInTheDocument()
     expect(screen.getByText('404')).toBeInTheDocument()
     expect(screen.getByText(/Страница не найдена/i)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /На главную/i })).toHaveAttribute('href', '/rules')
+    expect(screen.getByRole('link', { name: /На главную/i })).toHaveAttribute('href', '/dashboard')
   })
 
   it('для руководителя обучения показывает ссылку в LMS', () => {

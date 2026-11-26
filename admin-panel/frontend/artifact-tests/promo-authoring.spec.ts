@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   await page.getByLabel(/Email/i).fill('artifact@example.invalid')
   await page.getByLabel(/Пароль/i).fill('artifact-test-only')
   await page.getByRole('button', { name: /^Войти$/ }).click()
-  await expect(page).toHaveURL(/\/rules$/)
+  await expect(page).toHaveURL(/\/dashboard$/)
   await page.goto('/promo')
   await page.getByRole('button', { name: /Новая кампания/ }).first().click()
 })
