@@ -185,6 +185,15 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Fixed
 
+- POSM 1.0.100 finds a cashier program that runs under another name and tells a till from a manager's computer
+  (26.11.2026: 68 of 506 online tills reported `no_process`, so ePharm could not tell who sells there). The process
+  probe asked for the exact names `zkassa` and `kassir`, so the renamed `zkassa_BACKUP_2_6_88` (Teriskey 2/21;
+  Standard-N still records its session as `zkassa`) was never found. It now accepts `kassir` and any name that starts
+  with `zkassa`, case-insensitively, and the receipt reader uses the same probe. On 10 of the 13 inspected computers
+  only `ManagerXP2` (the Standard-N back office) runs: ePharm was installed on the manager's computer, not on the
+  till. With no cashier program and a `ManagerXP...` process in the session the heartbeat sends the new
+  `staffSourceStatus` `manager_only`; «Все кассы» shows «только «Менеджер»» with the tooltip «Только «Менеджер»
+  Стандарт-Н: ePharm стоит не на кассе». Deploy the server and admin before the till.
 - «Принято» in the admin was always 0: the Dashboard tiles and top lists, Lift and the pharmacy registry column
   `rulesAccepted` counted `recommendation_events.outcome='accepted'`, which no till sends since POSM 1.0.13
   made the popup informational (no accept key, no `/outcome` call; on 25.11 there were 0 accepted among 113 thousand
