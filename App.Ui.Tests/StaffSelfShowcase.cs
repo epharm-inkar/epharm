@@ -149,6 +149,22 @@ internal static partial class Program
                 SaveOwnWindow(change, "staff-self-7-change-password");
                 Console.WriteLine(Path.Combine(Output, "staff-self-7-change-password.png"));
                 change.Close();
+                // 26.11.2026: after «Отправить» the window reloads into the person's own card, and the status line says
+                // whether ePharm took the IIN at once or the office checks it.
+                foreach (var (name, status) in new[]
+                {
+                    ("staff-self-12-iin-taken", "Готово, ePharm принял ваши данные."),
+                    ("staff-self-13-iin-sent-to-office", "Отправлено, офис проверит."),
+                })
+                {
+                    var after = new StaffSelfWindow(StaffSelfScenarios[1].Model, _screen);
+                    after.Show();
+                    after.ShowStatus(status, error: false);
+                    await Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    SaveOwnWindow(after, name);
+                    Console.WriteLine(Path.Combine(Output, name + ".png"));
+                    after.Close();
+                }
             }
             catch (Exception error)
             {

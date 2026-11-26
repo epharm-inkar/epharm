@@ -36,7 +36,9 @@ import java.util.UUID
  * Real PostgreSQL: a pharmacist without an IIN in Standard-N types it at the till, HQ confirms, the receipts follow, and
  * the Standard-N directory wins when it later has the person. Synthetic data only.
  */
-@SpringBootTest
+// These tests are about HQ deciding: every claim waits for HQ here. ePharm taking clean claims itself is
+// IdentityClaimAutoConfirmIntegrationTest.
+@SpringBootTest(properties = ["epharm.identity-claims.auto-confirm=false"])
 @ActiveProfiles("test")
 @Testcontainers
 class IdentityClaimIntegrationTest {

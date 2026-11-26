@@ -250,8 +250,9 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// «Отправить» in the IIN form: the server checks the IIN and the name again and keeps them for the office. Nothing is
-    /// credited before the office confirms. The IIN and the name are never written to the till log.
+    /// «Отправить» in the IIN form: the server checks the IIN and the name again. A clean claim is taken at once (server
+    /// answers "known", owner 26.11.2026), any other waits for the office and pays nothing until it confirms. The IIN and
+    /// the name are never written to the till log.
     /// </summary>
     private async Task SubmitSelfIdentityAsync(string iin, string fullName)
     {
@@ -270,10 +271,11 @@ public partial class MainWindow
             _selfWindow.EndIdentitySend();
             return;
         }
+        var taken = result.Value?.State == PosmSelfIdentityDto.Known;
         _selfWindow.ClearIdentityInputs();
         _selfWindow.Update(await LoadSelfModelAsync());
-        _selfWindow.ShowStatus("Отправлено, офис проверит.", error: false);
-        Log("ePharm: ИИН и ФИО отправлены в офис на проверку.");
+        _selfWindow.ShowStatus(taken ? "Готово, ePharm принял ваши данные." : "Отправлено, офис проверит.", error: false);
+        Log(taken ? "ePharm: ИИН и ФИО приняты." : "ePharm: ИИН и ФИО отправлены в офис на проверку.");
     }
 
     private int _newHqTasks;

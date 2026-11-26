@@ -26,6 +26,7 @@ import java.util.UUID
  * `self`) or attaches to the card that already holds the IIN, and writes the active HQ mapping (pharmacy + Standard-N
  * USER_ID -> card) with its audit through the same service HQ uses by hand, so receipts of that user belong to the card
  * from then on. Confirming a name claim writes the name on the card. A pending claim does neither: it pays nothing.
+ * A till claim with nothing to look at is confirmed by ePharm itself at once ([autoConfirm]).
  */
 @Service
 class IdentityClaimAdminService(
@@ -54,8 +55,33 @@ class IdentityClaimAdminService(
         if (req.iin.trim() != claim.iin || IdentityClaimRules.normalizeName(req.fullName) != claim.fullName) {
             conflict("Заявка изменилась, пока вы её смотрели. Обновите список и проверьте данные ещё раз")
         }
-        if (claim.kind == IdentityClaimRules.KIND_NAME) confirmName(claim, actor) else confirmPerson(claim, actor)
+        if (claim.kind == IdentityClaimRules.KIND_NAME) confirmName(claim, actor) else confirmPerson(claim, actor.userId)
         return present(listOf(store.find(id)!!)).single()
+    }
+
+    /**
+     * A till claim is taken at once, without HQ (owner, 26.11.2026: «Автоматизируй это»), when nothing in it needs a
+     * person to look: no card holds the IIN, no other open claim names it, the Standard-N directory does not know it,
+     * HQ never rejected this person or this IIN, and the pharmacy is active. Everything else waits for HQ as before.
+     * Returns the card, or null when the claim stays open. It refuses by returning null, never by throwing, so the
+     * till's transaction that called it is not spoiled.
+     */
+    @Transactional
+    fun autoConfirm(claimId: UUID): String? {
+        UnifiedAuthorityLock.acquire(jdbc)
+        val claim = store.find(claimId, forUpdate = true) ?: return null
+        if (claim.kind != IdentityClaimRules.KIND_PERSON || claim.status != IdentityClaimRules.PENDING || claim.conflict != null) return null
+        val pharmacyId = claim.pharmacyId ?: return null
+        val userId = claim.standardNUserId ?: return null
+        val pharmacyActive = jdbc.query("SELECT active FROM pharmacies WHERE id = ?", { rs, _ -> rs.getBoolean(1) }, pharmacyId)
+            .singleOrNull() == true
+        if (!pharmacyActive) return null
+        if (pharmacists.findByIin(claim.iin) != null) return null
+        if (store.directoryNamesOf(claim.iin).isNotEmpty() || directory.find(pharmacyId, userId) != null) return null
+        if (store.otherOpenWithIin(claim.iin, claim.id) || store.rejectedBefore(pharmacyId, userId, claim.iin)) return null
+        if (mappings.findByPharmacyIdAndExternalUserId(pharmacyId, userId)?.active == true) return null
+        confirmPerson(claim, actorId = null, reason = IdentityClaimRules.AUTO_CONFIRMED)
+        return store.find(claimId)?.pharmacistId
     }
 
     @Transactional
@@ -67,7 +93,8 @@ class IdentityClaimAdminService(
         return present(listOf(store.find(id)!!)).single()
     }
 
-    private fun confirmPerson(claim: IdentityClaimRow, actor: AdminPrincipal) {
+    /** [actorId] null: ePharm decides ([autoConfirm]); the mapping, its audit and the claim then name no admin. */
+    private fun confirmPerson(claim: IdentityClaimRow, actorId: UUID?, reason: String? = null) {
         val pharmacyId = claim.pharmacyId!!
         val userId = claim.standardNUserId!!
         val pharmacy = jdbc.query(
@@ -91,10 +118,10 @@ class IdentityClaimAdminService(
         if (card.pharmacyId != pharmacyId) {
             conflict("Карточка с этим ИИН закреплена за другой аптекой (${card.pharmacyName ?: "без аптеки"}). Сначала переведите её в эту аптеку")
         }
-        val mapping = mappingService.upsert(
-            UpsertPosmPharmacistMappingRequest(pharmacyId, userId, claim.standardNUserName, card.id), actor,
+        val mapping = mappingService.upsertBy(
+            UpsertPosmPharmacistMappingRequest(pharmacyId, userId, claim.standardNUserName, card.id), actorId,
         )
-        store.markConfirmed(claim.id, actor.userId, card.id, UUID.fromString(mapping.id))
+        store.markConfirmed(claim.id, actorId, card.id, UUID.fromString(mapping.id), reason)
     }
 
     /** A card of its own: no phone and no password yet, the person adds them from the till window. */
@@ -158,7 +185,10 @@ class IdentityClaimAdminService(
                 iin = row.iin, fullName = row.fullName,
                 pharmacistId = row.pharmacistId, pharmacistName = row.pharmacistId?.let { cards[it]?.name },
                 conflicts = conflicts, directoryIin = row.directoryIin,
-                decidedByName = row.decidedBy?.let { adminNames[it.toString()] },
+                decidedByName = row.decidedBy?.let { adminNames[it.toString()] }
+                    ?: IdentityClaimRules.AUTO_DECIDER_NAME.takeIf {
+                        row.status == IdentityClaimRules.CONFIRMED && row.decisionReason == IdentityClaimRules.AUTO_CONFIRMED
+                    },
                 decidedAt = row.decidedAt, decisionReason = row.decisionReason, createdAt = row.createdAt,
             )
         }

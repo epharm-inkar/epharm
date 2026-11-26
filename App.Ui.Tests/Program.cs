@@ -40,6 +40,11 @@ internal static partial class Program
             else if (argument == "--recommendation-showcase") showcaseOnly = true;
             else if (argument == "--staff-self-showcase") staffSelfShowcaseOnly = true;
             else if (argument == "--notice-showcase") noticeShowcaseOnly = true;
+            // Pictures for review and tutorials: --scale=2 draws the windows twice as sharp (vector, not resized).
+            else if (argument.StartsWith("--scale=", StringComparison.Ordinal)
+                && double.TryParse(argument["--scale=".Length..], System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var scale) && scale is >= 1 and <= 4)
+                _renderScale = scale;
             else if (argument.StartsWith("--output=", StringComparison.Ordinal) && argument.Length > "--output=".Length)
                 Output = Path.GetFullPath(argument["--output=".Length..]);
             else return 2;
@@ -129,12 +134,15 @@ internal static partial class Program
         if (!passed) throw new InvalidOperationException("Assertion failed: " + name);
     }
 
+    private static double _renderScale = 1;
+
     private static void SaveOwnWindow(Window window, string name)
     {
         window.UpdateLayout();
         var dpi = VisualTreeHelper.GetDpi(window);
-        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(window.ActualWidth * dpi.DpiScaleX)),
-            Math.Max(1, (int)Math.Ceiling(window.ActualHeight * dpi.DpiScaleY)), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(window.ActualWidth * dpi.DpiScaleX * _renderScale)),
+            Math.Max(1, (int)Math.Ceiling(window.ActualHeight * dpi.DpiScaleY * _renderScale)),
+            dpi.PixelsPerInchX * _renderScale, dpi.PixelsPerInchY * _renderScale, PixelFormats.Pbgra32);
         bitmap.Render(window);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file = File.Create(Path.Combine(Output, name + ".png")); encoder.Save(file);
