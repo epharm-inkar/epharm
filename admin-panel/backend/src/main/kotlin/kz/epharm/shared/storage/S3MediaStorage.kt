@@ -14,6 +14,7 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import java.net.URI
+import java.time.Duration
 import java.util.UUID
 
 /**
@@ -91,10 +92,33 @@ class S3MediaStorage(
         }.onFailure { log.warn("Не удалось прочитать объект {}: {}", key, it.message) }.getOrNull()
     }
 
+    override fun readRange(url: String, offset: Long, length: Int): ByteArray? {
+        if (offset < 0 || length <= 0 || length > MAX_RANGE_BYTES) return null
+        val key = videoKeyFromUrl(url) ?: return null
+        return runCatching {
+            // A ranged read past the end of the object is refused by the store (416): that is "nothing to read".
+            client.getObjectAsBytes(
+                GetObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .range("bytes=$offset-${offset + length - 1}")
+                    .overrideConfiguration { it.apiCallTimeout(RANGE_CALL_TIMEOUT).apiCallAttemptTimeout(RANGE_ATTEMPT_TIMEOUT) }
+                    .build(),
+            ).asByteArray()
+        }.onFailure { log.debug("Не удалось прочитать диапазон {} объекта {}: {}", offset, key, it.message) }.getOrNull()
+    }
+
     internal fun keyFromUrl(url: String): String? {
         val expectedPrefix = "${publicUrl.trimEnd('/')}/$bucket/"
         if (!url.startsWith(expectedPrefix)) return null
         return url.removePrefix(expectedPrefix).takeIf { MANAGED_IMAGE_KEY.matches(it) }
+    }
+
+    /** Only the video objects of the public bucket (lesson clips); never a key that climbs out of its folder. */
+    internal fun videoKeyFromUrl(url: String): String? {
+        val expectedPrefix = "${publicUrl.trimEnd('/')}/$bucket/"
+        if (!url.startsWith(expectedPrefix)) return null
+        return url.removePrefix(expectedPrefix).takeIf { MANAGED_VIDEO_KEY.matches(it) && !it.contains("..") }
     }
 
     private fun extOf(name: String, contentType: String): String {
@@ -111,8 +135,12 @@ class S3MediaStorage(
 
     private companion object {
         const val MAX_CERTIFICATE_ASSET_BYTES = 5 * 1024 * 1024
+        const val MAX_RANGE_BYTES = 64 * 1024
+        val RANGE_CALL_TIMEOUT: Duration = Duration.ofSeconds(4)
+        val RANGE_ATTEMPT_TIMEOUT: Duration = Duration.ofSeconds(2)
         val MANAGED_IMAGE_KEY = Regex(
             """screens/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|jpeg)""",
         )
+        val MANAGED_VIDEO_KEY = Regex("""[A-Za-z0-9][A-Za-z0-9._/-]{0,300}\.(?:mp4|m4v|mov)""", RegexOption.IGNORE_CASE)
     }
 }

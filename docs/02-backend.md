@@ -1006,6 +1006,20 @@ Barcode is the primary key for cash-desk recommendation matching.
 Ambiguous barcode or normalized-name matches are logged and skipped. The system prefers not showing a
 recommendation over showing the wrong one.
 
+Duplicate records of one product (26.11.2026, analytics only). The products table can hold one medicine twice:
+a website catalogue record (`prod_01K...`, often with the local Standard-N code `8811000...`) and a Daribar
+record (`prod_Daribar...`, with the EAN). Two records are duplicates when they carry the same normalized name,
+or share a barcode and agree on every number, dose, form and qualifier. Duplicates are one product wherever
+sales are analysed: `resolveToProductIds` does not call a name ambiguous when only duplicates of one product
+carry it (the line resolves to one of them; it stays unresolved when another line of the same receipt already
+stands for that product by an exact key, so payout checks see the same lines as before), and
+`RecommendationAttributionService` counts the sale of a tip ("Принято") when the sold line is the recommended
+record or its duplicate (`RulesEngineService.canonicalProductIds`, a primary key read of the ids in the receipt
+and the tips; one sold product closes one tip). A name that merely begins like another, a different pack or dose
+and a barcode shared by differently written doses stay different products. Showing tips and the money paths
+(`resolveStrongProductIds`, reward cases, reconciliation) are unchanged and never match by name. The name index
+logs one summary line per call instead of one warning per catalogue name.
+
 Campaign/product authoring and catalogue DTOs expose additive `barcodes[]` while retaining the
 legacy primary `barcode`. The website adapter joins explicit UUID `WARE_ID` values to the active
 ACC snapshot in a batch, with case-insensitive WARE matching and global source-code ambiguity
