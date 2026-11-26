@@ -70,13 +70,13 @@ class IdentityClaimIntegrationTest {
     private val nameA = "Бузурбаева Лаура Ермековна"
 
     @BeforeEach fun setup() {
-        jdbc.update("DELETE FROM pharmacist_identity_claims")
+        // This class's own disposable PG16. TRUNCATE, not DELETE: the wallet ledger is append-only and a premium credit
+        // in one test writes to it.
+        jdbc.execute(
+            "TRUNCATE pharmacist_identity_claims, posm_pharmacist_mapping_audit, posm_pharmacist_mappings, pharmacists, " +
+                "standardn_pharmacist_directory, sales_premium_pending, posm_cabinet_links CASCADE",
+        )
         jdbc.update("DELETE FROM posm_staff_rate_limits")
-        jdbc.update("DELETE FROM posm_cabinet_links")
-        jdbc.update("DELETE FROM posm_pharmacist_mapping_audit WHERE pharmacy_id IN ('ic-pharmacy', 'ic-other')")
-        jdbc.update("DELETE FROM posm_pharmacist_mappings WHERE pharmacy_id IN ('ic-pharmacy', 'ic-other')")
-        jdbc.update("DELETE FROM pharmacists WHERE iin IN (?, ?, ?) OR id LIKE 'ic-%'", iinA, iinB, iinC)
-        jdbc.update("DELETE FROM standardn_pharmacist_directory WHERE source_profile_id IN (7101, 7102)")
         jdbc.update("DELETE FROM pharmacies WHERE id IN ('ic-pharmacy', 'ic-other')")
         jdbc.update("DELETE FROM admin_users WHERE id = ?", hq)
         jdbc.update("""INSERT INTO chains(id,name,"group") VALUES ('ic-chain','Synthetic','pilot') ON CONFLICT DO NOTHING""")
@@ -366,6 +366,17 @@ class IdentityClaimIntegrationTest {
         assertEquals("", receipt().pharmacistId)
         assertEquals(ErrorCode.STANDARDN_USER_UNKNOWN, refused(404) { self.view(device, selfRequest()) }.code)
         assertEquals("unknown", submission.tillState(device, idRequest()).state)
+    }
+
+    @Test fun `a sales premium waiting for the IIN is credited to the card HQ's confirmation creates`() {
+        jdbc.update("INSERT INTO sales_premium_pending(iin, period, amount_kzt, through) VALUES (?, '2026-11', 15000, DATE '2026-11-25')", iinA)
+        submission.tillSubmit(device, idRequest())
+        confirm()
+        // The hook runs on its own thread after the commit; the sweep would do it within ten minutes anyway.
+        val deadline = System.nanoTime() + 15_000_000_000L
+        while (count("sales_premium_pending WHERE iin = ?", iinA) > 0 && System.nanoTime() < deadline) Thread.sleep(100)
+        assertEquals(0, count("sales_premium_pending WHERE iin = ?", iinA))
+        assertEquals(15000L, jdbc.queryForObject("SELECT balance FROM pharmacists WHERE iin = ?", Long::class.java, iinA))
     }
 
     // ── the directory wins ──────────────────────────────────────────────────

@@ -108,7 +108,7 @@ class IdentityClaimHttpIntegrationTest {
         assertThat(state["state"].asText()).isEqualTo("unknown")
     }
 
-    @Test fun `a claim over HTTP: refused data answers 400 in Russian, a good one is pending and shown back masked`() {
+    @Test fun `a claim over HTTP, refused data answers 400 in Russian, a good one is pending and shown back masked`() {
         val base = mapOf("pharmacyId" to PHARMACY, "standardNUserId" to "18", "standardNUserName" to "Бузурбаева Л")
         val badIin = tillCall("/api/posm/self/identity/claim", tillA, base + mapOf("iin" to "900115300010", "fullName" to NAME))
             .andExpect(status().isBadRequest).json()

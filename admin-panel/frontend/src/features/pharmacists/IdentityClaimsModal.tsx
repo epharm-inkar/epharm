@@ -128,7 +128,7 @@ export function IdentityClaimsModal({ onClose }: { onClose: () => void }) {
                   <th className="px-3 py-2">{t('idc.thEntered')}</th>
                   <th className="px-3 py-2">{t('idc.thPharmacy')}</th>
                   <th className="px-3 py-2">{t('idc.thChecks')}</th>
-                  <th className="px-3 py-2" />
+                  <th className="sticky right-0 bg-white px-3 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100">
@@ -245,9 +245,10 @@ function ClaimRow({
           </ul>
         )}
       </td>
-      <td className="px-3 py-2.5 text-right align-top">
+      {/* Pinned to the right edge: on a phone the table scrolls sideways and the decision stays in reach. */}
+      <td className="sticky right-0 bg-white px-3 py-2.5 text-right align-top shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.15)]">
         {pending ? (
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-col items-stretch gap-2 md:flex-row md:items-center md:justify-end">
             <Button size="sm" disabled={busy} onClick={onConfirm}>
               {t('idc.confirm')}
             </Button>

@@ -361,8 +361,8 @@ and HQ confirms only what the reviewer saw (the confirm body repeats `iin` and `
 **A pending claim pays nothing.** Receipts reach a card only through an active HQ mapping or the directory; a pending
 claim makes neither, so the user's receipts stay `standardn_unmapped` and no bonus is reserved. Confirming a `person`
 claim creates the card (`account_source`, `iin_source` and `name_source` are `self`; active, no phone, no password, the
-pharmacy of the till) or, when an active card of the same pharmacy already holds the IIN, attaches to that card without
-rewriting it. Either way it writes the active mapping (pharmacy + USER_ID -> card) through
+pharmacy of the till; it publishes `PharmacistCardReady`, so a sales premium waiting for the IIN is credited after the
+commit) or, when an active card of the same pharmacy already holds the IIN, attaches to that card without rewriting it. Either way it writes the active mapping (pharmacy + USER_ID -> card) through
 `PosmPharmacistMappingService.upsert`: the same locks and an audit row `created` with the HQ user as actor, which is the
 record `docs/22-unified-pharmacist-wallet.md` asks for before money flows. Lock order: `UnifiedAuthorityLock`, the claim
 row, the account lock, the card. Refused with 409, the claim stays open: a card with that IIN in another pharmacy,

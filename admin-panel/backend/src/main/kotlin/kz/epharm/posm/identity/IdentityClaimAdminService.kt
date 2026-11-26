@@ -2,6 +2,7 @@ package kz.epharm.posm.identity
 
 import kz.epharm.auth.access.UnifiedAuthorityLock
 import kz.epharm.auth.security.AdminPrincipal
+import kz.epharm.finance.premium.PharmacistCardReady
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
@@ -12,6 +13,7 @@ import kz.epharm.posm.service.StandardNDirectoryIdentityLookup
 import kz.epharm.posm.staff.SourceStaffBindingService
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
@@ -33,6 +35,8 @@ class IdentityClaimAdminService(
     private val mappingService: PosmPharmacistMappingService,
     private val mappings: PosmPharmacistMappingRepository,
     private val directory: StandardNDirectoryIdentityLookup,
+    /** A card made here can hold money at once: the sales premium waiting for its IIN is credited after the commit. */
+    private val events: ApplicationEventPublisher? = null,
 ) {
     @Transactional(readOnly = true)
     fun list(status: String?): List<IdentityClaimDto> {
@@ -79,7 +83,8 @@ class IdentityClaimAdminService(
         if (mappings.findByPharmacyIdAndExternalUserId(pharmacyId, userId)?.active == true) {
             conflict("Для этого пользователя Стандарт-Н уже есть привязка к карточке. Заявка устарела, отклоните её")
         }
-        val card = pharmacists.findByIinForUpdate(claim.iin) ?: createCard(claim, pharmacyId, pharmacy.first, pharmacy.second)
+        val card = pharmacists.findByIinForUpdate(claim.iin)
+            ?: createCard(claim, pharmacyId, pharmacy.first, pharmacy.second).also { events?.publishEvent(PharmacistCardReady(it.id)) }
         if (card.status != PharmacistStatus.active) {
             conflict("Карточка с этим ИИН не активна (${card.status.name}). Сначала разберитесь с ней в реестре")
         }
