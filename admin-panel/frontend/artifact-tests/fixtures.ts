@@ -67,6 +67,15 @@ export const test = base.extend<{ artifactApi: ArtifactApi }>({
           })
         }
         if (method === 'GET' && ['/api/admin/rules', '/api/admin/catalog/products'].includes(path)) return json(route, [])
+        // HQ lands on the dashboard after sign-in (Rules Engine left the menu, 26.11.2026).
+        if (method === 'GET' && path === '/api/admin/dashboard/summary') {
+          return json(route, { impressions: 0, accepts: 0, convRate: 0, activeRules: 0, totalRules: 0, paidOut: 0,
+            pendingPayout: 0, pilotPharmacies: 0, avgLiftPct: 0, topRules: [], topPharmacies: [], topProducts: [] })
+        }
+        if (method === 'GET' && path === '/api/admin/dashboard/recommendations') {
+          return json(route, { windowDays: 7, shown: 0, converted: 0, convRate: 0, convertedUnder2m: 0, avgSecondsToSale: null,
+            medianSecondsToSale: null, attributedRevenue: 0, buckets: [], log: [], page: 0, pageSize: 20, totalElements: 0, totalPages: 0 })
+        }
         if (method === 'GET' && path === '/api/admin/pharmacies/chains') return json(route, [])
         if (method === 'GET' && path === '/api/admin/pharmacies') return json(route, [])
         if (path === '/api/admin/promo') {
