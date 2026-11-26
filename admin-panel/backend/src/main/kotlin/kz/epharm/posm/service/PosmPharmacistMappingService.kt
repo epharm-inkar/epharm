@@ -124,7 +124,15 @@ class PosmPharmacistMappingService(
     }
 
     @Transactional
-    fun upsert(req: UpsertPosmPharmacistMappingRequest, actor: AdminPrincipal): PosmPharmacistMappingDto {
+    fun upsert(req: UpsertPosmPharmacistMappingRequest, actor: AdminPrincipal): PosmPharmacistMappingDto =
+        upsertBy(req, actor.userId)
+
+    /**
+     * The same mapping and audit, written by an admin or, with [actorId] null, by ePharm itself: a till claim taken
+     * without HQ (owner, 26.11.2026). The checks do not depend on who writes.
+     */
+    @Transactional
+    fun upsertBy(req: UpsertPosmPharmacistMappingRequest, actorId: UUID?): PosmPharmacistMappingDto {
         UnifiedAuthorityLock.acquire(jdbc)
         val pharmacyId = req.pharmacyId.trim()
         val externalUserId = req.externalUserId.trim().also {
@@ -158,7 +166,7 @@ class PosmPharmacistMappingService(
                 it.pharmacistId = pharmacist.id
                 it.externalUserName = req.externalUserName.clean()
                 it.active = true
-                it.updatedBy = actor.userId
+                it.updatedBy = actorId
                 it.updatedAt = now
                 it.revokedAt = null
             }
@@ -168,13 +176,13 @@ class PosmPharmacistMappingService(
                 externalUserId = externalUserId,
                 externalUserName = req.externalUserName.clean(),
                 pharmacistId = pharmacist.id,
-                createdBy = actor.userId,
-                updatedBy = actor.userId,
+                createdBy = actorId,
+                updatedBy = actorId,
                 createdAt = now,
                 updatedAt = now,
             )
         val saved = mappings.saveAndFlush(entity)
-        auditAction?.let { action -> audit(saved, action, actor.userId) }
+        auditAction?.let { action -> audit(saved, action, actorId) }
         return PosmPharmacistMappingDto(
             id = saved.id.toString(), pharmacyId = pharmacy.id, pharmacyName = pharmacy.name,
             externalUserId = saved.externalUserId, externalUserName = saved.externalUserName,
@@ -201,7 +209,7 @@ class PosmPharmacistMappingService(
         audit(mapping, "revoked", actor.userId)
     }
 
-    private fun audit(mapping: PosmPharmacistMappingEntity, action: String, actorId: UUID) {
+    private fun audit(mapping: PosmPharmacistMappingEntity, action: String, actorId: UUID?) {
         jdbc.update(
             """
             INSERT INTO posm_pharmacist_mapping_audit (
