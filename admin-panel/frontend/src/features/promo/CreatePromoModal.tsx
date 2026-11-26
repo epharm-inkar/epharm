@@ -400,13 +400,34 @@ export function CreatePromoModal({ open, onClose, onCreate, pending }: CreatePro
                 onChange={(e) => setForm({ ...form, pharmacistBonus: e.target.value })}
               />
             </Field>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label={t('pm.fldDateStart')}>
+                <Input
+                  type="date"
+                  value={form.dateStart}
+                  onChange={(e) => setForm({ ...form, dateStart: e.target.value })}
+                />
+              </Field>
+              <Field label={t('pm.fldDateEnd')}>
+                <Input
+                  type="date"
+                  value={form.dateEnd}
+                  onChange={(e) => setForm({ ...form, dateEnd: e.target.value })}
+                />
+              </Field>
+            </div>
+            {!datesOk && (
+              <div role="alert" className="-mt-1 text-[12px] font-semibold text-accent-danger">
+                {t('pm.dateOrderErr')}
+              </div>
+            )}
 
             <details className="rounded-lg border border-ink-100 bg-paper-input p-3">
               <summary className="cursor-pointer text-[12px] font-bold text-ink-700">
                 {t('pm.additionalSettings')}
               </summary>
               <div className="mt-4 flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label={t('pr.barcode')}>
                     <Input
                       className="num"
@@ -453,28 +474,6 @@ export function CreatePromoModal({ open, onClose, onCreate, pending }: CreatePro
                     onChange={(c) => setForm((f) => ({ ...f, cover: c }))}
                   />
                 </Field>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label={t('pm.fldDateStart')}>
-                    <Input
-                      type="date"
-                      value={form.dateStart}
-                      onChange={(e) => setForm({ ...form, dateStart: e.target.value })}
-                    />
-                  </Field>
-                  <Field label={t('pm.fldDateEnd')}>
-                    <Input
-                      type="date"
-                      value={form.dateEnd}
-                      onChange={(e) => setForm({ ...form, dateEnd: e.target.value })}
-                    />
-                  </Field>
-                </div>
-                {!datesOk && (
-                  <div role="alert" className="-mt-1 text-[12px] font-semibold text-accent-danger">
-                    {t('pm.dateOrderErr')}
-                  </div>
-                )}
 
                 <Field label={t('pm.fldOverrideImage')} hint={t('pm.overrideHint')} optional>
                   <Input

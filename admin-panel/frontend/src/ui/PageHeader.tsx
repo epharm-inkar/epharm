@@ -16,15 +16,16 @@ interface PageHeaderProps {
 export function PageHeader({ title, subtitle, actions, help }: PageHeaderProps) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2">
-          <h1 className="min-w-0 break-words text-[22px] font-bold leading-7 tracking-[-0.01em] text-ink-900">
-            {title}
-          </h1>
-          {help && <HelpTip topic={title}>{help}</HelpTip>}
-        </div>
+      {/* h1 stays a direct child of this block: the "?" sits beside it, the subtitle takes its own line. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2">
+        <h1 className="min-w-0 break-words text-[22px] font-bold leading-7 tracking-[-0.01em] text-ink-900">
+          {title}
+        </h1>
+        {help && <HelpTip topic={title}>{help}</HelpTip>}
         {subtitle && (
-          <p className="mt-0.5 max-w-[720px] text-[13px] leading-5 text-ink-500">{subtitle}</p>
+          <p className="mt-0.5 max-w-[720px] basis-full text-[13px] leading-5 text-ink-500">
+            {subtitle}
+          </p>
         )}
       </div>
       {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}

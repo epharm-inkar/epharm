@@ -8,6 +8,7 @@ import {
   Button,
   Empty,
   Field,
+  HelpTip,
   Input,
   Metric,
   Modal,
@@ -71,8 +72,11 @@ export default function AIExamPage() {
               {t('ai.newQuestion')}
             </Button>
           ) : (
-            <span className="chip chip-ink" data-testid="ai-exam-read-only">
-              Только просмотр
+            <span className="inline-flex items-center gap-1.5">
+              <span className="chip chip-ink" data-testid="ai-exam-read-only">
+                Только просмотр
+              </span>
+              <HelpTip topic="Только просмотр">{t('help.exam.readOnly')}</HelpTip>
             </span>
           )
         }

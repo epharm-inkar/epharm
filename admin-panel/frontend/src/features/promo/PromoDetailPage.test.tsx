@@ -881,3 +881,99 @@ describe('D28 — подготовка и явное применение', () =
     expect(changesHooks.useApplyPromoChanges().mutate).not.toHaveBeenCalled()
   })
 })
+
+describe('PromoDetailPage — «Главное» и «Дополнительно», подсказки, идентификатор', () => {
+  it('«Главное» держит название, бонус, сроки и бюджет; редкие поля свёрнуты в «Дополнительно»', () => {
+    renderDetail()
+    const main = within(screen.getByTestId('promo-main'))
+    expect(main.getByLabelText('Название')).toBeInTheDocument()
+    expect(main.getByLabelText(/^Бонус фармацевту за продажу, ₸/)).toBeInTheDocument()
+    expect(main.getByLabelText('Начало акции')).toBeInTheDocument()
+    expect(main.getByLabelText('Окончание акции')).toBeInTheDocument()
+    expect(main.getByLabelText('Бюджет, ₸')).toBeInTheDocument()
+    expect(main.getByTestId('promo-main-facts')).toHaveTextContent('Вся сеть · 100 аптек')
+    expect(main.queryByTestId('detail-barcode')).not.toBeInTheDocument()
+
+    const more = screen.getByTestId('promo-additional') as HTMLDetailsElement
+    expect(more.open).toBe(false)
+    expect(within(more).getByTestId('detail-barcode')).toBeInTheDocument()
+    expect(screen.getByTestId('promo-additional-summary')).toHaveTextContent(
+      'штрихкод не задан · фото из каталога · описание из каталога · период «01.05 — 31.05» · KPI «1000 рек.»',
+    )
+  })
+
+  it('поле из «Дополнительно» уходит в тот же запрос сохранения, что и раньше', async () => {
+    const mutate = vi.fn()
+    changesHooks.useSavePromoChanges.mockReturnValue({ mutate, isPending: false })
+    const user = userEvent.setup()
+    renderDetail()
+    const more = screen.getByTestId('promo-additional') as HTMLDetailsElement
+    await user.click(within(more).getByText('Дополнительно'))
+    expect(more.open).toBe(true)
+    await user.type(within(more).getByPlaceholderText('https://…'), 'https://cdn.example/p.jpg')
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(mutate).toHaveBeenCalledWith(
+      {
+        id: 'pr_1',
+        expectedRevision: 4,
+        bundle: expect.objectContaining({
+          campaign: expect.objectContaining({ overrideImage: 'https://cdn.example/p.jpg' }),
+        }),
+      },
+      expect.any(Object),
+    )
+  })
+
+  it('ошибка сервера при сохранении раскрывает «Дополнительно», чтобы поле было видно', async () => {
+    const mutate = vi.fn((_request, callbacks) => callbacks.onError(new Error('Своё фото: недопустимый адрес')))
+    changesHooks.useSavePromoChanges.mockReturnValue({ mutate, isPending: false })
+    const user = userEvent.setup()
+    renderDetail()
+    await user.type(screen.getByLabelText('Название'), '!')
+    await user.click(screen.getByTestId('promo-changes-save'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Своё фото: недопустимый адрес')
+    expect((screen.getByTestId('promo-additional') as HTMLDetailsElement).open).toBe(true)
+  })
+
+  it('подсказки «?» стоят у бюджета, бонуса, цели, замен и допродаж и написаны простыми словами', () => {
+    renderDetail()
+    expect(screen.getByRole('button', { name: 'Что это? Бюджет, ₸' })).toHaveAccessibleDescription(
+      /^Бюджет: сколько тенге бонусов кампания может выплатить фармацевтам/,
+    )
+    expect(
+      screen.getByRole('button', { name: /Что это\? Бонус фармацевту за продажу/ }),
+    ).toHaveAccessibleDescription(/за любую продажу этого товара/)
+    expect(screen.getByRole('button', { name: 'Что это? Цель кампании' })).toHaveAccessibleDescription(
+      /Цель одна на всю кампанию/,
+    )
+    expect(screen.getByRole('button', { name: 'Что это? Замены · 0' })).toHaveAccessibleDescription(
+      /^Замена: кассир пробил товар, касса предлагает вместо него другой/,
+    )
+    expect(screen.getByRole('button', { name: 'Что это? Допродажи · 0' })).toHaveAccessibleDescription(
+      /^Допродажа: кассир пробил товар, касса предлагает добавить к покупке другой \(например, к антибиотику пробиотик\)/,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Что это? Подготовленные изменения' }),
+    ).toHaveAccessibleDescription(/На кассах действует опубликованная версия/)
+  })
+
+  it('идентификатор кампании переносится по строкам и копируется кнопкой', async () => {
+    const id = 'pr_cd9d44b2e0a74f1c9d3ab7f1c5e8d210'
+    setPromo(mkPromo({ id }))
+    const user = userEvent.setup()
+    renderDetail(id)
+    const meta = screen.getByText(id)
+    expect(meta.className).toContain('break-all')
+    await user.click(screen.getByTestId('copy-promo-id'))
+    expect(await navigator.clipboard.readText()).toBe(id)
+    expect(screen.getByTestId('copy-promo-id')).toHaveTextContent('Скопировано')
+  })
+
+  it('на телефоне колонки идут друг под другом: сетка не фиксирована в три колонки', () => {
+    renderDetail()
+    const grid = screen.getByTestId('promo-detail')
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.className).toContain('lg:grid-cols-3')
+    expect(grid.className).not.toMatch(/(^|\s)grid-cols-3/)
+  })
+})

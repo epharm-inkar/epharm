@@ -90,7 +90,11 @@ export default function RulesPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={t('page.rules.title')} subtitle={t('page.rules.subtitle')} />
+      <PageHeader
+        title={t('page.rules.title')}
+        subtitle={t('page.rules.subtitle')}
+        help={t('help.rules.page')}
+      />
 
       <div
         className="hairline rounded-xl border bg-brand-green-50 px-4 py-2.5 text-[12px] font-semibold text-ink-700"

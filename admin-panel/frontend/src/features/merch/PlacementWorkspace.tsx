@@ -33,6 +33,9 @@ const portions: Record<Portion, string> = {
   left: 'Левая половина',
   right: 'Правая половина',
 }
+/** What a media plan is and what the «Резерв» column means; shown as a "?" next to the page title. */
+const PLACEMENT_HELP =
+  'Медиаплан: заявка производителя на места на полках аптек по месяцам. После отправки места на несколько рабочих дней удерживаются (колонка «Резерв»), пока вы не подтвердите или не отклоните план. Оплата в системе пока не подключена.'
 const amount = (value: number | null) => (value === null ? '—' : formatKzt(value))
 const statusCode = (error: unknown): number | undefined =>
   typeof error === 'object' && error !== null
@@ -89,6 +92,7 @@ export default function PlacementWorkspace({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <PageHeader
+        help={gateway.realm === 'admin' ? PLACEMENT_HELP : undefined}
         title={gateway.realm === 'admin' ? 'Кабинет производителя' : 'Мои размещения'}
         subtitle={
           gateway.realm === 'admin'

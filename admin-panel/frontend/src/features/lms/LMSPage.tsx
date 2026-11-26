@@ -5,6 +5,7 @@ import {
   Button,
   Empty,
   Field,
+  HelpTip,
   Input,
   IconButton,
   Metric,
@@ -95,6 +96,12 @@ import {
 } from './training-ui'
 import { CourseEditorDrawer } from './CourseEditorDrawer'
 import { CertificateEditorModal } from './CertificateEditorModal'
+
+/** What the three words of the training section mean; shown as a "?" next to the page title. */
+const TRAINING_TERMS_HELP =
+  'Программа: маршрут обучения из этапов (онлайн-курс, тест, очная встреча), с бонусом за прохождение и сертификатом. Онлайн-курс: сами уроки и тест, он входит в программу как один из этапов. Назначение: программа, выданная конкретному фармацевту, со сроком.'
+const TRAINING_READ_ONLY_HELP =
+  'Ваша роль в обучении только смотрит: программы, курсы и назначения менять нельзя. Править могут системный администратор и руководитель обучения.'
 
 export default function LMSPage() {
   const exportAccess = useAdministrativeCapabilities()
@@ -195,8 +202,11 @@ export default function LMSPage() {
   const action = (() => {
     if (isReadOnly) {
       return (
-        <span className="chip chip-ink" data-testid="training-read-only">
-          Только просмотр
+        <span className="inline-flex items-center gap-1.5">
+          <span className="chip chip-ink" data-testid="training-read-only">
+            Только просмотр
+          </span>
+          <HelpTip topic="Только просмотр">{TRAINING_READ_ONLY_HELP}</HelpTip>
         </span>
       )
     }
@@ -260,6 +270,7 @@ export default function LMSPage() {
             ? currentSection.subtitle
             : 'Программы, назначения, очные события, контроль прохождения и сертификаты фармацевтов'
         }
+        help={TRAINING_TERMS_HELP}
         actions={
           <div className="flex items-start gap-2">
             {action}

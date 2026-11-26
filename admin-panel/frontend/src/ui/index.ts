@@ -22,5 +22,6 @@ export { Empty } from './Empty'
 export { ComingSoonBanner } from './ComingSoonBanner'
 export { PageHeader } from './PageHeader'
 export { HelpTip } from './HelpTip'
+export { Disclosure } from './Disclosure'
 
 export * from './icons'

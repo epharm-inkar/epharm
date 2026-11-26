@@ -261,7 +261,10 @@ describe('PromoPage — отображение списка', () => {
       renderPromo()
       expect(screen.getByText('Без лимита: 1 кампаний')).toBeInTheDocument()
       expect(screen.getByText('Сумма ограниченных бюджетов')).toBeInTheDocument()
-      expect(screen.getByText(/3 210 ₸ \/ Без лимита бюджета/)).toBeInTheDocument()
+      // Карточка и строка списка: расход и «Без лимита бюджета» в одном блоке, числа не ломаются.
+      expect(
+        screen.getByTestId(mode === 'grid' ? 'promo-card-pr_001' : 'promo-row-pr_001'),
+      ).toHaveTextContent('3 210 ₸ / Без лимита бюджета')
       expect(screen.queryByText(/26%/)).not.toBeInTheDocument()
       expect(screen.queryByText('12 345 ₸')).not.toBeInTheDocument()
     },
@@ -824,5 +827,97 @@ describe('PromoPage — ручной рефреш цен Medusa (A2)', () => {
     renderPromo()
     await user.click(screen.getByRole('button', { name: /Обновить цены/ }))
     expect(mutate).toHaveBeenCalled()
+  })
+})
+
+describe('PromoPage — карточка кампании без поломок разметки', () => {
+  it('бюджет: подпись над значением, а числа и «Без лимита бюджета» не ломаются посреди слова', () => {
+    setPromosResponse([mkPromo({ budget: 0, budgetUnlimited: true, spent: 0 })])
+    renderPromo()
+    const block = screen.getByTestId('promo-card-budget-pr_001')
+    const label = within(block).getByText('Бюджет')
+    expect(label.nextElementSibling).toHaveTextContent('0 ₸ / Без лимита бюджета')
+    for (const part of within(block).getAllByText(/₸|Без лимита/)) {
+      expect(part.className).toContain('whitespace-nowrap')
+    }
+  })
+
+  it('«Открыть подробности» всегда стоит целиком, KPI идёт отдельной строкой над ним', () => {
+    setPromosResponse([mkPromo({ kpi: 'Цель: 2000 упаковок за месяц, бонус за цель 50 000 ₸' })])
+    renderPromo()
+    const card = screen.getByTestId('promo-card-pr_001')
+    const label = within(card).getAllByText('Открыть подробности')[0]
+    expect(label.className).not.toContain('truncate')
+    expect(label.className).toContain('whitespace-nowrap')
+    const kpi = within(card).getByText(/Цель: 2000 упаковок/)
+    expect(kpi.className).toContain('line-clamp-2')
+    expect(kpi).toHaveAttribute('title', 'Цель: 2000 упаковок за месяц, бонус за цель 50 000 ₸')
+  })
+
+  it('нет фото совсем: спокойный нейтральный блок с названием товара, без картинки и градиента', () => {
+    setPromosResponse([
+      mkPromo({
+        id: 'pr_np',
+        title: 'Акция лета',
+        productName: 'Эссенциале Форте Н 90 шт',
+        productImage: null,
+        overrideImage: null,
+        medusaProductId: 'prod_1',
+      }),
+    ])
+    renderPromo()
+    const card = screen.getByTestId('promo-card-pr_np')
+    expect(card.querySelector('img')).toBeNull()
+    expect(within(card).getByTestId('promo-card-nophoto-pr_np')).toHaveTextContent(
+      'Эссенциале Форте Н 90 шт',
+    )
+    expect(card.innerHTML).not.toContain('linear-gradient')
+  })
+
+  it('название товара не повторяется в блоке, если оно совпадает с названием кампании', () => {
+    setPromosResponse([
+      mkPromo({ id: 'pr_same', title: 'Супрадин', productName: 'супрадин', productImage: null }),
+    ])
+    renderPromo()
+    expect(screen.getByTestId('promo-card-nophoto-pr_same')).not.toHaveTextContent('супрадин')
+  })
+
+  it('у кампании нет своего фото, но оно есть у товара в каталоге: берём фото каталога', () => {
+    storefrontHooks.useStorefrontProduct.mockReturnValue({
+      data: { imageUrl: 'http://cdn.x/catalog.jpg', images: [] },
+    })
+    setPromosResponse([
+      mkPromo({ id: 'pr_cat', productImage: null, overrideImage: null, medusaProductId: 'prod_1' }),
+    ])
+    renderPromo()
+    const img = screen.getByTestId('promo-card-pr_cat').querySelector('img')
+    expect(img?.getAttribute('src') ?? '').toContain('catalog.jpg')
+    expect(storefrontHooks.useStorefrontProduct).toHaveBeenCalledWith('prod_1')
+  })
+
+  it('своё фото есть: в каталог за картинкой не ходим', () => {
+    setPromosResponse([
+      mkPromo({ id: 'pr_own', productImage: 'http://cdn.x/p.jpg', medusaProductId: 'prod_1' }),
+    ])
+    renderPromo()
+    expect(storefrontHooks.useStorefrontProduct).not.toHaveBeenCalledWith('prod_1')
+    expect(storefrontHooks.useStorefrontProduct).toHaveBeenCalledWith(null)
+  })
+
+  it('четыре показателя идут по две в ряд на телефоне и по четыре на широком экране', () => {
+    renderPromo()
+    const grid = screen.getByText('Активных кампаний').closest('.grid')
+    expect(grid?.className).toContain('grid-cols-2')
+    expect(grid?.className).toContain('lg:grid-cols-4')
+  })
+
+  it('подсказки «?» у заголовка и у показателя «Освоено» объясняют его простыми словами', () => {
+    renderPromo()
+    expect(screen.getByRole('button', { name: 'Что это? Промо-кампании' })).toHaveAccessibleDescription(
+      /^Промо-кампания: акция производителя на один товар/,
+    )
+    expect(screen.getByRole('button', { name: 'Что это? Освоено' })).toHaveAccessibleDescription(
+      /Это расход бюджета, а не выручка/,
+    )
   })
 })

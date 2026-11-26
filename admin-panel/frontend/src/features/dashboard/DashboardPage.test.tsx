@@ -520,3 +520,45 @@ describe('DashboardPage — loading/error', () => {
     expect(within(screen.getByRole('alert')).getByRole('button', { name: 'Повторить' })).toBeDisabled()
   })
 })
+
+describe('DashboardPage — подсказки «?» и ширина журнала', () => {
+  it('у журнала и у каждого показателя есть подсказка простыми словами', () => {
+    setAnalytics(mkAnalytics())
+    renderPage()
+    expect(
+      screen.getByRole('button', { name: 'Что это? Журнал показов и продаж' }),
+    ).toHaveAccessibleDescription(/два вида строк/)
+    expect(screen.getByRole('button', { name: 'Что это? Показано' })).toHaveAccessibleDescription(
+      /касса показала фармацевту подсказку/,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Что это? Рекомендации с продажей' }),
+    ).toHaveAccessibleDescription(/закончились продажей предложенного товара/)
+    expect(screen.getByRole('button', { name: /Что это\? Продано/ })).toHaveAccessibleDescription(
+      /не позже чем через 2 минуты/,
+    )
+    expect(screen.getByRole('button', { name: 'Что это? Среднее время' })).toHaveAccessibleDescription(
+      /Среднее время от показа/,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Что это? Сумма цен проданных рекомендаций' }),
+    ).toHaveAccessibleDescription(/Это не выручка по чекам и не выплата бонусов/)
+  })
+
+  it('таблица журнала лежит в своём прокручиваемом блоке и тянется на всю его ширину', () => {
+    setAnalytics(mkAnalytics())
+    renderPage()
+    const table = screen.getByTestId('recan-table')
+    expect(table.className).toContain('w-full')
+    expect(table.parentElement?.className).toContain('overflow-x-auto')
+  })
+
+  it('те же подсказки по-казахски, когда выбран казахский', () => {
+    useUiStore.setState({ language: 'kk' })
+    setAnalytics(mkAnalytics())
+    renderPage()
+    expect(screen.getByRole('button', { name: 'Бұл не? Көрсетілді' })).toHaveAccessibleDescription(
+      /Кезең ішінде касса фармацевтке ұсынысты неше рет көрсетті/,
+    )
+  })
+})
