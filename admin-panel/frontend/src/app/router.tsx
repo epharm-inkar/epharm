@@ -91,6 +91,7 @@ export function AppRouter() {
       <Route path="/learn/receipts" element={withSuspense(<LearnerTraining />)} />
       <Route path="/learn/training" element={withSuspense(<LearnerTraining />)} />
       <Route path="/learn/recommendations" element={withSuspense(<LearnerTraining />)} />
+      <Route path="/learn/earn" element={withSuspense(<LearnerTraining />)} />
       <Route path="/learn/certificates" element={withSuspense(<LearnerTraining />)} />
       <Route path="/learn/profile" element={withSuspense(<LearnerTraining />)} />
       <Route path="/learn/course/:assignmentId" element={withSuspense(<LearnerTraining />)} />

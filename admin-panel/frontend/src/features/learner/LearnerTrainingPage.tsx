@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Clock3,
   CircleDollarSign,
+  Coins,
   CreditCard,
   Download,
   Eye,
@@ -58,6 +59,7 @@ import { currentLearnerTranslate, learnerTranslate, useLearnerT } from './learne
 import type { CourseLiveRoomDto } from '@/lib/api-types'
 import { parseLoginIdentifier } from './login-identifier'
 import { GuardedVideo, type GuardedVideoProgress } from './GuardedVideo'
+import { EarnSection } from './earn/EarnSection'
 import { videoProgressToSave } from './guardedVideoRules'
 import { CoursePath } from './course/CoursePath'
 import { FinalTest } from './course/FinalTest'
@@ -292,7 +294,7 @@ type MobileReceipt = {
   createdAt: string
 }
 
-type PortalSection = 'home' | 'training' | 'recommendations' | 'certificates' | 'profile'
+type PortalSection = 'home' | 'earn' | 'training' | 'recommendations' | 'certificates' | 'profile'
 
 type Lesson = {
   id: string
@@ -798,11 +800,13 @@ export default function LearnerTrainingPage() {
       ? 'training'
       : location.pathname.startsWith('/learn/recommendations')
         ? 'recommendations'
-        : location.pathname.startsWith('/learn/certificates')
-          ? 'certificates'
-          : location.pathname.startsWith('/learn/profile')
-            ? 'profile'
-            : 'home'
+        : location.pathname.startsWith('/learn/earn')
+          ? 'earn'
+          : location.pathname.startsWith('/learn/certificates')
+            ? 'certificates'
+            : location.pathname.startsWith('/learn/profile')
+              ? 'profile'
+              : 'home'
   const [tokens, setTokens] = useState<Tokens | null>(() => readTokens())
   const monthlyVisit = location.pathname === '/learn/merch/visits'
   const [sessionEpoch, setSessionEpoch] = useState(0)
@@ -897,6 +901,11 @@ export default function LearnerTrainingPage() {
   const merchRequest = useCallback(
     <T,>(path: string, init: RequestInit = {}) =>
       request<T>(path, { ...init, cache: 'no-store', credentials: 'omit' }, tokens, tokenLifecycle),
+    [tokens, tokenLifecycle],
+  )
+  // «Бонусы» (26.11.2026): the tab loads its own data with the pharmacist's session.
+  const earnFetch = useCallback(
+    <T,>(path: string) => requestPersonalData<T>(path, tokens!, tokenLifecycle),
     [tokens, tokenLifecycle],
   )
   const merchForm = useCallback(
@@ -1477,6 +1486,7 @@ export default function LearnerTrainingPage() {
 
   const sectionTitle: Record<PortalSection, string> = {
     home: pharmacist?.name || t('Фармацевт'),
+    earn: t('Бонусы'),
     training: t('Обучение'),
     recommendations: t('Что предлагать'),
     certificates: t('Сертификаты'),
@@ -1609,6 +1619,8 @@ export default function LearnerTrainingPage() {
               }
               onComplete={completeStage}
             />
+          ) : portalSection === 'earn' && tokens ? (
+            <EarnSection fetchJson={earnFetch} />
           ) : portalSection === 'recommendations' ? (
             <RecommendationsView
               recommendations={personalRecommendations}
@@ -1779,6 +1791,8 @@ function PortalNavigation({
   const t = useLearnerT()
   const items = [
     { id: 'home' as const, label: t('Главная'), icon: Home },
+    // «Бонусы» instead of «Советы» (owner, 26.11.2026): bonus products, own sales, leaderboards.
+    { id: 'earn' as const, label: t('Бонусы'), icon: Coins },
     { id: 'training' as const, label: t('Обучение'), icon: GraduationCap },
     // «Советы» are out of the menu for now (owner, 26.11.2026); /learn/recommendations still opens the page.
     { id: 'certificates' as const, label: t('Сертификаты'), icon: Award },
@@ -1805,7 +1819,7 @@ function PortalNavigation({
       {/* Each tab at least as wide as its label, the rest shared equally: «Сертификаты» and
           «Сертификаттар» were cut at phone width (26.11.2026). Below 320 px equal columns again; with
           enlarged system text the bar scrolls sideways instead of pushing a tab off-screen. */}
-      <div className="mx-auto grid max-w-6xl grid-cols-[repeat(4,minmax(max-content,1fr))] gap-1 overflow-x-auto no-scrollbar max-[319px]:grid-cols-4 lg:mx-0 lg:overflow-visible lg:flex lg:w-full lg:flex-col lg:gap-1">
+      <div className="mx-auto grid max-w-6xl grid-cols-[repeat(5,minmax(max-content,1fr))] gap-1 overflow-x-auto no-scrollbar max-[319px]:grid-cols-5 lg:mx-0 lg:overflow-visible lg:flex lg:w-full lg:flex-col lg:gap-1">
         {items.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
