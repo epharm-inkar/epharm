@@ -31,6 +31,7 @@ import {
   useUnblockPharmacist,
 } from '@/lib/queries/pharmacists'
 import { usePharmacies } from '@/lib/queries/pharmacies'
+import { useIdentityClaims } from '@/lib/queries/identityClaims'
 import {
   useChangeTrainingPreference,
   useMassChangeTrainingPreferences,
@@ -45,6 +46,8 @@ import { useT } from '@/i18n'
 import { ActivatePharmacistModal } from './ActivatePharmacistModal'
 import { CreatePharmacistModal } from './CreatePharmacistModal'
 import { StandardNSellerMappingsModal } from './StandardNSellerMappingsModal'
+import { IdentityClaimsModal } from './IdentityClaimsModal'
+import { IdentitySourceNote } from './IdentitySourceNote'
 import { ASSIGNMENT_STATUS_LABEL, FORMAT_LABEL, dateTime } from '@/features/lms/training-ui'
 import { useUiStore } from '@/app/store'
 import { canManagePharmacistCredentials } from '@/app/accessPolicy'
@@ -103,6 +106,7 @@ export default function PharmacistsPage() {
   const [preferenceTargets, setPreferenceTargets] = useState<PharmacistDto[] | null>(null)
   const [trainingProfileId, setTrainingProfileId] = useState<string | null>(null)
   const [standardNMappingsOpen, setStandardNMappingsOpen] = useState(false)
+  const [identityClaimsOpen, setIdentityClaimsOpen] = useState(false)
   const [personalDataOwner, setPersonalDataOwner] = useState<string | null>(null)
   const [credentialSelection, setCredentialSelection] = useState<{
     ownerId: string
@@ -118,6 +122,9 @@ export default function PharmacistsPage() {
     !!currentAccount && canManageCredentials && personalDataOwner === personalDataContext
 
   const { data: pharmacists = [], isLoading, isError, error, refetch } = usePharmacists()
+  // «ИИН указали сами»: only roles that decide them ask the server; the count shows on the button.
+  const identityClaims = useIdentityClaims(canManageStandardN)
+  const pendingClaims = (identityClaims.data ?? []).filter((claim) => claim.status === 'pending').length
   const { data: pharmacies = [] } = usePharmacies()
   const preferencesQuery = useTrainingPreferences()
   const trainingDashboardQuery = useTrainingDashboard()
@@ -308,6 +315,12 @@ export default function PharmacistsPage() {
             {canManageStandardN && (
               <Button variant="outline" onClick={() => setStandardNMappingsOpen(true)}>
                 Продавцы Standard-N
+              </Button>
+            )}
+            {canManageStandardN && (
+              <Button variant="outline" onClick={() => setIdentityClaimsOpen(true)}>
+                {t('idc.button')}
+                {pendingClaims > 0 ? ` (${pendingClaims})` : ''}
               </Button>
             )}
             <Button
@@ -551,6 +564,7 @@ export default function PharmacistsPage() {
                               <div className="text-[11px] text-ink-500">
                                 {personalDataVisible ? p.phone || '—' : maskedPhone(p.phone)}
                               </div>
+                              <IdentitySourceNote iin={p.iinSource} name={p.nameSource} />
                             </div>
                           </div>
                         </td>
@@ -882,6 +896,9 @@ export default function PharmacistsPage() {
           pharmacists={pharmacists}
           onClose={() => setStandardNMappingsOpen(false)}
         />
+      )}
+      {identityClaimsOpen && canManageStandardN && (
+        <IdentityClaimsModal onClose={() => setIdentityClaimsOpen(false)} />
       )}
     </div>
   )

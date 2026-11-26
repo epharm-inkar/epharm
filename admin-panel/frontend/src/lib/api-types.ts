@@ -392,7 +392,12 @@ export interface PharmacistDto {
   joinedAt: string
   createdAt: string
   updatedAt: string
+  /** Where the IIN and the name on the card came from (26.11.2026); an older backend sends nothing. */
+  iinSource?: IdentitySource
+  nameSource?: IdentitySource
 }
+
+export type IdentitySource = 'registration' | 'standardn' | 'self' | 'hq'
 
 export interface CreatePharmacistRequest {
   name: string
@@ -430,6 +435,52 @@ export interface PosmPharmacistMappingDto {
   createdAt: string
   updatedAt: string
   revokedAt: string | null
+}
+
+/** «ИИН указали сами» (26.11.2026): what a pharmacist typed about themselves, for HQ to confirm. */
+export type IdentityClaimStatus = 'pending' | 'confirmed' | 'rejected' | 'superseded'
+export type IdentityClaimKind = 'person' | 'name'
+export type IdentityClaimConflictCode =
+  | 'iin_other_card'
+  | 'iin_other_claim'
+  | 'iin_in_directory'
+  | 'mapping_exists'
+  | 'directory_iin_differs'
+
+export interface IdentityClaimConflictDto {
+  code: IdentityClaimConflictCode
+  pharmacistId?: string | null
+  pharmacistName?: string | null
+  pharmacyName?: string | null
+  pharmacistStatus?: string | null
+  directoryIin?: string | null
+  directoryName?: string | null
+}
+
+export interface IdentityClaimDto {
+  id: string
+  kind: IdentityClaimKind
+  status: IdentityClaimStatus
+  pharmacyId: string | null
+  pharmacyName: string | null
+  standardNUserId: string | null
+  /** The Standard-N user name as the till reported it. */
+  standardNUserName: string | null
+  iin: string
+  fullName: string
+  pharmacistId: string | null
+  pharmacistName: string | null
+  conflicts: IdentityClaimConflictDto[]
+  directoryIin: string | null
+  decidedByName: string | null
+  decidedAt: string | null
+  decisionReason: string | null
+  createdAt: string
+}
+
+export interface ConfirmIdentityClaimRequest {
+  iin: string
+  fullName: string
 }
 
 export interface UnmappedPosmSellerDto {

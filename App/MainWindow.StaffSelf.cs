@@ -111,6 +111,18 @@ public partial class MainWindow
         }
         NoteSignedInForGreeting(request.StandardNUserId);
         var result = await _epharm.GetSelfAsync(request);
+        if (result.IdentityUnknown)
+        {
+            // 1.0.101: no IIN in the directory. The red dot asks for the IIN until it is sent; once sent, nothing waits for the person.
+            // What belonged to the person before (tasks, notices) is not theirs.
+            _newHqTasks = 0;
+            _requiredCourses = 0;
+            _hqTasksUser = "";
+            CloseHqMessageQuietly();
+            var identity = await _epharm.GetSelfIdentityAsync(IdentityRequest(request));
+            SetSelfTrayState(identity.Ok && identity.Value!.State == PosmSelfIdentityDto.Pending ? null : false, null);
+            return;
+        }
         if (!result.Ok) return;
         _selfStatusUser = request.StandardNUserId;
         SetSelfTrayState(result.Value!.PhoneBound && result.Value.PasswordSet, result.Value.FullName);
@@ -168,6 +180,7 @@ public partial class MainWindow
         window.WhatIsEpharmRequested += ShowWhatIsEpharm;
         window.OpenMessagesRequested += ShowHqMessagesPage;
         window.SaveContactRequested += (phone, password) => _ = SaveSelfContactAsync(phone, password);
+        window.SubmitIdentityRequested += (iin, fullName) => _ = SubmitSelfIdentityAsync(iin, fullName);
         window.Closed += (_, _) => { _selfWindowRefresh.Stop(); if (ReferenceEquals(_selfWindow, window)) _selfWindow = null; };
         _selfWindow = window;
         window.Show();
@@ -184,6 +197,7 @@ public partial class MainWindow
                 TasksCount = TasksCountForSelf(), TasksOnline = _taskKioskOnline,
             };
         var result = await _epharm!.GetSelfAsync(request);
+        if (result.IdentityUnknown) return await LoadIdentityModelAsync(request, result.Error);
         if (!result.Ok) return new StaffSelfModel { Notice = result.Error, TasksCount = TasksCountForSelf(), TasksOnline = _taskKioskOnline };
         var self = result.Value!;
         SetSelfTrayState(self.PhoneBound && self.PasswordSet, self.FullName);
@@ -207,6 +221,59 @@ public partial class MainWindow
             MessagesPending = _messagesFeedKnown ? PendingHqMessages() : null,
             MessagesTotal = history,
         };
+    }
+
+    private PosmSelfIdentityRequestDto IdentityRequest(PosmSelfRequestDto request, string? iin = null, string? fullName = null)
+    {
+        var name = (_currentPharmacistName ?? "").Trim();
+        return new PosmSelfIdentityRequestDto(request.PharmacyId, request.StandardNUserId, name.Length == 0 ? null : name[..Math.Min(name.Length, 255)], iin, fullName);
+    }
+
+    /// <summary>
+    /// The server does not know the Standard-N user at this till (no IIN in the central directory): the window shows the form
+    /// for the IIN and the full name, that it was sent, or that the office refused (1.0.101). An older server, or no answer,
+    /// leaves the plain message the window always showed.
+    /// </summary>
+    private async Task<StaffSelfModel> LoadIdentityModelAsync(PosmSelfRequestDto request, string? fallbackNotice)
+    {
+        var state = await _epharm!.GetSelfIdentityAsync(IdentityRequest(request));
+        if (!state.Ok || state.Value!.State == PosmSelfIdentityDto.Known)
+            return new StaffSelfModel { Notice = fallbackNotice, TasksCount = TasksCountForSelf(), TasksOnline = _taskKioskOnline };
+        var identity = state.Value!;
+        SetSelfTrayState(identity.State == PosmSelfIdentityDto.Pending ? null : false, null);
+        return new StaffSelfModel
+        {
+            Identity = new StaffSelfIdentity(
+                identity.State, identity.IinMasked ?? "", identity.FullName ?? "", identity.Reason ?? "", request.StandardNUserId),
+            TasksCount = TasksCountForSelf(), TasksOnline = _taskKioskOnline,
+        };
+    }
+
+    /// <summary>
+    /// «Отправить» in the IIN form: the server checks the IIN and the name again and keeps them for the office. Nothing is
+    /// credited before the office confirms. The IIN and the name are never written to the till log.
+    /// </summary>
+    private async Task SubmitSelfIdentityAsync(string iin, string fullName)
+    {
+        if (_epharm == null || _selfWindow == null) return;
+        var request = SelfRequest(link: false);
+        if (request == null)
+        {
+            _selfWindow.ShowStatus("Войдите в Стандарт-Н, чтобы отправить данные.", error: true);
+            _selfWindow.EndIdentitySend();
+            return;
+        }
+        var result = await _epharm.SubmitSelfIdentityAsync(IdentityRequest(request, iin, fullName));
+        if (!result.Ok)
+        {
+            _selfWindow.ShowStatus(result.Error ?? "Не удалось отправить. Попробуйте ещё раз.", error: true);
+            _selfWindow.EndIdentitySend();
+            return;
+        }
+        _selfWindow.ClearIdentityInputs();
+        _selfWindow.Update(await LoadSelfModelAsync());
+        _selfWindow.ShowStatus("Отправлено, офис проверит.", error: false);
+        Log("ePharm: ИИН и ФИО отправлены в офис на проверку.");
     }
 
     private int _newHqTasks;

@@ -128,6 +128,14 @@ namespace CustomerDisplay.Services
         public Task<PosmSelfResult<PosmCabinetLinkDto>> GetCabinetLinkAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
             PostSelfAsync<PosmCabinetLinkDto>("/api/posm/self/cabinet-link", req, ct);
 
+        /// <summary>Where the Standard-N user at this till stands when the server does not know them: form, waiting, refused (1.0.101).</summary>
+        public Task<PosmSelfResult<PosmSelfIdentityDto>> GetSelfIdentityAsync(PosmSelfIdentityRequestDto req, CancellationToken ct = default) =>
+            PostSelfAsync<PosmSelfIdentityRequestDto, PosmSelfIdentityDto>("/api/posm/self/identity", req, ct);
+
+        /// <summary>The IIN and the full name the person typed; the office confirms them, nothing is credited before that (1.0.101).</summary>
+        public Task<PosmSelfResult<PosmSelfIdentityDto>> SubmitSelfIdentityAsync(PosmSelfIdentityRequestDto req, CancellationToken ct = default) =>
+            PostSelfAsync<PosmSelfIdentityRequestDto, PosmSelfIdentityDto>("/api/posm/self/identity/claim", req, ct);
+
         /// <summary>Notices from HQ for the person at this till: open ones and the last 30 days (1.0.99).</summary>
         public Task<PosmSelfResult<PosmSelfMessagesDto>> GetSelfMessagesAsync(PosmSelfRequestDto req, CancellationToken ct = default) =>
             PostSelfAsync<PosmSelfMessagesDto>("/api/posm/self/messages", req with { Link = false }, ct);
@@ -252,7 +260,10 @@ namespace CustomerDisplay.Services
             }
         }
 
-        private async Task<PosmSelfResult<T>> PostSelfAsync<T>(string path, PosmSelfRequestDto req, CancellationToken ct) where T : class
+        private Task<PosmSelfResult<T>> PostSelfAsync<T>(string path, PosmSelfRequestDto req, CancellationToken ct) where T : class =>
+            PostSelfAsync<PosmSelfRequestDto, T>(path, req, ct);
+
+        private async Task<PosmSelfResult<T>> PostSelfAsync<TRequest, T>(string path, TRequest req, CancellationToken ct) where T : class
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(10));
@@ -261,16 +272,12 @@ namespace CustomerDisplay.Services
                 using var resp = await _http.PostAsJsonAsync(path, req, JsonOpts, cts.Token).ConfigureAwait(false);
                 if (resp.IsSuccessStatusCode)
                     return new(await resp.Content.ReadFromJsonAsync<T>(JsonOpts, cts.Token).ConfigureAwait(false), null);
-                string? message = null;
-                try
-                {
-                    using var body = await JsonDocument.ParseAsync(
-                        await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false), cancellationToken: cts.Token).ConfigureAwait(false);
-                    if (body.RootElement.TryGetProperty("message", out var m)) message = m.GetString();
-                }
+                string body = "";
+                try { body = await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false); }
                 catch { }
+                var (message, code) = ReadSelfError(body);
                 _log?.Invoke($"self {path}: HTTP {(int)resp.StatusCode}");
-                return new(null, string.IsNullOrWhiteSpace(message) ? "Сервер ePharm сейчас не ответил. Попробуйте через минуту." : message);
+                return new(null, string.IsNullOrWhiteSpace(message) ? "Сервер ePharm сейчас не ответил. Попробуйте через минуту." : message, code);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -280,6 +287,25 @@ namespace CustomerDisplay.Services
             {
                 _log?.Invoke($"self {path}: {Describe(ex)}");
                 return new(null, "Нет связи с сервером ePharm. Проверьте интернет и попробуйте ещё раз.");
+            }
+        }
+
+        /// <summary>The server's error body ({"code": ..., "message": ...}): the text for the person and the machine code.</summary>
+        internal static (string? Message, string? Code) ReadSelfError(string? body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return (null, null);
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object) return (null, null);
+                string? message = null, code = null;
+                if (doc.RootElement.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String) message = m.GetString();
+                if (doc.RootElement.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String) code = c.GetString();
+                return (message, code);
+            }
+            catch (JsonException)
+            {
+                return (null, null);
             }
         }
 

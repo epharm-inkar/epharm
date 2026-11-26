@@ -54,6 +54,7 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
         statusRaw: String,
     ): List<PharmacistEntity>
     fun findByIin(iin: String): PharmacistEntity?
+    fun findAllByIinIn(iins: Collection<String>): List<PharmacistEntity>
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM PharmacistEntity p WHERE p.iin = :iin")
     fun findByIinForUpdate(@Param("iin") iin: String): PharmacistEntity?

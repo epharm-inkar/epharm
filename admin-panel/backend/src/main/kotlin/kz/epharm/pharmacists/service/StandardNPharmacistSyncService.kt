@@ -35,6 +35,8 @@ class StandardNPharmacistSyncService(
     @Value("\${app.standardn-directory.user:}") private val user: String,
     @Value("\${app.standardn-directory.password:}") private val password: String,
     private val profileLinker: StandardNProfileLinker? = null,
+    /** Claims pharmacists typed about themselves yield to what the directory now says (V126). */
+    private val identityClaims: kz.epharm.posm.identity.IdentityClaimDirectoryReconciler? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val snapshotTransaction = TransactionTemplate(transactionManager)
@@ -73,6 +75,7 @@ class StandardNPharmacistSyncService(
             repository.deleteAllInBatch()
             repository.saveAllAndFlush(rows.map { it.toEntity(now) })
         }
+        reconcileIdentityClaims()
 
         val result = StandardNSyncResult(
             importedRows = rows.size,
@@ -91,6 +94,13 @@ class StandardNPharmacistSyncService(
             result.activeUniqueIins,
         )
         return result
+    }
+
+    /** A failure here never fails the sync: the snapshot is already in, the next sync reconciles again. */
+    private fun reconcileIdentityClaims() {
+        val reconciler = identityClaims ?: return
+        runCatching { reconciler.reconcile() }
+            .onFailure { log.error("Identity claims could not be reconciled with the Standard-N directory: {}", it.message) }
     }
 
     @Transactional(readOnly = true)

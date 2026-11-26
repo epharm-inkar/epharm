@@ -92,6 +92,14 @@ class PharmacistEntity(
 
     @Column(name = "standard_n_identity_checked_at", insertable = false, updatable = false)
     var standardNIdentityCheckedAt: Instant? = null,
+
+    // Where the IIN and the name came from (V126): registration, standardn, self (a pharmacist typed it and HQ
+    // confirmed) or hq (an HQ edit). A card created or changed from the Standard-N directory says standardn.
+    @Column(name = "iin_source", nullable = false, length = 16)
+    var iinSource: String = "registration",
+
+    @Column(name = "name_source", nullable = false, length = 16)
+    var nameSource: String = "registration",
 ) {
     var tier: PharmacistTier
         get() = PharmacistTier.valueOf(tierRaw)

@@ -106,9 +106,19 @@ beforeEach(() => {
             }
           : path === '/api/mobile/me/balance'
             ? { balanceKzt: 750, currency: 'KZT' }
-            : path.startsWith('/api/mobile/me/recommendations?')
-              ? { page: 0, size: 20, total: 0, currency: 'KZT', items: [] }
-              : undefined
+            : path === '/api/mobile/me/identity'
+              ? // The profile says where the name came from (26.11.2026); a full name offers no form.
+                {
+                  name: 'Фармацевт Тестовый',
+                  nameSource: 'standardn',
+                  iinSource: 'standardn',
+                  nameIncomplete: false,
+                  canPropose: false,
+                  claim: null,
+                }
+              : path.startsWith('/api/mobile/me/recommendations?')
+                ? { page: 0, size: 20, total: 0, currency: 'KZT', items: [] }
+                : undefined
     if (
       authorization !== `Bearer ${tokens.accessToken}` ||
       body === undefined ||
@@ -438,7 +448,7 @@ describe('real learner training navigation and payment placeholder', () => {
     const card = await screen.findByRole('region', { name: 'Банковская карта', exact: true })
     expect(within(card).getByText('Не подключена', { exact: true })).toBeInTheDocument()
     await screen.findByText('750 ₸')
-    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(5))
     const requestCount = vi.mocked(globalThis.fetch).mock.calls.length
     const storageWrites = vi.spyOn(Storage.prototype, 'setItem')
     // Payouts are in development (26.11.2026): the notice is always there and nothing offers to link a card.

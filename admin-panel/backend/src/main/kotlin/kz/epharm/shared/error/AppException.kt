@@ -53,4 +53,8 @@ enum class ErrorCode {
     // POSM assignment diagnostics are disclosed only after successful employee password proof.
     STAFF_PHARMACY_ASSIGNMENT_REQUIRED,
     STAFF_PHARMACY_MISMATCH,
+
+    // The Standard-N user at a till is not a known person yet: no IIN in the central directory and no confirmed
+    // self-reported claim. The till (1.0.101) answers with a form for IIN and full name; older tills show the message.
+    STANDARDN_USER_UNKNOWN,
 }

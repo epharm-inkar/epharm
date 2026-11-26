@@ -221,8 +221,10 @@ class PosmSelfTasksIntegrationTest {
         val window = assertThrows(AppException::class.java) { self.view(device, unknown.copy(link = false)) }
         assertEquals(404, error.status.value())
         assertEquals(window.message, error.message)
+        // The code lets the 1.0.101 till tell this case from any other 404 and show the IIN form (V126).
+        assertEquals(window.code, error.code)
         val body = feed(body = mapOf("pharmacyId" to pharmacy, "standardNUserId" to "99"), expected = 404)
-        assertEquals("USER_NOT_FOUND", body["code"].asText())
+        assertEquals("STANDARDN_USER_UNKNOWN", body["code"].asText())
     }
 
     @Test fun `a till of another pharmacy is refused like the personal window`() {

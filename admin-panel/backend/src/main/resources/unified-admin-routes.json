@@ -860,6 +860,16 @@
     "mode": "SCOPED"
   },
   {
+    "api": "GET /api/admin/posm/identity-claims",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "identity_claims",
+      "action": "view",
+      "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
     "api": "GET /api/admin/posm/pharmacist-mappings",
     "permission": {
       "module": "pharmacists",
@@ -2384,6 +2394,26 @@
       "kind": "ORDINARY"
     },
     "mode": "SCOPED"
+  },
+  {
+    "api": "POST /api/admin/posm/identity-claims/{id}/confirm",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "identity_claims",
+      "action": "confirm",
+      "kind": "POSM_TECHNICAL"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "POST /api/admin/posm/identity-claims/{id}/reject",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "identity_claims",
+      "action": "reject",
+      "kind": "POSM_TECHNICAL"
+    },
+    "mode": "NOT_READY"
   },
   {
     "api": "POST /api/admin/posm/pharmacist-mappings",

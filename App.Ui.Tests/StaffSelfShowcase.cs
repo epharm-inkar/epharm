@@ -86,6 +86,22 @@ internal static partial class Program
         {
             Notice = "Не нашли вас в справочнике Стандарт-Н: попросите МАС заполнить ИИН в вашей карточке пользователя",
         }),
+        // 1.0.101: a Standard-N user without an IIN types it and the full name, the office confirms.
+        ("staff-self-9-iin-form", new StaffSelfModel
+        {
+            Identity = new StaffSelfIdentity("unknown", PersonKey: "18"),
+            TasksCount = 0,
+        }),
+        ("staff-self-10-iin-sent", new StaffSelfModel
+        {
+            Identity = new StaffSelfIdentity("pending", "900115•••••3", "Бузурбаева Лаура Ермековна", PersonKey: "18"),
+            TasksCount = 0,
+        }),
+        ("staff-self-11-iin-rejected", new StaffSelfModel
+        {
+            Identity = new StaffSelfIdentity("rejected", Reason: "ИИН не совпадает с документом, проверьте цифры", PersonKey: "18"),
+            TasksCount = 0,
+        }),
     };
 
     private static int RunStaffSelfShowcaseOnly(Application application)

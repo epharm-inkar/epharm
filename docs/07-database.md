@@ -174,7 +174,7 @@ business migration.
 | Promo               | `promos` plus campaign rule references                                                                                                                                                                     |
 | Receipts/reconcile  | `receipts`, `pending_bonuses`, `pos_sales`, `excel_imports`, `excel_sale_rows`                                                                                                                             |
 | Pharmacies          | `chains`, `pharmacies`                                                                                                                                                                                     |
-| Pharmacists         | `pharmacists`                                                                                                                                                                                              |
+| Pharmacists         | `pharmacists` (+ `iin_source`, `name_source`), `pharmacist_identity_claims` (IIN and name typed by the pharmacist, V126) |
 | Finance             | `payout_batches`, `payout_items`, `pharmacist_wallet_checkpoints`, `pharmacist_wallet_entries`, `merch_executor_otp_challenges`, `merch_executor_grants`, `merch_executor_bindings`, `merch_reward_events` |
 | Screens             | `playlists`, `slides`, `playlist_pharmacy_assignments`                                                                                                                                                     |
 | POSM                | `recommendation_events`, app release tables, CDP tables, `till_commands` (remote diagnostics/restart, V117), `posm_messages`, `posm_message_targets`, `posm_message_receipts` (notices from HQ at the till, V122) |
@@ -271,3 +271,15 @@ reference and unverified name, never a fabricated PERSON or wallet recipient.
 The090 promotion allowlist has76 native tables; all original72 business tables
 remain outside its COPY set. Old088/089 profiles are historical and must not be
 used to promote a090 candidate.
+
+## Pharmacist identity claims (V126)
+
+`pharmacist_identity_claims` keeps what a pharmacist typed about themselves until HQ decides (owner, 26.11.2026;
+`docs/02-backend.md`, «Identity claims»). `kind` is `person` (a Standard-N user without a card: `pharmacy_id`,
+`standardn_user_id`, IIN, full name) or `name` (a full name for the card `pharmacist_id`); `status` is `pending`,
+`confirmed`, `rejected` or `superseded`; `conflict` and `directory_iin` hold what the Standard-N directory brought when
+it disagreed; `decided_by`, `decided_at` and `decision_reason` say who decided and why; `mapping_id` is the HQ mapping a
+confirmation made. Partial unique indexes allow one `pending` claim per (pharmacy, USER_ID) and one per card.
+`pharmacists` gains `iin_source` and `name_source` (`registration`, `standardn`, `self`, `hq`; cards that came from the
+directory were backfilled to `standardn`) and `account_source` may be `self`. The migration is additive: nothing is
+rewritten, and V124 and V125 belong to the sales premium work (#239).

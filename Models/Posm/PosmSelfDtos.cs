@@ -59,9 +59,40 @@ namespace CustomerDisplay.Models.Posm
 
     public sealed record PosmSelfMessagesDto(List<PosmSelfMessageDto>? Messages, int PendingCount);
 
-    /// <summary>Either the value, or a message for the pharmacist (server text or a network problem).</summary>
-    public sealed record PosmSelfResult<T>(T? Value, string? Error) where T : class
+    /// <summary>
+    /// Either the value, or a message for the pharmacist (server text or a network problem). <see cref="Code"/> is the
+    /// server's machine code of the error when it sent one (1.0.101): <c>STANDARDN_USER_UNKNOWN</c> means the Standard-N user
+    /// at this till is not a known person yet and the window asks for the IIN and the full name.
+    /// </summary>
+    public sealed record PosmSelfResult<T>(T? Value, string? Error, string? Code = null) where T : class
     {
+        public const string StandardNUserUnknown = "STANDARDN_USER_UNKNOWN";
+
         public bool Ok => Value != null;
+
+        public bool IdentityUnknown => Value == null && string.Equals(Code, StandardNUserUnknown, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A Standard-N user without a card sends the IIN and the full name they typed (POST /api/posm/self/identity/claim), or
+    /// only asks where they stand (POST /api/posm/self/identity: Iin and FullName empty). The device key proves the till.
+    /// </summary>
+    public sealed record PosmSelfIdentityRequestDto(
+        string PharmacyId,
+        string StandardNUserId,
+        string? StandardNUserName = null,
+        string? Iin = null,
+        string? FullName = null);
+
+    /// <summary>
+    /// Where the Standard-N user at this till stands: <c>known</c> (the window works as usual), <c>unknown</c> (show the
+    /// form), <c>pending</c> (sent, the office has not decided) or <c>rejected</c> (the office said no, Reason says why).
+    /// </summary>
+    public sealed record PosmSelfIdentityDto(string State, string? IinMasked = null, string? FullName = null, string? Reason = null)
+    {
+        public const string Known = "known";
+        public const string Unknown = "unknown";
+        public const string Pending = "pending";
+        public const string Rejected = "rejected";
     }
 }

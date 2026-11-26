@@ -363,8 +363,13 @@ class UnifiedAdminAccessIntegrationTest {
         // 270 with GET /api/admin/screens/fleet (all tills tab, 24.11.2026); 273 with the three till command
         // routes (diagnostics and restart without AnyDesk, 25.11.2026), NOT_READY for managed accounts like the fleet;
         // 274 with GET /api/admin/pharmacists/coverage (the coverage view, ALL_ONLY, 25.11.2026); 277 with the three
-        // routes of notices to pharmacists at the till (POSM 1.0.99), NOT_READY like the till commands.
-        assertThat(catalog.routes).hasSize(277)
+        // routes of notices to pharmacists at the till (POSM 1.0.99), NOT_READY like the till commands; 280 with the three
+        // routes of «ИИН указали сами» (identity claims, 26.11.2026), NOT_READY like the seller mappings.
+        assertThat(catalog.routes).hasSize(280)
+        assertThat(catalog.routes.filter { it.permission.subsection == "identity_claims" }).hasSize(3).allSatisfy { route ->
+            assertThat(route.mode).isEqualTo(ScopeIntegration.NOT_READY)
+            assertThat(route.permission.module).isEqualTo("pharmacists")
+        }
         assertThat(catalog.routes.filter { it.permission.subsection == "till_messages" }).hasSize(3).allSatisfy { route ->
             assertThat(route.mode).isEqualTo(ScopeIntegration.NOT_READY)
             assertThat(route.permission.module).isEqualTo("pharmacists")

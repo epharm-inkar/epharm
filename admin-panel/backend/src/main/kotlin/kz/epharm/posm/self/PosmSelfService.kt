@@ -6,11 +6,9 @@ import kz.epharm.learnercredentials.LearnerPasswordVault
 import kz.epharm.mobile.auth.service.CabinetLinkService
 import kz.epharm.mobile.auth.service.MobileRefreshTokenService
 import kz.epharm.pharmacists.entity.PharmacistEntity
-import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.pharmacists.service.PharmacistPhoneOwners
 import kz.epharm.posm.service.PosmDeviceIdentity
-import kz.epharm.posm.service.StandardNDirectoryIdentityLookup
 import kz.epharm.shared.PhoneUtil
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
@@ -57,8 +55,7 @@ data class PosmCabinetLinkDto(val url: String, val expiresAt: Instant)
  */
 @Service
 class PosmSelfService(
-    private val directory: StandardNDirectoryIdentityLookup,
-    private val accounts: StandardNAccountService,
+    private val people: PosmSelfPersonResolver,
     private val pharmacists: PharmacistRepository,
     private val cabinetLinks: CabinetLinkService,
     private val jdbc: JdbcTemplate,
@@ -120,20 +117,7 @@ class PosmSelfService(
         return dto(saved, device, issueLink = req.link)
     }
 
-    private fun person(device: PosmDeviceIdentity, req: PosmSelfRequest): PharmacistEntity {
-        val pharmacyId = device.pharmacyId?.takeIf { it == req.pharmacyId } ?: forbidden()
-        val found = directory.find(pharmacyId, req.standardNUserId)
-            ?: throw AppException(
-                ErrorCode.USER_NOT_FOUND,
-                "Не нашли вас в справочнике Стандарт-Н: попросите МАС заполнить ИИН в вашей карточке пользователя",
-                HttpStatus.NOT_FOUND,
-            )
-        val card = accounts.ensure(found, pharmacyId) ?: notFound()
-        if (card.status == PharmacistStatus.blocked) {
-            throw AppException(ErrorCode.PHARMACIST_BLOCKED, "Учётная запись заблокирована", HttpStatus.FORBIDDEN)
-        }
-        return card
-    }
+    private fun person(device: PosmDeviceIdentity, req: PosmSelfRequest): PharmacistEntity = people.person(device, req)
 
     private fun dto(card: PharmacistEntity, device: PosmDeviceIdentity, issueLink: Boolean): PosmSelfDto {
         val earned = jdbc.queryForObject(
@@ -182,7 +166,6 @@ class PosmSelfService(
 
     private fun mask(iin: String): String = if (iin.length == 12) iin.take(6) + "•••••" + iin.takeLast(1) else ""
     private fun notFound(): Nothing = throw AppException(ErrorCode.USER_NOT_FOUND, "Сотрудник не найден", HttpStatus.NOT_FOUND)
-    private fun forbidden(): Nothing = throw AppException(ErrorCode.FORBIDDEN, "Касса не относится к этой аптеке", HttpStatus.FORBIDDEN)
     private fun invalid(message: String): Nothing = throw AppException(ErrorCode.VALIDATION_FAILED, message, HttpStatus.BAD_REQUEST)
     private fun conflict(message: String): Nothing = throw AppException(ErrorCode.CONFLICT, message, HttpStatus.CONFLICT)
 

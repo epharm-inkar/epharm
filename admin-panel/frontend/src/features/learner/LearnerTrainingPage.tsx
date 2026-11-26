@@ -64,6 +64,7 @@ import { LessonBlock, LessonReader } from './course/LessonReader'
 import { documentOf, scrollToTopOf } from './course/frameWindow'
 import { lessonMinutes, lessonSections } from './course/lessonContent'
 import { SelfCheck, type SelfCheckQuestion } from './course/SelfCheck'
+import IdentityNameClaim from './IdentityNameClaim'
 
 type Tokens = {
   accessToken: string
@@ -1610,6 +1611,7 @@ export default function LearnerTrainingPage() {
               balance={personalBalance}
               balanceLoading={personalDataLoading}
               balanceError={balanceError}
+              request={merchRequest}
               onRetry={refreshPortal}
               onLogout={logout}
             />
@@ -2300,6 +2302,7 @@ function ProfileView({
   balance,
   balanceLoading,
   balanceError,
+  request,
   onRetry,
   onLogout,
 }: {
@@ -2308,6 +2311,7 @@ function ProfileView({
   balance: PersonalBalance | null
   balanceLoading: boolean
   balanceError: string
+  request: <T>(path: string, init?: RequestInit) => Promise<T>
   onRetry: () => void | Promise<void>
   onLogout: () => void | Promise<void>
 }) {
@@ -2387,6 +2391,8 @@ function ProfileView({
             />
           </div>
         </div>
+        {/* Where the name on the card came from, and a full name to propose when it has fewer than two words (26.11.2026). */}
+        <IdentityNameClaim request={request} onNameChanged={() => void onRetry()} />
         <section
           aria-label={t('Банковская карта')}
           className="rounded-2xl bg-white p-5 shadow-card"

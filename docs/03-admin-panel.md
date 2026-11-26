@@ -1,5 +1,24 @@
 # Admin Console
 
+## 26.11.2026: «ИИН указали сами» and where an IIN and a name came from
+
+**Pharmacists page** (`features/pharmacists`). The button «ИИН указали сами (N)», N = open claims, beside «Продавцы
+Standard-N» opens `IdentityClaimsModal`. Same gate as the seller mappings (`canManageStandardNMappings`: `SYSTEM_ADMIN`
+and `HQ_HEAD` of non-managed accounts; the three routes are NOT_READY in `unified-admin-routes.json`). Tabs: «Ждут
+решения», «Расхождения» (a claim the Standard-N directory contradicted in the last 30 days), «Решённые». A row shows the
+kind (IIN and name from a till, or a name from the cabinet), the Standard-N user with its name as the till reported it,
+the typed IIN (masked, «Показать ИИН» shows it) and name, the pharmacy and what to look at (`conflicts`: the IIN of
+another card, the same IIN in another claim or in the directory, an existing mapping, the other IIN the directory
+brought). «Подтвердить» asks one question that carries the full IIN, the name, the pharmacy and every flag, then sends
+exactly what was shown; «Отклонить» needs a reason, which the pharmacist reads at the till or in the cabinet. Strings are
+in `i18n/identityClaimsDict.ts` (ru and kk, the same keys); data hooks in `lib/queries/identityClaims.ts`.
+
+**Source of the IIN and the name.** The roster shows a line under the pharmacist's name: «ИИН и ФИО: из Стандарт-Н»,
+«... указал(а) сам(а), подтверждено» (green), «... при регистрации» or «... внесено в офисе» (`IdentitySourceNote`,
+`PharmacistDto.iinSource` and `nameSource`; an older backend shows nothing). A name changed by hand in the roster becomes
+«внесено в офисе», and the directory no longer rewrites it. The cabinet profile shows the same sources and, for a card
+whose name has fewer than two words, a field «Укажите ФИО полностью» (`features/learner/IdentityNameClaim.tsx`).
+
 ## 26.11.2026: analytics start, course preview, payouts in development
 
 **Analytics** (`features/dashboard`). The page opens with «Фармацевты в ePharm» (`PharmacistsUsage`): pharmacists in

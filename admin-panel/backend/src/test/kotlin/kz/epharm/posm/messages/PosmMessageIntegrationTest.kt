@@ -238,8 +238,8 @@ class PosmMessageIntegrationTest {
         // The till side: no key, or the key of another pharmacy, does not authenticate.
         feed(null, PHARMACY, "51").andExpect(status().isUnauthorized)
         feed(tillB, PHARMACY, "51").andExpect(status().isUnauthorized)
-        // Unknown Standard-N user: the same 404 as the personal window.
-        assertThat(feed(tillA, PHARMACY, "99").andExpect(status().isNotFound).json()["code"].asText()).isEqualTo("USER_NOT_FOUND")
+        // Unknown Standard-N user: the same 404 as the personal window, with the code the 1.0.101 till reads to show the IIN form.
+        assertThat(feed(tillA, PHARMACY, "99").andExpect(status().isNotFound).json()["code"].asText()).isEqualTo("STANDARDN_USER_UNKNOWN")
     }
 
     @Test fun `HQ list is newest first with counts`() {
