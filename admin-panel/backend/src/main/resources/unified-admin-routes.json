@@ -1228,6 +1228,36 @@
     "mode": "NOT_READY"
   },
   {
+    "api": "GET /api/admin/posm-at-till",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "till_messages",
+      "action": "view",
+      "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "GET /api/admin/posm-messages/courses",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "till_messages",
+      "action": "send",
+      "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "GET /api/admin/posm-messages/pharmacists",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "till_messages",
+      "action": "send",
+      "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
     "api": "GET /api/admin/tills/commands",
     "permission": {
       "module": "pharmacies_products",
@@ -2683,6 +2713,16 @@
       "module": "pharmacists",
       "subsection": "till_messages",
       "action": "withdraw",
+      "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "POST /api/admin/posm-messages/preview",
+    "permission": {
+      "module": "pharmacists",
+      "subsection": "till_messages",
+      "action": "send",
       "kind": "ORDINARY"
     },
     "mode": "NOT_READY"

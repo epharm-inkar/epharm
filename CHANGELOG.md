@@ -235,6 +235,20 @@ All notable production changes to Epharm are recorded here. The format follows
   with a working device key) are retried hourly and archived locally after 5 refusals.
 - Backend writes `fulfillment_devices.last_seen_at` at most once a minute and the pharmacist IIN
   observation only on change (at most hourly otherwise); presence TTL default is 150 s.
+- Course reminders to tills and «Сейчас за кассой» (owner, 26.11.2026; server and admin, the till is unchanged, POSM
+  1.0.100 is enough). Notices from HQ can go to «Не прошли курс» (`audience: course`, `programId`): the pharmacists whose
+  task of the chosen course is not finished, paused or cancelled; one button «Напомнить о курсе» chooses the course,
+  switches on «Только тем, кто сейчас за кассой» and writes «Пройдите курс «…» до ДД.ММ: Мой кабинет → Обучение». That
+  switch (`onlyAtTill`) works with every audience: the people are chosen when HQ presses «Отправить» and kept
+  (`posm_message_recipients`), so whoever sits down later does not get it; a person who finishes the course before the
+  till shows the notice does not get it either. Chosen people are found by surname, name, patronymic, phone digits, IIN,
+  pharmacy name or address (`GET /api/admin/posm-messages/pharmacists`, phones and IINs are searched, never returned),
+  and `POST /api/admin/posm-messages/preview` says how many will get a notice and how many of them are at a till now.
+  The server records who each till named (Redis `epharm:posm:presence:person`, table `pharmacist_till_seen`): a person is
+  at a till now when the till is online and named them in the last 20 minutes (`POSM_PERSON_PRESENCE_MINUTES`).
+  `GET /api/admin/posm-at-till` and the admin tab «Экраны» → «Сейчас за кассой» list them (by pharmacy and text, HQ
+  only); the roster shows «за кассой сейчас» or «был за кассой 26.11 14:05» (`atTillNow`, `lastTillSeenAt`). V127,
+  four routes in the API inventory (H15.19) and the route catalog (288 routes).
 ### Changed
 
 - POSM recommendation popup leads with the pharmacist's reward: a header with the largest

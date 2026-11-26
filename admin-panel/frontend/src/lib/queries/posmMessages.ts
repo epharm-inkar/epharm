@@ -4,7 +4,14 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { CreatePosmMessageRequest, PosmMessageDto } from '@/lib/api-types'
+import type {
+  CreatePosmMessageRequest,
+  PosmAudienceRequest,
+  PosmCourseOptionDto,
+  PosmMessageDto,
+  PosmMessagePreviewDto,
+  PosmPharmacistSearchDto,
+} from '@/lib/api-types'
 
 export const POSM_MESSAGES_POLL_MS = 60_000
 
@@ -53,5 +60,52 @@ export function useWithdrawPosmMessage() {
       )
     },
     onSettled: () => qc.invalidateQueries({ queryKey: posmMessageKeys.list() }),
+  })
+}
+
+// ─── Кому уйдёт: подсчёт до отправки, курсы и поиск людей (26.11.2026) ───
+
+export const POSM_PREVIEW_DEBOUNCE_MS = 350
+
+export const posmAudienceKeys = {
+  preview: (body: PosmAudienceRequest | null) => [...posmMessageKeys.all, 'preview', body ?? 'none'] as const,
+  courses: () => [...posmMessageKeys.all, 'courses'] as const,
+  people: (q: string) => [...posmMessageKeys.all, 'people', q] as const,
+}
+
+/**
+ * Сколько человек получат уведомление и сколько из них сейчас за кассой. Считает сервер (он знает, кто за кассой),
+ * ничего не пишет. Запрос повторяется раз в минуту: люди за кассами меняются.
+ */
+export function usePosmMessagePreview(body: PosmAudienceRequest | null) {
+  return useQuery<PosmMessagePreviewDto>({
+    queryKey: posmAudienceKeys.preview(body),
+    queryFn: ({ signal }) =>
+      api.post<PosmMessagePreviewDto>('/api/admin/posm-messages/preview', body, { signal }).then((r) => r.data),
+    enabled: body !== null,
+    refetchInterval: POSM_MESSAGES_POLL_MS,
+  })
+}
+
+/** Курсы, которые ещё не прошли: для «Напомнить о курсе». */
+export function usePosmCourses(enabled = true) {
+  return useQuery<PosmCourseOptionDto[]>({
+    queryKey: posmAudienceKeys.courses(),
+    queryFn: ({ signal }) =>
+      api.get<PosmCourseOptionDto[]>('/api/admin/posm-messages/courses', { signal }).then((r) => r.data),
+    enabled,
+    staleTime: 60_000,
+  })
+}
+
+/** Поиск адресатов-людей: фамилия, имя, отчество, телефон (цифры), ИИН, аптека. Пустой запрос даёт первых по алфавиту. */
+export function usePosmPharmacistSearch(q: string, enabled = true) {
+  return useQuery<PosmPharmacistSearchDto>({
+    queryKey: posmAudienceKeys.people(q),
+    queryFn: ({ signal }) =>
+      api
+        .get<PosmPharmacistSearchDto>('/api/admin/posm-messages/pharmacists', { params: { q: q || undefined, limit: 50 }, signal })
+        .then((r) => r.data),
+    enabled,
   })
 }

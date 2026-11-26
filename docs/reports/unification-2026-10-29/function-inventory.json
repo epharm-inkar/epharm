@@ -4475,6 +4475,78 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H15.19",
+    "group": "H15",
+    "name": "Уведомления на кассах: «Не прошли курс», «только тем, кто сейчас за кассой», поиск людей и страница «Сейчас за кассой»",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/notices-course-reminders",
+      "ui": [
+        "admin-panel/frontend/src/features/screens/TillMessagesPanel.tsx",
+        "admin-panel/frontend/src/features/screens/PharmacistSearchPicker.tsx",
+        "admin-panel/frontend/src/features/screens/AudiencePreview.tsx",
+        "admin-panel/frontend/src/features/screens/AtTillPanel.tsx",
+        "admin-panel/frontend/src/features/pharmacists/TillSeenBadge.tsx"
+      ],
+      "api": [
+        "GET /api/admin/posm-at-till",
+        "GET /api/admin/posm-messages/courses",
+        "GET /api/admin/posm-messages/pharmacists",
+        "POST /api/admin/posm-messages/preview"
+      ],
+      "jobs": [],
+      "data": [
+        "posm_messages",
+        "posm_message_recipients",
+        "pharmacist_till_seen",
+        "training_assignments",
+        "pharmacists"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/attill/AdminAtTillController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/attill/AtTillService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/attill/AtTillRules.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/attill/TillPersonPresence.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/messages/AdminPosmMessageController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/messages/PosmMessageAudiences.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/messages/PosmRecipientRules.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/pharmacists/service/PharmacistSearch.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V127__posm_message_targeting.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/attill/AtTillRulesTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/attill/TillPersonPresenceTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/attill/PosmNoticeTargetingIntegrationTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/messages/PosmRecipientRulesTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/pharmacists/PharmacistSearchTest.kt"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "POSM / уведомления на кассах",
+      "actions": [
+        "Отправить уведомление тем, кто не прошёл выбранный курс, одной кнопкой «Напомнить о курсе»",
+        "Отправить уведомление только тем, кто сейчас за кассой, любым адресатам",
+        "Найти человека по фамилии, имени, отчеству, телефону, ИИН или аптеке и отправить уведомление ему",
+        "Увидеть до отправки, сколько человек получат и сколько из них сейчас за кассой",
+        "Увидеть, какие фармацевты сейчас за кассой, и в списке фармацевтов, кто за кассой и когда был"
+      ],
+      "scope": "HQ (SYSTEM_ADMIN, HQ_HEAD) под /api/admin; касса называет человека своими запросами /api/posm/self (X-Posm-Key), отдельного вызова кассы нет"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Курс: уведомление уходит тем, у кого задание курса не завершено, не на паузе, не отменено и уже началось; курс из архива и заблокированные карточки не берутся",
+      "Кто завершил курс после отправки, на кассе уведомление не получает; закрыть уже показанное он может",
+      "Список людей курса и «только за кассой» запоминается при отправке: кто сел за кассу или получил задание позже, не получает",
+      "«За кассой сейчас»: касса на связи (150 секунд) и назвала человека за последние 20 минут; за кассой один человек, последний",
+      "Ответы админки не содержат телефон и ИИН, только последние четыре цифры телефона",
+      "Отправка с пустым списком (никого за кассой, все прошли курс) отказана с понятным сообщением, ничего не записано"
+    ],
+    "risks": [
+      "Человек считается за кассой по последней проверке кассы: после ухода он может числиться ещё до 20 минут, а смена кассира без проверки кассы не видна до следующей",
+      "Касса без своего ключа (старый общий ключ сети) человека не называет и в списке «Сейчас за кассой» не появляется"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H16.01",
     "group": "H16",
     "name": "Открыть контекст подписанного QR challenge",

@@ -46,6 +46,7 @@ import { useT } from '@/i18n'
 import { ActivatePharmacistModal } from './ActivatePharmacistModal'
 import { CreatePharmacistModal } from './CreatePharmacistModal'
 import { StandardNSellerMappingsModal } from './StandardNSellerMappingsModal'
+import { TillSeenBadge } from './TillSeenBadge'
 import { IdentityClaimsModal } from './IdentityClaimsModal'
 import { IdentitySourceNote } from './IdentitySourceNote'
 import { ASSIGNMENT_STATUS_LABEL, FORMAT_LABEL, dateTime } from '@/features/lms/training-ui'
@@ -674,6 +675,9 @@ export default function PharmacistsPage() {
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-[12px] text-ink-500">
                           {lastActiveLabel(p.lastActiveAt, now)}
+                          <div className="mt-0.5">
+                            <TillSeenBadge atTillNow={p.atTillNow} lastSeenAt={p.lastTillSeenAt} />
+                          </div>
                         </td>
                         <td className="px-3 py-2.5">
                           <span
