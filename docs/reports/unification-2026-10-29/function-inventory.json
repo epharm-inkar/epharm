@@ -8661,6 +8661,62 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "L19.11",
+    "group": "L19",
+    "name": "Вкладка «Бонусы»: товары с бонусом, свои продажи, рейтинг фармацевтов и аптек",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/cabinet-earn-tab",
+      "ui": [
+        "admin-panel/frontend/src/features/learner/earn/EarnSection.tsx",
+        "admin-panel/frontend/src/features/learner/LearnerTrainingPage.tsx",
+        "admin-panel/frontend/src/app/router.tsx"
+      ],
+      "api": [
+        "GET /api/mobile/me/earn/products",
+        "GET /api/mobile/me/earn/products/{productId}",
+        "GET /api/mobile/me/earn/summary",
+        "GET /api/mobile/me/earn/leaderboard"
+      ],
+      "jobs": [],
+      "data": [
+        "pharmacists",
+        "rules",
+        "promos",
+        "products",
+        "pos_sales",
+        "recommendation_events",
+        "pharmacies"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/earn/EarnController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/earn/EarnService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/earn/EarnData.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/earn/EarnDtos.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/mobile/earn/EarnServiceTest.kt",
+        "admin-panel/frontend/src/features/learner/earn/EarnSection.test.tsx"
+      ]
+    },
+    "target": {
+      "section": "ЛК фармацевта",
+      "subsection": "Рекомендации / баланс / сертификаты / профиль",
+      "actions": [
+        "Вкладка «Бонусы»: товары с бонусом, свои продажи, рейтинг фармацевтов и аптек"
+      ],
+      "scope": "Свой PharmacistPrincipal; только чтение; в рейтинге коллеги как «Фамилия И.», аптеки по названию"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Товары: активные правила с бонусом у кампаний в их датах; «Есть в моей аптеке» включён по умолчанию и означает продажи аптеки за 30 дней",
+      "Сортировка по упаковкам сети за 7 дней или по бонусу; карточка: когда предлагать, что сказать, описание и характеристики",
+      "Продажи и бонус за сегодня, неделю, месяц по времени Алматы; рейтинг по бонусу продаж по подсказкам; private/no-store"
+    ],
+    "risks": [
+      "Остатков аптек в ePharm нет: «Есть в моей аптеке» по продажам за 30 дней, не по остатку"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "L20.01",
     "group": "L20",
     "name": "Flutter overview / assignment / start / stage progress",
