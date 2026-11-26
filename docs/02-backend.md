@@ -1331,6 +1331,72 @@ HQ writes a notice to pharmacists (25.11.2026, package `posm.messages`, tables `
 `POST /api/posm/self/tasks` gains `requiredOpenCount`: required courses not finished (new, in progress or overdue;
 paused ones not counted). The till keeps its red dot while it is above zero.
 
+## Notices to people who have not finished a course, and who is at a till now (26.11.2026)
+
+The owner's request of 26.11.2026: send a pharmacist «пройдите курс» with one button, to everyone who has not finished
+it and is at a till now; target a notice at chosen people (surname, name, patronymic, phone, IIN, pharmacy); check at
+once whether a pharmacist is active now. Server and admin only: the till (POSM 1.0.100) already pulls the notices of
+the person signed in to Standard-N, nothing changes on the till. Packages `posm.attill` and `posm.messages`, V127.
+
+**Who is at a till right now** (`AtTillRules`, `TillPersonPresence`, `AtTillService`). The till names the Standard-N
+user with its 15-minute check and on a cashier change; the server records the person it resolved on three till
+requests, `POST /api/posm/self`, `/self/tasks` and `/self/messages` (not on `shown` and `closed`, which a till may
+resend hours later). The record lives in the Redis hash `epharm:posm:presence:person` next to the device presence: one
+field per till (`pharmacyId`, `\u001F`, computer name, lower case, because the heartbeat and the key spell the name in
+different case), the value holds the pharmacist, the pharmacy, the computer, when this person appeared (`since`) and
+when the till last named them (`seenAt`). An in-memory copy stands in when Redis is down, as in `DevicePresenceService`.
+A till keeps one person, the latest: a colleague who signs in takes over. A person is **at a till now** when
+`DevicePresenceService` counts that till online (heartbeat within 150 s) and the till named them within
+`app.posm.person-presence-minutes` (`POSM_PERSON_PRESENCE_MINUTES`, default 20: the 15-minute check and a margin; kept
+between 5 and 180). `since` survives the checks of one shift and starts again after a gap longer than the window.
+Table `pharmacist_till_seen` keeps the last time each pharmacist was seen at a till (one row per pharmacist, written at
+most once in five minutes per person and server instance, survives a Redis loss). Recording never fails a till request;
+a till without its own key (the retired fleet key) has no identity and is not recorded.
+
+| Route | Who | Answer |
+| --- | --- | --- |
+| `GET /api/admin/posm-at-till?pharmacyId=&q=` | `SYSTEM_ADMIN`, `HQ_HEAD` | `{observedAt, windowMinutes, total, shown, items}`, `no-store`; an item: `{pharmacistId, name, phoneTail, homePharmacyId, homePharmacyName, pharmacyId, pharmacyName, city, address, deviceId, since, seenAt}`; `pharmacyId` is the pharmacy of the till, `q` the search below, `total` everybody at a till before the filters |
+| `GET /api/admin/pharmacists`, `/{id}` | as before | every pharmacist now has `atTillNow` and `lastTillSeenAt` (null: never seen at a till); the roster never fails over them |
+| `GET /api/admin/posm-messages/pharmacists?q=&limit=` | `SYSTEM_ADMIN`, `HQ_HEAD` | `{total, items}`, the picker's search; an item: `{id, name, pharmacyName, city, address, phoneTail, status, atTillNow, lastTillSeenAt}`; limit 50 by default, at most 100 |
+| `GET /api/admin/posm-messages/courses` | same | `[{id, name, openCount, dueOn}]`, courses with people who have not finished them, most people first |
+| `POST /api/admin/posm-messages/preview` | same | the body of the send without title, text and days; `{audience, recipients, atTillNow, frozen, sample, sampleMore, windowMinutes}`; writes nothing |
+
+**Search** (`PharmacistSearch`, pure, `PharmacistSearchTest`). Every word of the query must match: any part of the
+name, without regard to case (Kazakh letters count as their Russian twins, ё as е); the name, city or address of one of
+the person's pharmacies; a phone by its digits however typed or stored (`+7 701 123-45-67`, `8 (701) 1234567`; a number
+typed with 8 or 7 in front matches by its last ten digits) and an IIN by digits, from four digits. A number of fewer
+than four digits («103» in «Абая 103») is an address part only. Blocked cards are not offered. The answers carry only
+the last four digits of the phone; the phone and the IIN are searched but never returned.
+
+**Audiences.** `audience` of `POST /api/admin/posm-messages` is `all | pharmacies | pharmacists | course`, and any of
+them takes `onlyAtTill: true`.
+
+- `course` with `programId`: the pharmacists who have an assignment of any version of the program that is not
+  `completed`, `cancelled` or `paused`, has already started (`starts_at` empty or past), and whose card is not blocked
+  (`PosmMessageAudiences.OPEN_ASSIGNMENT`, the same rule as the till's «required courses» dot). Unknown program: 400
+  «Курс не найден»; archived (`status` or `archived_at`): 400 «Курс в архиве».
+- `onlyAtTill`: only the people at a till at the moment HQ presses «Отправить»; for `pharmacies` the person sits at a
+  till of a chosen pharmacy or their card belongs to one, for `pharmacists` they are among the chosen, for `course`
+  they have not finished it.
+- **The people are chosen once.** A `course` notice and any notice with `onlyAtTill` keep their people in
+  `posm_message_recipients` (`PosmRecipientRules`, `PosmRecipientRulesTest`), `recipients_total` is their number and the
+  generated column `posm_messages.frozen` is true. Whoever sits down at a till or gets the course assigned later does
+  not get it. `all`, `pharmacies` and `pharmacists` without the switch are judged live as before.
+- **A person who finishes the course before the till shows the notice is not nagged.** The till's query for a course
+  notice requires an open assignment of the course (`PosmMessageService.COURSE_STILL_OPEN`), so a completed, paused or
+  cancelled assignment ends the notice for that person at the next check (15 minutes at most, the card leaves the
+  screen like a withdrawn one). The reports `shown` and `closed` do not use it: a card already on screen can still be
+  closed and is counted.
+- A notice whose chosen people turn out to be nobody (nobody of the audience at a till, everybody finished the course)
+  is refused with 400 and the reason, nothing is written. At most 20 000 people.
+- The admin list carries `onlyAtTill`, `programId` and `programName` (the name as it was when the notice was sent).
+
+The four routes are in the route catalog as `till_messages` `view` / `send`, `NOT_READY` like the other notice routes
+(managed accounts get 403, the legacy HQ roles work); the catalog has 288 routes. Setting: `app.posm.person-presence-minutes`.
+Tests: `AtTillRulesTest`, `TillPersonPresenceTest` (Redis mocked), `PharmacistSearchTest`, `PosmRecipientRulesTest`,
+`PosmMessageRulesTest`, and on PostgreSQL `PosmNoticeTargetingIntegrationTest` (the page, the roster, a course
+reminder through completion, «only at a till», the count, the search, who may call what).
+
 ## Remote till commands
 
 HQ manages tills without AnyDesk (25.11.2026, package `posm.commands`, table `till_commands`, V117). A command is

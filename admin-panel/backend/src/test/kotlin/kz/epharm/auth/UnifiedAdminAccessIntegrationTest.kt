@@ -366,8 +366,9 @@ class UnifiedAdminAccessIntegrationTest {
         // routes of notices to pharmacists at the till (POSM 1.0.99), NOT_READY like the till commands; 278 with
         // POST /api/admin/finance/sales-premium/import (the sales premium load, NOT_READY like the payouts); 281 with
         // the collector's recompute, month statement and matrix upload (26.11.2026), NOT_READY like the import; 284 with
-        // the three routes of «ИИН указали сами» (identity claims, 26.11.2026), NOT_READY like the seller mappings.
-        assertThat(catalog.routes).hasSize(284)
+        // the three routes of «ИИН указали сами» (identity claims, 26.11.2026), NOT_READY like the seller mappings; 288 with
+        // the four routes of «Сейчас за кассой» and of the course and people choice for notices (26.11.2026), NOT_READY too.
+        assertThat(catalog.routes).hasSize(288)
         val premiumRoutes = catalog.routes.filter { it.permission.subsection == "sales_premium" }
         assertThat(premiumRoutes.map { it.api }).containsExactlyInAnyOrder(
             "POST /api/admin/finance/sales-premium/import",
@@ -383,7 +384,7 @@ class UnifiedAdminAccessIntegrationTest {
             assertThat(route.mode).isEqualTo(ScopeIntegration.NOT_READY)
             assertThat(route.permission.module).isEqualTo("pharmacists")
         }
-        assertThat(catalog.routes.filter { it.permission.subsection == "till_messages" }).hasSize(3).allSatisfy { route ->
+        assertThat(catalog.routes.filter { it.permission.subsection == "till_messages" }).hasSize(7).allSatisfy { route ->
             assertThat(route.mode).isEqualTo(ScopeIntegration.NOT_READY)
             assertThat(route.permission.module).isEqualTo("pharmacists")
         }

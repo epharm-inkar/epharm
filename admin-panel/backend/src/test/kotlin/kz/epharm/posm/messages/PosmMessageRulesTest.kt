@@ -3,6 +3,7 @@ package kz.epharm.posm.messages
 import kz.epharm.shared.error.AppException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -13,6 +14,7 @@ import java.util.UUID
 /** Notices from HQ at the till: what HQ may send, who gets it, what a till shows. Pure rules, no database. */
 class PosmMessageRulesTest {
     private val now = Instant.parse("2026-11-25T09:00:00Z")
+    private val PROGRAM = "0b7a1f2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b"
     private fun days(n: Long): Instant = now.plus(Duration.ofDays(n))
 
     private fun request(
@@ -22,7 +24,9 @@ class PosmMessageRulesTest {
         pharmacyIds: List<String>? = null,
         pharmacistIds: List<String>? = null,
         days: Int? = null,
-    ) = CreatePosmMessageRequest(title, text, audience, pharmacyIds, pharmacistIds, days)
+        programId: String? = null,
+        onlyAtTill: Boolean? = null,
+    ) = CreatePosmMessageRequest(title, text, audience, pharmacyIds, pharmacistIds, days, programId, onlyAtTill)
 
     private fun invalid(block: () -> Unit): String = assertThrows<AppException> { block() }.let {
         assertEquals(400, it.status.value())
@@ -53,9 +57,58 @@ class PosmMessageRulesTest {
         invalid { PosmMessageRules.draft(request(audience = "pharmacists", pharmacistIds = (1..2001).map { "p$it" })) }
     }
 
-    @Test fun `only the three audiences are accepted`() {
-        for (raw in listOf(null, "", "ALL", "pharmacy", "everyone")) invalid { PosmMessageRules.draft(request(audience = raw)) }
+    @Test fun `only the four audiences are accepted`() {
+        for (raw in listOf(null, "", "ALL", "pharmacy", "everyone", "Course", "courses")) invalid { PosmMessageRules.draft(request(audience = raw)) }
         assertEquals(PosmMessageAudience.ALL, PosmMessageRules.draft(request(audience = " all ")).audience)
+        assertEquals(PosmMessageAudience.COURSE, PosmMessageRules.draft(request(audience = "course", programId = PROGRAM)).audience)
+    }
+
+    @Test fun `a course reminder needs a course, written as a UUID, and ignores chosen pharmacies and people`() {
+        val draft = PosmMessageRules.draft(
+            request(audience = "course", programId = " $PROGRAM ", pharmacyIds = listOf("ph_1"), pharmacistIds = listOf("ph_a")),
+        )
+        assertEquals(UUID.fromString(PROGRAM), draft.programId)
+        assertTrue(draft.pharmacyIds.isEmpty())
+        assertTrue(draft.pharmacistIds.isEmpty())
+        assertFalse(draft.onlyAtTill)
+        assertTrue(draft.choice.frozen)
+
+        assertEquals("Выберите курс", invalid { PosmMessageRules.draft(request(audience = "course")) })
+        assertEquals("Выберите курс", invalid { PosmMessageRules.draft(request(audience = "course", programId = "  ")) })
+        for (raw in listOf("not-a-uuid", "1-1-1-1-1", "${PROGRAM}0", "{$PROGRAM}", "'; DROP TABLE posm_messages; --")) {
+            assertEquals("programId: неверный идентификатор курса", invalid { PosmMessageRules.draft(request(audience = "course", programId = raw)) })
+        }
+        // A course given to another audience is not read.
+        assertNull(PosmMessageRules.draft(request(audience = "all", programId = PROGRAM)).programId)
+    }
+
+    @Test fun `the switch only at a till goes with any audience and freezes the people`() {
+        for (audience in listOf("all", "pharmacies", "pharmacists", "course")) {
+            val choice = PosmMessageRules.choice(
+                request(audience = audience, pharmacyIds = listOf("ph_1"), pharmacistIds = listOf("ph_a"), programId = PROGRAM, onlyAtTill = true),
+            )
+            assertTrue(choice.onlyAtTill)
+            assertTrue(choice.frozen)
+        }
+        val plain = PosmMessageRules.choice(request(audience = "all"))
+        assertFalse(plain.onlyAtTill)
+        assertFalse(plain.frozen)
+        assertFalse(PosmMessageRules.choice(request(audience = "all", onlyAtTill = false)).frozen)
+        assertTrue(PosmMessageRules.draft(request(audience = "all", onlyAtTill = true)).onlyAtTill)
+    }
+
+    @Test fun `the count before sending needs no title and no text, only the people`() {
+        val choice = PosmMessageRules.choice(request(title = null, text = null, audience = "pharmacists", pharmacistIds = listOf("ph_a")))
+        assertEquals(listOf("ph_a"), choice.pharmacistIds)
+        // The same checks as for the send.
+        assertEquals("Выберите хотя бы одного сотрудника", invalid { PosmMessageRules.choice(request(title = null, text = null, audience = "pharmacists")) })
+        invalid { PosmMessageRules.choice(request(audience = "nobody")) }
+    }
+
+    @Test fun `the search shows 50 people by default and at most 100`() {
+        assertEquals(50, PosmMessageRules.searchLimit(null))
+        assertEquals(1, PosmMessageRules.searchLimit(0))
+        assertEquals(100, PosmMessageRules.searchLimit(10_000))
     }
 
     @Test fun `the title is one clean line of at most 120 characters`() {

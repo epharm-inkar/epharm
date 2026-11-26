@@ -13,8 +13,11 @@ import kz.epharm.pharmacists.dto.UpdatePharmacistRequest
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
+import kz.epharm.posm.attill.AtTillService
+import kz.epharm.posm.attill.PharmacistTillFlag
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
+import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -37,7 +40,10 @@ class PharmacistService(
     private val activityService: PharmacistActivityService? = null,
     /** Tells the sales premium that a card can hold money now; handled after this transaction commits. */
     private val events: ApplicationEventPublisher? = null,
+    /** Who is at a till now and when each pharmacist was last seen at one (26.11.2026); absent in unit tests. */
+    private val atTill: AtTillService? = null,
 ) {
+    private val log = LoggerFactory.getLogger(PharmacistService::class.java)
 
     @Transactional(readOnly = true)
     fun list(status: PharmacistStatus? = null, pharmacyId: String? = null): List<PharmacistDto> {
@@ -55,11 +61,28 @@ class PharmacistService(
         // One aggregate per response: «Активные» in the admin means worked with ePharm in the last 7 days.
         val lastActive = if (rows.isEmpty()) emptyMap()
             else activityService?.lastActiveSince(Instant.now().minus(30, ChronoUnit.DAYS)).orEmpty()
-        return rows.map { projected(it, money[it.id]).copy(lastActiveAt = lastActive[it.id]) }
+        val tillFlags = if (rows.isEmpty()) emptyMap() else tillFlags()
+        return rows.map { row ->
+            projected(row, money[row.id]).copy(lastActiveAt = lastActive[row.id]).withTillFlag(tillFlags[row.id])
+        }
     }
 
     @Transactional(readOnly = true)
-    fun get(id: String): PharmacistDto = projected(loadOrThrow(id))
+    fun get(id: String): PharmacistDto = projected(loadOrThrow(id)).let { it.withTillFlag(tillFlags()[it.id]) }
+
+    /**
+     * Who is at a till now and when each person was last seen at one. The roster never fails over it: without the
+     * flags the column is simply empty.
+     */
+    private fun tillFlags(): Map<String, PharmacistTillFlag> = try {
+        atTill?.flags().orEmpty()
+    } catch (ex: RuntimeException) {
+        log.warn("Roster: who is at a till was not read: {}", ex.message)
+        emptyMap()
+    }
+
+    private fun PharmacistDto.withTillFlag(flag: PharmacistTillFlag?) =
+        if (flag == null) this else copy(atTillNow = flag.atTillNow, lastTillSeenAt = flag.lastSeenAt)
 
     @Transactional
     fun create(req: CreatePharmacistRequest): PharmacistDto {

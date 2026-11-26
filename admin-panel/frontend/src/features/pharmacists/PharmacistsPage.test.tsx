@@ -700,6 +700,28 @@ describe('PharmacistsPage — список и actions', () => {
     expect(within(salesMetric).getByText('фармацевты заработали 0 ₸')).toBeInTheDocument()
   })
 
+  it('в строке видно, кто сейчас за кассой, а кто и когда был', () => {
+    setPharmacists([
+      mkPharmacist({ id: 'here', name: 'Сидит за кассой', atTillNow: true, lastTillSeenAt: '2026-11-26T12:00:00Z' }),
+      mkPharmacist({ id: 'was', name: 'Был за кассой', atTillNow: false, lastTillSeenAt: '2026-11-25T12:00:00Z' }),
+      mkPharmacist({ id: 'never', name: 'Не был за кассой', atTillNow: false, lastTillSeenAt: null }),
+      mkPharmacist({ id: 'old', name: 'Старый backend' }),
+    ])
+    renderPage()
+    expect(within(screen.getByTestId('pharmacist-row-here')).getByTestId('till-seen-now')).toHaveTextContent('за кассой сейчас')
+    // Когда человек за кассой сейчас, прошлое время не пишем.
+    expect(within(screen.getByTestId('pharmacist-row-here')).queryByTestId('till-seen-last')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('pharmacist-row-was')).getByTestId('till-seen-last')).toHaveTextContent(
+      /^был за кассой 25\.11 \d{2}:\d{2}$/,
+    )
+    expect(within(screen.getByTestId('pharmacist-row-was')).queryByTestId('till-seen-now')).not.toBeInTheDocument()
+    for (const id of ['never', 'old']) {
+      const row = screen.getByTestId(`pharmacist-row-${id}`)
+      expect(within(row).queryByTestId('till-seen-now')).not.toBeInTheDocument()
+      expect(within(row).queryByTestId('till-seen-last')).not.toBeInTheDocument()
+    }
+  })
+
   it('сортирует по продажам и заработку за 30 дней, повторный клик возвращает порядок по имени', async () => {
     setPharmacists([
       mkPharmacist({ id: 'a', name: 'Абаева', sales30d: 1_000, earned30d: 900 }),

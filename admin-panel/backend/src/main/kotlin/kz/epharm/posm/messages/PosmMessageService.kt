@@ -1,6 +1,7 @@
 package kz.epharm.posm.messages
 
 import kz.epharm.pharmacists.entity.PharmacistEntity
+import kz.epharm.posm.attill.TillPersonPresence
 import kz.epharm.posm.self.PosmSelfPersonResolver
 import kz.epharm.posm.self.PosmSelfRequest
 import kz.epharm.posm.service.PosmDeviceIdentity
@@ -26,12 +27,19 @@ import java.util.concurrent.atomic.AtomicReference
  * Notices from HQ to pharmacists at the till (25.11.2026). HQ writes and sends them under /api/admin; the till asks
  * for the notices of the person signed in to Standard-N at it, reports when one appeared on screen and when the person
  * closed it. The targeting rule is PosmMessageRules.isFor; the SQL here follows it.
+ *
+ * Since 26.11.2026 a notice can also go to the pharmacists who have not finished a course, and any notice can go only to
+ * the people at a till when it is sent. Those two are chosen once, at sending, and kept in `posm_message_recipients`
+ * (PosmMessageAudiences, PosmRecipientRules); a course notice stops reaching a person who finishes the course after
+ * that (COURSE_STILL_OPEN).
  */
 @Service
 class PosmMessageService(
     private val jdbc: JdbcTemplate,
     private val named: NamedParameterJdbcTemplate,
     private val people: PosmSelfPersonResolver,
+    private val audiences: PosmMessageAudiences,
+    private val presence: TillPersonPresence,
 ) {
     private val log = LoggerFactory.getLogger(PosmMessageService::class.java)
     private val stamp = AtomicReference<CachedStamp?>(null)
@@ -42,18 +50,19 @@ class PosmMessageService(
     fun create(request: CreatePosmMessageRequest, createdBy: String): PosmMessageAdminDto {
         val draft = PosmMessageRules.draft(request)
         val actor = createdBy.trim().take(255).ifEmpty { unauthorized() }
-        when (draft.audience) {
-            PosmMessageAudience.PHARMACIES -> requireKnown("pharmacies", draft.pharmacyIds, "Не найдены аптеки")
-            PosmMessageAudience.PHARMACISTS -> requireKnown("pharmacists", draft.pharmacistIds, "Не найдены сотрудники")
-            PosmMessageAudience.ALL -> Unit
-        }
+        val program = audiences.validate(draft.choice)
+        // The people of a course notice, or of one sent only to people at a till, are chosen here and kept.
+        val recipients = audiences.resolve(draft.choice)
+        recipients.frozenIds?.let { if (it.isEmpty()) noRecipients(draft) }
         val id = UUID.randomUUID()
         jdbc.update(
             """
-            INSERT INTO posm_messages (id, title, body, audience, recipients_total, created_by, created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, now(), now() + (? * interval '1 day'))
+            INSERT INTO posm_messages (id, title, body, audience, recipients_total, created_by, created_at, expires_at,
+                                       program_id, program_name, only_at_till)
+            VALUES (?, ?, ?, ?, ?, ?, now(), now() + (? * interval '1 day'), ?, ?, ?)
             """.trimIndent(),
-            id, draft.title, draft.text, draft.audience.wire, recipientsTotal(draft), actor, draft.days,
+            id, draft.title, draft.text, draft.audience.wire, recipients.total, actor, draft.days,
+            program?.id, program?.name, draft.onlyAtTill,
         )
         if (draft.pharmacyIds.isNotEmpty()) {
             jdbc.batchUpdate(
@@ -67,13 +76,23 @@ class PosmMessageService(
                 draft.pharmacistIds.map { arrayOf<Any>(id, it) },
             )
         }
+        recipients.frozenIds?.let { ids ->
+            jdbc.batchUpdate(
+                "INSERT INTO posm_message_recipients (message_id, pharmacist_id) VALUES (?, ?)",
+                ids.map { arrayOf<Any>(id, it) },
+            )
+        }
         forgetStampAfterCommit()
         log.info(
-            "POSM message {} for {} ({} targets, {} days) sent by {}",
-            id, draft.audience.wire, draft.pharmacyIds.size + draft.pharmacistIds.size, draft.days, actor,
+            "POSM message {} for {} ({} targets, {} recipients{}, {} days) sent by {}",
+            id, draft.audience.wire, draft.pharmacyIds.size + draft.pharmacistIds.size, recipients.total,
+            if (draft.onlyAtTill) ", only at a till" else "", draft.days, actor,
         )
         return find(id) ?: notFound()
     }
+
+    /** POST /api/admin/posm-messages/preview: who a notice would reach, before HQ sends it. */
+    fun preview(request: CreatePosmMessageRequest): PosmMessagePreviewDto = audiences.preview(request)
 
     @Transactional(readOnly = true)
     fun list(limitRaw: Int?): List<PosmMessageAdminDto> {
@@ -101,6 +120,8 @@ class PosmMessageService(
     /** The notices of the person signed in to Standard-N at this till: open ones and the last 30 days. */
     fun forPerson(device: PosmDeviceIdentity, req: PosmSelfRequest): PosmSelfMessagesDto {
         val person = people.person(device, req)
+        // The till names the person signed in to Standard-N: that is who is at the till now (AtTillService).
+        presence.record(device, person.id)
         val till = device.pharmacyId!!
         val rows = named.query(
             """
@@ -110,6 +131,7 @@ class PosmMessageService(
             WHERE m.withdrawn_at IS NULL
               AND m.created_at >= now() - (:days * interval '1 day')
               AND $FOR_PERSON
+              AND $COURSE_STILL_OPEN
             ORDER BY (r.closed_at IS NULL AND m.expires_at > now()) DESC, m.created_at DESC, m.id DESC
             LIMIT :limit
             """.trimIndent(),
@@ -202,33 +224,6 @@ class PosmMessageService(
     private fun find(id: UUID): PosmMessageAdminDto? =
         withTargets(jdbc.query("$SELECT_ADMIN WHERE m.id = ?", { rs, _ -> adminRow(rs) }, id)).singleOrNull()
 
-    private fun requireKnown(table: String, ids: List<String>, message: String) {
-        val known = named.queryForList(
-            "SELECT id FROM $table WHERE id IN (:ids)",
-            mapOf("ids" to ids),
-            String::class.java,
-        ).toSet()
-        val unknown = ids.filterNot { it in known }
-        if (unknown.isNotEmpty()) {
-            throw AppException(ErrorCode.VALIDATION_FAILED, "$message: " + unknown.take(5).joinToString(", "))
-        }
-    }
-
-    private fun recipientsTotal(draft: PosmMessageDraft): Int = when (draft.audience) {
-        PosmMessageAudience.ALL ->
-            jdbc.queryForObject("SELECT count(*) FROM pharmacists WHERE status = 'active'", Int::class.java)
-        PosmMessageAudience.PHARMACIES -> named.queryForObject(
-            "SELECT count(*) FROM pharmacists WHERE status = 'active' AND pharmacy_id IN (:ids)",
-            mapOf("ids" to draft.pharmacyIds),
-            Int::class.java,
-        )
-        PosmMessageAudience.PHARMACISTS -> named.queryForObject(
-            "SELECT count(*) FROM pharmacists WHERE status <> 'blocked' AND id IN (:ids)",
-            mapOf("ids" to draft.pharmacistIds),
-            Int::class.java,
-        )
-    } ?: 0
-
     private fun requireForPerson(id: UUID, person: PharmacistEntity, tillPharmacyId: String, allowWithdrawn: Boolean) {
         val withdrawn = named.query(
             "SELECT m.withdrawn_at IS NOT NULL AS withdrawn FROM posm_messages m WHERE m.id = :id AND $FOR_PERSON",
@@ -292,6 +287,9 @@ class PosmMessageService(
                 withdrawnAt = row.withdrawnAt,
                 withdrawnBy = row.withdrawnBy,
                 active = row.active,
+                onlyAtTill = row.onlyAtTill,
+                programId = row.programId,
+                programName = row.programName,
             )
         }
     }
@@ -310,6 +308,9 @@ class PosmMessageService(
         withdrawnAt = rs.getTimestamp("withdrawn_at")?.toInstant(),
         withdrawnBy = rs.getString("withdrawn_by"),
         active = rs.getBoolean("active"),
+        onlyAtTill = rs.getBoolean("only_at_till"),
+        programId = rs.getObject("program_id", UUID::class.java),
+        programName = rs.getString("program_name"),
     )
 
     private fun ack(id: UUID, rs: ResultSet) = PosmSelfMessageAckDto(
@@ -332,6 +333,9 @@ class PosmMessageService(
         val withdrawnAt: Instant?,
         val withdrawnBy: String?,
         val active: Boolean,
+        val onlyAtTill: Boolean,
+        val programId: UUID?,
+        val programName: String?,
     )
 
     private data class CachedStamp(val value: Instant?, val atNanos: Long)
@@ -342,20 +346,39 @@ class PosmMessageService(
         const val SELECT_ADMIN = """
             SELECT m.id, m.title, m.body, m.audience, m.recipients_total, m.created_by, m.created_at, m.expires_at,
                    m.withdrawn_at, m.withdrawn_by, coalesce(r.shown, 0) AS shown_count, coalesce(r.closed, 0) AS closed_count,
-                   (m.withdrawn_at IS NULL AND m.expires_at > now()) AS active
+                   (m.withdrawn_at IS NULL AND m.expires_at > now()) AS active,
+                   m.only_at_till, m.program_id, m.program_name
             FROM posm_messages m
             LEFT JOIN LATERAL (
                 SELECT count(*) AS shown, count(closed_at) AS closed FROM posm_message_receipts x WHERE x.message_id = m.id
             ) r ON true
         """
 
-        /** PosmMessageRules.isFor in SQL; :person, :till and :home are bound by personParams. */
+        /**
+         * PosmMessageRules.isFor in SQL; :person, :till and :home are bound by personParams. A frozen notice (a course,
+         * or «only at a till») goes to the people kept with it (V127); the others are judged live.
+         */
         const val FOR_PERSON = """
-            (m.audience = 'all'
-             OR (m.audience = 'pharmacies' AND EXISTS (
-                    SELECT 1 FROM posm_message_targets t WHERE t.message_id = m.id AND t.pharmacy_id IN (:till, :home)))
-             OR (m.audience = 'pharmacists' AND EXISTS (
-                    SELECT 1 FROM posm_message_targets t WHERE t.message_id = m.id AND t.pharmacist_id = :person)))
+            ((m.frozen AND EXISTS (
+                    SELECT 1 FROM posm_message_recipients rc WHERE rc.message_id = m.id AND rc.pharmacist_id = :person))
+             OR (NOT m.frozen AND (m.audience = 'all'
+                 OR (m.audience = 'pharmacies' AND EXISTS (
+                        SELECT 1 FROM posm_message_targets t WHERE t.message_id = m.id AND t.pharmacy_id IN (:till, :home)))
+                 OR (m.audience = 'pharmacists' AND EXISTS (
+                        SELECT 1 FROM posm_message_targets t WHERE t.message_id = m.id AND t.pharmacist_id = :person)))))
+        """
+
+        /**
+         * A course notice reaches a person only while they still have an open assignment of the course: one who finished
+         * it (or whom HQ paused or released from it) after the notice was sent is not nagged. The reports «shown» and
+         * «closed» do not use it: a notice already on screen can still be closed.
+         */
+        const val COURSE_STILL_OPEN = """
+            (m.audience <> 'course' OR EXISTS (
+                SELECT 1 FROM training_assignments a
+                JOIN training_program_versions v ON v.id = a.program_version_id
+                WHERE v.program_id = m.program_id AND a.pharmacist_id = :person
+                  AND ${PosmMessageAudiences.OPEN_ASSIGNMENT}))
         """
 
         fun targetName(pharmacy: String?, address: String?, pharmacist: String?, id: String): String = when {
@@ -366,6 +389,16 @@ class PosmMessageService(
         }
 
         fun notFound(): Nothing = throw AppException(ErrorCode.NOT_FOUND, "Уведомление не найдено", HttpStatus.NOT_FOUND)
+
+        /** A notice whose people are chosen at sending, with nobody chosen: nothing to send, and HQ is told why. */
+        fun noRecipients(draft: PosmMessageDraft): Nothing = throw AppException(
+            ErrorCode.VALIDATION_FAILED,
+            when {
+                draft.onlyAtTill -> "Сейчас за кассой нет никого из адресатов. Отправьте позже или снимите «Только тем, кто сейчас за кассой»"
+                draft.audience == PosmMessageAudience.COURSE -> "Некому напоминать: все уже прошли этот курс"
+                else -> "Нет адресатов"
+            },
+        )
 
         fun unauthorized(): Nothing = throw AppException(ErrorCode.UNAUTHORIZED, "Admin identity is required", HttpStatus.UNAUTHORIZED)
     }

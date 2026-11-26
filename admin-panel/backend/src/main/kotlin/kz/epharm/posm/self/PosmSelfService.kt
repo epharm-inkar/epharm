@@ -9,6 +9,7 @@ import kz.epharm.mobile.auth.service.MobileRefreshTokenService
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.pharmacists.service.PharmacistPhoneOwners
+import kz.epharm.posm.attill.TillPersonPresence
 import kz.epharm.posm.service.PosmDeviceIdentity
 import kz.epharm.shared.PhoneUtil
 import kz.epharm.shared.error.AppException
@@ -64,9 +65,12 @@ class PosmSelfService(
     private val credentialVault: LearnerPasswordVault,
     private val phoneOwners: PharmacistPhoneOwners,
     private val refreshTokens: MobileRefreshTokenService,
+    private val presence: TillPersonPresence,
 ) {
     fun view(device: PosmDeviceIdentity, req: PosmSelfRequest): PosmSelfDto {
         val person = person(device, req)
+        // The till names the person signed in to Standard-N: that is who is at the till now (AtTillService).
+        presence.record(device, person.id)
         return dto(person, device, issueLink = req.link)
     }
 

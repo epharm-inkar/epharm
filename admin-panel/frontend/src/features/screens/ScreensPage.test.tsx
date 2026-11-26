@@ -43,15 +43,28 @@ vi.mock('@/lib/queries/banners', () => bannerHooks)
 
 // Вкладка «Уведомления на кассах» (только HQ) рендерит TillMessagesPanel.
 const messageHooks = vi.hoisted(() => ({
+  POSM_PREVIEW_DEBOUNCE_MS: 350,
   usePosmMessages: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
   useSendPosmMessage: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useWithdrawPosmMessage: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  usePosmCourses: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+  usePosmMessagePreview: vi.fn(() => ({ data: undefined, isLoading: false, isFetching: false, isError: false })),
+  usePosmPharmacistSearch: vi.fn(() => ({ data: { total: 0, items: [] }, isLoading: false, isError: false })),
 }))
 vi.mock('@/lib/queries/posmMessages', () => messageHooks)
-const pharmacistHooks = vi.hoisted(() => ({
-  usePharmacists: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+
+// Вкладка «Сейчас за кассой» (только HQ) рендерит AtTillPanel.
+const atTillHooks = vi.hoisted(() => ({
+  useAtTill: vi.fn(() => ({
+    data: { observedAt: '2026-11-26T09:00:00Z', windowMinutes: 20, total: 0, shown: 0, items: [] },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
 }))
-vi.mock('@/lib/queries/pharmacists', () => pharmacistHooks)
+vi.mock('@/lib/queries/atTill', () => atTillHooks)
 
 const uploadMutate = vi.fn()
 const removeMutate = vi.fn()
@@ -732,6 +745,29 @@ describe('ScreensPage — уведомления на кассах', () => {
     renderPage(['/screens?tab=messages'])
     expect(screen.queryByRole('button', { name: 'Уведомления на кассах' })).not.toBeInTheDocument()
     expect(screen.queryByTestId('till-messages')).not.toBeInTheDocument()
+    expect(screen.getByTestId('broadcast-card')).toBeInTheDocument()
+  })
+
+  it('HQ видит вкладку «Сейчас за кассой» и открывает её кнопкой и прямой ссылкой ?tab=attill', async () => {
+    signIn('HQ_HEAD')
+    const user = userEvent.setup()
+    const { unmount } = renderPage()
+    await user.click(screen.getByRole('button', { name: 'Сейчас за кассой' }))
+    expect(screen.getByTestId('at-till-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('broadcast-card')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('till-messages')).not.toBeInTheDocument()
+    unmount()
+
+    renderPage(['/screens?tab=attill'])
+    expect(screen.getByTestId('at-till-panel')).toBeInTheDocument()
+  })
+
+  it('«Сейчас за кассой» другие роли не видят: ни вкладки, ни запроса, а ссылка открывает эфир', () => {
+    signIn('CATEGORY_LEAD')
+    renderPage(['/screens?tab=attill'])
+    expect(screen.queryByRole('button', { name: 'Сейчас за кассой' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('at-till-panel')).not.toBeInTheDocument()
+    expect(atTillHooks.useAtTill).not.toHaveBeenCalled()
     expect(screen.getByTestId('broadcast-card')).toBeInTheDocument()
   })
 })
