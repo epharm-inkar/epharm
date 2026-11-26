@@ -11,6 +11,11 @@ export type CoverageSeries = {
   format?: (value: number) => string
 }
 
+/** The admin accent (brand terracotta) for the data line, a quiet grey for the total, ink for a second measure. */
+export const COVERAGE_ACCENT = '#B95336'
+export const COVERAGE_REFERENCE = '#8A8A84'
+export const COVERAGE_SECONDARY = '#4D4A45'
+
 const HEIGHT = 220
 const PAD = { top: 14, right: 112, bottom: 26, left: 40 }
 
@@ -107,7 +112,9 @@ export function CoverageChart({
           </g>
         ))}
         {points.map((point, index) =>
-          index % labelEvery === 0 || index === last ? (
+          // The last day is always named; a regular label too close to it would print over it.
+          (index % labelEvery === 0 && last - index >= Math.ceil(labelEvery / 2)) ||
+          index === last ? (
             <text
               key={point.date}
               x={x(index)}

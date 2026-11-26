@@ -8,7 +8,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { ToastHost } from '@/ui'
 import { useUiStore } from '@/app/store'
 import { formatKzt } from '@/mocks/fixtures'
-import type { DashboardSummaryDto, RecommendationAnalyticsDto } from '@/lib/api-types'
+import type {
+  DashboardSummaryDto,
+  PharmacistCoverageDto,
+  RecommendationAnalyticsDto,
+} from '@/lib/api-types'
 import DashboardPage from './DashboardPage'
 
 const dashHooks = vi.hoisted(() => ({
@@ -17,6 +21,37 @@ const dashHooks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/queries/dashboard', () => dashHooks)
+
+// The first block of the page reads the same coverage query as the pharmacists «Покрытие» tab.
+const coverageHook = vi.hoisted(() => ({ usePharmacistCoverage: vi.fn() }))
+vi.mock('@/lib/queries/pharmacists', () => coverageHook)
+
+function mkCoverage(): PharmacistCoverageDto {
+  const row = (date: string) => ({
+    date,
+    total: 2000,
+    active7d: 600,
+    sellers7d: 300,
+    coveragePct: 30,
+    joined: 0,
+    active1d: 150,
+    coverage1dPct: 7.5,
+  })
+  return {
+    date: '2026-06-27',
+    total: 2000,
+    fromStandardN: 1990,
+    registered: 10,
+    active7d: 600,
+    sellers7d: 300,
+    cabinet7d: 20,
+    coveragePct: 30,
+    daily: [row('2026-06-26'), row('2026-06-27')],
+    generatedAt: '2026-06-27T09:00:00Z',
+    activeToday: 150,
+    coverageTodayPct: 7.5,
+  }
+}
 
 function mkSummary(over: Partial<DashboardSummaryDto> = {}): DashboardSummaryDto {
   return {
@@ -140,6 +175,14 @@ beforeEach(() => {
   useUiStore.setState({ language: 'ru' })
   setSummary(mkSummary())
   setAnalytics(mkAnalytics())
+  coverageHook.usePharmacistCoverage.mockReturnValue({
+    data: mkCoverage(),
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  })
 })
 
 afterEach(() => useUiStore.setState({ language: 'ru' }))
@@ -217,11 +260,60 @@ describe('DashboardPage — рендер', () => {
     expect(screen.getByText('Аптека Лидер')).toBeInTheDocument()
   })
 
-  it('time-series блоки — Empty (данных нет)', () => {
+  it('страница начинается с блока «Фармацевты в ePharm»: он выше KPI рекомендаций и журнала', () => {
     renderPage()
-    expect(screen.getByText(/Данные для графика пока недоступны/i)).toBeInTheDocument()
-    expect(screen.getByText(/Карта активности пока недоступна/i)).toBeInTheDocument()
-    expect(screen.getByText(/Это не означает отсутствия продаж/i)).toBeInTheDocument()
+    const usage = screen.getByTestId('usage-block')
+    expect(within(usage).getByRole('heading', { name: 'Фармацевты в ePharm' })).toBeInTheDocument()
+    const follows = (node: HTMLElement) =>
+      usage.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING
+    expect(follows(screen.getByTestId('dash-summary-kpis'))).toBeTruthy()
+    expect(follows(screen.getByTestId('dash-top-rules'))).toBeTruthy()
+    expect(follows(screen.getByTestId('recan-table'))).toBeTruthy()
+    expect(usage).toHaveTextContent('Работали с ePharm сегодня')
+    expect(usage).toHaveTextContent('Работали с ePharm за 7 дней')
+    // The same query as the «Покрытие» tab, the whole life of the system.
+    expect(coverageHook.usePharmacistCoverage).toHaveBeenCalledWith(366)
+  })
+
+  it.each([
+    ['ru', ['Динамика принятых рекомендаций', 'Pilot vs Control', 'Карта активности']],
+    ['kk', ['Қабылданған ұсыныстар динамикасы', 'Pilot vs Control', 'Белсенділік картасы']],
+  ] as const)('пустых блоков «Пилот против контроля» и «Карта активности» больше нет (%s)', (language, gone) => {
+    useUiStore.setState({ language })
+    renderPage()
+    for (const text of gone) expect(screen.queryByText(new RegExp(text, 'i'))).not.toBeInTheDocument()
+    expect(screen.queryByText(/пока недоступн|әзірге қолжетімсіз/i)).not.toBeInTheDocument()
+  })
+
+  it('остальные полезные блоки остаются: KPI, топ-списки, журнал', () => {
+    renderPage()
+    expect(screen.getByTestId('dash-summary-kpis')).toBeInTheDocument()
+    expect(screen.getByTestId('dash-top-rules')).toBeInTheDocument()
+    expect(screen.getByTestId('dash-top-pharmacies')).toBeInTheDocument()
+    expect(screen.getByTestId('dash-top-products')).toBeInTheDocument()
+    expect(screen.getByTestId('recan-table')).toBeInTheDocument()
+  })
+
+  it('на телефоне KPI и топ-списки идут в 2 и 1 колонку, на широком экране как раньше', () => {
+    renderPage()
+    expect(screen.getByTestId('dash-summary-kpis').className).toMatch(/\bgrid-cols-2\b.*\blg:grid-cols-4\b/)
+    const top = screen.getByTestId('dash-top-rules').closest('.grid') as HTMLElement
+    expect(top.className).toMatch(/\bgrid-cols-1\b.*\blg:grid-cols-3\b/)
+  })
+
+  it('ошибка блока фармацевтов не ломает остальную страницу', () => {
+    coverageHook.usePharmacistCoverage.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      isFetching: false,
+      error: new Error('coverage down'),
+      refetch: vi.fn(),
+    })
+    renderPage()
+    expect(screen.getByTestId('usage-state')).toHaveTextContent('coverage down')
+    expect(screen.getByTestId('dash-summary-kpis')).toBeInTheDocument()
+    expect(screen.getByTestId('recan-table')).toBeInTheDocument()
   })
 })
 

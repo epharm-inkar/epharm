@@ -1,8 +1,19 @@
 // Finance — payout batches ТЗ §3.6.
 // Этап 3.5: подключён backend через usePayoutBatches/usePayoutItems/useApproveBatch.
+// 26.11.2026: выплаты ещё не подключены. Просмотр ведомостей работает, а формирование и
+// утверждение выключены (кнопки неактивны, причина в подсказке); серверные ручки не тронуты.
 
-import { useMemo, useState } from 'react'
-import { Button, Empty, Metric, PageHeader, Tabs, useToast, type TabItem } from '@/ui'
+import { useMemo, useState, type ReactNode } from 'react'
+import {
+  Button,
+  ComingSoonBanner,
+  Empty,
+  Metric,
+  PageHeader,
+  Tabs,
+  useToast,
+  type TabItem,
+} from '@/ui'
 import { IconArrowUp, IconCheck, IconFinance, IconReconcile } from '@/ui/icons'
 import type { PayoutBatchDto, PayoutItemDto } from '@/lib/api-types'
 import {
@@ -18,6 +29,21 @@ import PayoutReportTools from '@/features/reports/PayoutReportTools'
 
 type FinTab = 'pending' | 'history'
 
+/** Payouts are not connected yet (owner, 26.11.2026). Set to true when they are switched on. */
+const PAYOUTS_ENABLED: boolean = false
+
+/**
+ * A disabled button gets no hover events (`.btn:disabled` has pointer-events: none), so the reason
+ * is also set on the wrapper: that is what the mouse pointer actually hovers over.
+ */
+function LockedAction({ reason, children }: { reason?: string; children: ReactNode }) {
+  return (
+    <span className="inline-flex" title={reason} data-testid="payout-action-locked">
+      {children}
+    </span>
+  )
+}
+
 export default function FinancePage() {
   const t = useT()
   const toast = useToast()
@@ -28,6 +54,7 @@ export default function FinancePage() {
   const generatePayout = useGeneratePayout()
 
   const handleGenerate = () => {
+    if (!PAYOUTS_ENABLED) return
     if (!confirm(t('fin.confirmGenerate'))) return
     generatePayout.mutate(undefined, {
       onSuccess: (b) =>
@@ -68,6 +95,7 @@ export default function FinancePage() {
   ]
 
   const handleApprove = (b: PayoutBatchDto) => {
+    if (!PAYOUTS_ENABLED) return
     if (!confirm(t('fin.confirmApprove', { amount: formatKzt(b.amount), n: b.pharmacists }))) return
     approveBatch.mutate(b.id, {
       onSuccess: () => toast.push(t('fin.approved', { period: b.period })),
@@ -81,20 +109,27 @@ export default function FinancePage() {
         title={t('page.finance.title')}
         subtitle={t('page.finance.subtitle')}
         actions={
-          <Button
-            variant="primary"
-            disabled={generatePayout.isPending}
-            onClick={handleGenerate}
-            data-testid="generate-payout"
-          >
-            {generatePayout.isPending ? t('fin.generating') : t('fin.generateBtn')}
-          </Button>
+          <LockedAction reason={PAYOUTS_ENABLED ? undefined : t('fin.devReason')}>
+            <Button
+              variant="primary"
+              disabled={!PAYOUTS_ENABLED || generatePayout.isPending}
+              title={PAYOUTS_ENABLED ? undefined : t('fin.devReason')}
+              onClick={handleGenerate}
+              data-testid="generate-payout"
+            >
+              {generatePayout.isPending ? t('fin.generating') : t('fin.generateBtn')}
+            </Button>
+          </LockedAction>
         }
       />
 
+      <div role="status" data-testid="payouts-dev-notice">
+        <ComingSoonBanner title={t('fin.devTitle')} body={t('fin.devBody')} />
+      </div>
+
       <PayoutReportTools />
       {!isLoading && !showFullError && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
           <Metric
             label={t('fin.mPending')}
             value={formatKzt(totalPendingAmount)}
@@ -216,14 +251,17 @@ function PendingPanel({
             <span className="num font-bold text-ink-900">{formatKzt(batch.amount)}</span>
           </div>
         </div>
-        <Button
-          variant="primary"
-          leading={<IconCheck size={14} />}
-          disabled={approving || !readyToApprove}
-          onClick={() => onApprove(batch)}
-        >
-          {approving ? t('fin.approving') : t('fin.approveBtn')}
-        </Button>
+        <LockedAction reason={PAYOUTS_ENABLED ? undefined : t('fin.devReason')}>
+          <Button
+            variant="primary"
+            leading={<IconCheck size={14} />}
+            disabled={!PAYOUTS_ENABLED || approving || !readyToApprove}
+            title={PAYOUTS_ENABLED ? undefined : t('fin.devReason')}
+            onClick={() => onApprove(batch)}
+          >
+            {approving ? t('fin.approving') : t('fin.approveBtn')}
+          </Button>
+        </LockedAction>
       </div>
       {itemsError ? (
         <div role="alert" className="border-b border-accent-danger/20 bg-accent-danger/5 px-5 py-3 text-[13px] text-ink-700">

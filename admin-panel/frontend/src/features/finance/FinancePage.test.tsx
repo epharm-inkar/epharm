@@ -1,11 +1,12 @@
 // Тесты FinancePage — pending/history Tabs, approve flow, items.
 
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { ToastHost } from '@/ui'
+import { useUiStore } from '@/app/store'
 import type { PayoutBatchDto, PayoutItemDto } from '@/lib/api-types'
 import FinancePage from './FinancePage'
 
@@ -99,6 +100,12 @@ describe('FinancePage — рендер', () => {
     renderPage()
     expect(screen.getByText(/Нет открытых батчей/i)).toBeInTheDocument()
   })
+
+  it('метрики идут в 2 колонки на телефоне и в 4 на широком экране', () => {
+    renderPage()
+    const grid = screen.getByText('К выплате текущий период').closest('.grid') as HTMLElement
+    expect(grid.className).toMatch(/\bgrid-cols-2\b.*\blg:grid-cols-4\b/)
+  })
 })
 
 describe('FinancePage — loading/error', () => {
@@ -143,20 +150,7 @@ describe('FinancePage — pending tab', () => {
     expect(screen.getByText('Высокий бонус')).toBeInTheDocument()
   })
 
-  it('кнопка «Утвердить» вызывает useApproveBatch', async () => {
-    const mutate = vi.fn()
-    financeHooks.useApproveBatch.mockReturnValue({ mutate, isPending: false })
-    setBatches([mkBatch({ id: 'pb_x', pharmacists: 1, items: 1, amount: 15_000 })])
-    setItems([mkItem({ batchId: 'pb_x' })])
-    // confirm() возвращает true в тестах если мы его мокаем
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const user = userEvent.setup()
-    renderPage()
-    await user.click(screen.getByRole('button', { name: /Утвердить выплату/ }))
-    expect(mutate).toHaveBeenCalledWith('pb_x', expect.any(Object))
-  })
-
-  it('блокирует утверждение, если итог батча не совпадает с позициями', () => {
+  it('показывает ошибку сверки, если итог батча не совпадает с позициями', () => {
     setBatches([mkBatch({ pharmacists: 1, items: 1, amount: 15_001 })])
     setItems([mkItem({ amount: 15_000 })])
     renderPage()
@@ -164,23 +158,96 @@ describe('FinancePage — pending tab', () => {
     expect(screen.getByRole('button', { name: /Утвердить выплату/ })).toBeDisabled()
   })
 
-  it('кнопка disabled и текст «Утверждаем…» при approving', () => {
+  it('текст «Утверждаем…» при approving', () => {
     financeHooks.useApproveBatch.mockReturnValue({ mutate: vi.fn(), isPending: true })
     setBatches([mkBatch()])
     renderPage()
-    const btn = screen.getByRole('button', { name: /Утверждаем…/ })
-    expect(btn).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Утверждаем…/ })).toBeDisabled()
+  })
+})
+
+// 26.11.2026: выплаты ещё не подключены. Читать ведомости можно, создавать и утверждать нельзя.
+describe('FinancePage: выплаты в разработке', () => {
+  const REASON =
+    'Функционал выплат находится в разработке: формирование и утверждение пока отключены'
+
+  afterEach(() => useUiStore.setState({ language: 'ru' }))
+
+  it('сверху показывает заметку, что функционал выплат в разработке, без обещания срока', () => {
+    renderPage()
+    const notice = screen.getByTestId('payouts-dev-notice')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('Функционал выплат находится в разработке')
+    expect(notice).toHaveTextContent('Выплаты будут включены позже')
+    expect(notice.textContent).not.toMatch(/\d{4}|числа|до конца|в течение/)
+    // Above the report tools and the tables: the first thing on the page after the title.
+    const reportTools = screen.getByRole('heading', { name: 'Отчёт по ведомостям' })
+    expect(
+      notice.compareDocumentPosition(reportTools) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
-  it('кнопка «Сформировать выплату» вызывает useGeneratePayout', async () => {
+  it('кнопка «Сформировать выплату» неактивна, причина в подсказке, запрос не уходит', async () => {
     const mutate = vi.fn()
     financeHooks.useGeneratePayout.mockReturnValue({ mutate, isPending: false })
-    setBatches([])
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
     renderPage()
-    await user.click(screen.getByTestId('generate-payout'))
-    expect(mutate).toHaveBeenCalled()
+    const button = screen.getByTestId('generate-payout')
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', REASON)
+    // The hover target of a disabled button is its wrapper: the reason is there too.
+    expect(button.closest('[data-testid="payout-action-locked"]')).toHaveAttribute('title', REASON)
+    await user.click(button)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
+  })
+
+  it('кнопка «Утвердить выплату» неактивна даже при сходящихся итогах, запрос не уходит', async () => {
+    const mutate = vi.fn()
+    financeHooks.useApproveBatch.mockReturnValue({ mutate, isPending: false })
+    setBatches([mkBatch({ id: 'pb_x', pharmacists: 1, items: 1, amount: 15_000 })])
+    setItems([mkItem({ batchId: 'pb_x' })])
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    renderPage()
+    // The totals match, so only the payouts switch keeps the button off.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    const button = screen.getByRole('button', { name: /Утвердить выплату/ })
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', REASON)
+    await user.click(button)
+    expect(mutate).not.toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
+  })
+
+  it('чтение остаётся: текущий батч, позиции и история видны', async () => {
+    setBatches([
+      mkBatch({ id: 'pb_pending', pharmacists: 1, items: 1, amount: 15_000 }),
+      mkBatch({ id: 'pb_old', status: 'approved', period: '1-15 апреля', reviewerName: 'Айгерим' }),
+    ])
+    setItems([mkItem({ batchId: 'pb_pending' })])
+    const user = userEvent.setup()
+    renderPage()
+    expect(screen.getByTestId('payout-items-table')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Excel: ведомости' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /История/ }))
+    expect(screen.getByTestId('payout-batch-pb_old')).toBeInTheDocument()
+  })
+
+  it('на казахском заметка и причина тоже на казахском', () => {
+    useUiStore.setState({ language: 'kk' })
+    setBatches([mkBatch({ pharmacists: 1, items: 1, amount: 15_000 })])
+    setItems([mkItem()])
+    renderPage()
+    expect(screen.getByTestId('payouts-dev-notice')).toHaveTextContent(
+      'Төлемдер функционалы әзірленуде',
+    )
+    expect(screen.getByTestId('generate-payout')).toHaveAttribute(
+      'title',
+      'Төлемдер функционалы әзірленуде: қалыптастыру мен бекіту әзірге өшірулі',
+    )
+    expect(screen.getByRole('button', { name: /Төлемді бекіту/ })).toBeDisabled()
   })
 })
 
