@@ -67,9 +67,9 @@ export const ADMIN_NAVIGATION: readonly AdminNavigationModule[] = [
   {
     id: 'motivation',
     Icon: IconPromo,
+    // «Rules Engine» is out of the menu (owner, 26.11.2026); /rules still opens for old links.
     items: [
       section('promo'),
-      section('rules'),
       section('reconcile'),
       section('ledger'),
       section('finance'),

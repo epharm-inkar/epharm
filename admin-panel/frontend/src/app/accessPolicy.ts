@@ -62,7 +62,7 @@ export function canAccessSection(role: AdminRole, section: SectionId): boolean {
 }
 
 export function defaultSectionForRole(role: AdminRole): SectionId {
-  return isTrainingWorkspaceRole(role) ? 'lms' : 'rules'
+  return isTrainingWorkspaceRole(role) ? 'lms' : 'dashboard'
 }
 
 export function defaultPathForRole(role: AdminRole): string {

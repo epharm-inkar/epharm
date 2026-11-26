@@ -37,7 +37,7 @@ test.describe('Errors — empty data на изолированной стран�
     await freshPage.getByLabel(/Email/i).fill(ACCOUNTS.damir.email)
     await freshPage.getByLabel(/Пароль/i).fill(ACCOUNTS.damir.password)
     await freshPage.getByRole('button', { name: /^Войти/i }).click()
-    await expect(freshPage).toHaveURL(/\/rules$/)
+    await expect(freshPage).toHaveURL(/\/dashboard$/)
 
     // Чистим cache чтобы не было stale data
     await freshPage.evaluate(() => localStorage.removeItem('epharm.query.cache'))

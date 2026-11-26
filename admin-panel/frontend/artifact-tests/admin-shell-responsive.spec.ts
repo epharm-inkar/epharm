@@ -55,7 +55,9 @@ async function openRules(page: import('@playwright/test').Page) {
   await page.getByLabel(/Email/i).fill('artifact@example.invalid')
   await page.getByLabel(/Пароль/i).fill('artifact-test-only')
   await page.getByRole('button', { name: /^Войти$/ }).click()
-  await expect(page).toHaveURL(/\/rules$/)
+  // Sign-in lands on the dashboard; Rules Engine is out of the menu but still opens by its address.
+  await expect(page).toHaveURL(/\/dashboard$/)
+  await page.goto('/rules')
   await expect(page.getByTestId('rule-row-responsive-rule')).toBeVisible()
 }
 
@@ -73,8 +75,8 @@ test('built global search opens, filters sections and closes with Escape using i
   const input = page.getByPlaceholder('Раздел или аптека…', { exact: true })
   await opener.click()
   await expect(input).toBeVisible()
-  await input.fill('Rules')
-  await expect(page.getByRole('button', { name: /Rules Engine/ }).last()).toBeVisible()
+  await input.fill('Промо')
+  await expect(page.getByRole('button', { name: /Промо-кампании/ }).last()).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(input).not.toBeVisible()
   await opener.click()

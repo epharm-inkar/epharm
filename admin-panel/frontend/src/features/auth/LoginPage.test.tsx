@@ -71,6 +71,7 @@ function renderLogin(entry: string | { pathname: string; state?: unknown } = '/l
           <Route path="/" element={<AdministrativeHome />} />
           <Route path="/merch/staff-access" element={<div>StaffAccessPage</div>} />
           <Route path="/rules" element={<div>RulesPage</div>} />
+          <Route path="/dashboard" element={<div>DashboardPage</div>} />
           <Route path="/lms" element={<div>LearningPage</div>} />
         </Routes>
       </MemoryRouter>
@@ -158,7 +159,7 @@ describe('LoginPage — валидация на клиенте (без сете�
 })
 
 describe('LoginPage — submit (с моком authApi)', () => {
-  it('успешный логин → редирект на /rules + authedUser обновлён', async () => {
+  it('успешный логин → редирект на /dashboard + authedUser обновлён', async () => {
     authApi.login.mockResolvedValueOnce(mockLoginResponse)
     const user = userEvent.setup()
     renderLogin()
@@ -167,7 +168,7 @@ describe('LoginPage — submit (с моком authApi)', () => {
     await user.click(screen.getByRole('button', { name: /Войти/i }))
 
     await waitFor(() => {
-      expect(screen.getByText('RulesPage')).toBeInTheDocument()
+      expect(screen.getByText('DashboardPage')).toBeInTheDocument()
     })
     expect(authApi.login).toHaveBeenCalledWith('damir@jadran.com', 'damir2026')
     expect(useUiStore.getState().authedUser?.id).toBe('damir')

@@ -6,8 +6,10 @@ import { sectionIdsForRole } from './accessPolicy'
 describe('unified navigation preserves route identities and separate boundaries', () => {
   it('keeps every authorized legacy section and all training tabs', () => {
     const items = adminNavigationForRole('HQ_HEAD').flatMap((module) => module.items)
-    for (const id of sectionIdsForRole('HQ_HEAD').filter((id) => id !== 'lms'))
+    // Rules Engine left the menu on 26.11.2026 (owner); its route still works.
+    for (const id of sectionIdsForRole('HQ_HEAD').filter((id) => id !== 'lms' && id !== 'rules'))
       expect(items.some((item) => item.path === SECTION_ROUTES[id])).toBe(true)
+    expect(items.some((item) => item.path === SECTION_ROUTES.rules)).toBe(false)
     expect(items.filter((item) => item.trainingTab)).toHaveLength(10)
     expect(items.some((item) => item.path === '/dashboard/reports')).toBe(true)
     expect(items.some((item) => item.path?.startsWith('/learn'))).toBe(false)

@@ -49,7 +49,7 @@ function renderHome(cached?: AccessCapabilities) {
         <Routes>
           <Route path="/" element={<AdministrativeHome />} />
           <Route path="/merch/staff-access" element={<AdminStaffAccessPage />} />
-          <Route path="/rules" element={<div>RulesWorkspace</div>} />
+          <Route path="/dashboard" element={<div>DashboardWorkspace</div>} />
           <Route path="/lms" element={<div>LearningWorkspace</div>} />
         </Routes>
       </MemoryRouter>
@@ -72,7 +72,7 @@ it.each(['HQ_HEAD', 'TRAINING_MANAGER'] as const)(
         ...soleStaff,
         grants: [view, { ...view, module: 'training', subsection: 'courses' }],
       }),
-    ).toBe(role === 'HQ_HEAD' ? '/rules' : '/lms')
+    ).toBe(role === 'HQ_HEAD' ? '/dashboard' : '/lms')
   },
 )
 it.each([
@@ -83,7 +83,7 @@ it.each([
   { ...soleStaff, grants: [view, { ...view, action: 'unknown_future_action' }] },
   { ...soleStaff, grants: [{ ...view, action: 'create' }] },
 ])('never infers sole access from an unverified or incomplete capability: %j', (access) => {
-  expect(administrativeHomePath('HQ_HEAD', access)).toBe('/rules')
+  expect(administrativeHomePath('HQ_HEAD', access)).toBe('/dashboard')
 })
 it('waits for the current request instead of following a cached positive staff capability', async () => {
   let resolve!: (value: AccessCapabilities) => void
@@ -97,14 +97,14 @@ it('waits for the current request instead of following a cached positive staff c
   expect(screen.getByRole('status')).toHaveTextContent('Проверяем доступ')
   expect(screen.queryByText('Общие коды доступа отключены')).not.toBeInTheDocument()
   await act(async () => resolve({ ...soleStaff, canViewMerchStaffAccess: false }))
-  expect(await screen.findByText('RulesWorkspace')).toBeInTheDocument()
+  expect(await screen.findByText('DashboardWorkspace')).toBeInTheDocument()
 })
 it('a failed fresh check does not open either workspace even with a cached positive result', async () => {
   vi.mocked(accessApi.me).mockRejectedValue(new Error('denied'))
   renderHome(soleStaff)
   expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось проверить доступ')
   expect(screen.queryByText('Общие коды доступа отключены')).not.toBeInTheDocument()
-  expect(screen.queryByText('RulesWorkspace')).not.toBeInTheDocument()
+  expect(screen.queryByText('DashboardWorkspace')).not.toBeInTheDocument()
 })
 it('normal training accounts still reach LMS after the fresh check', async () => {
   useUiStore.setState({ authedUser: USERS.lms })

@@ -7,7 +7,6 @@ test.describe('Sidebar — навигация', () => {
     const sections = [
       { module: 'Аналитика', label: 'Дашборд аналитики', url: /\/dashboard/ },
       { module: 'Мотивация фармацевтов', label: 'Промо-кампании', url: /\/promo/ },
-      { module: 'Мотивация фармацевтов', label: 'Rules Engine', url: /\/rules/ },
       { module: 'Аптеки и товары', label: 'Управление экранами', url: /\/screens/ },
       { module: 'Аптеки и товары', label: 'Сеть аптек', url: /\/pharmacies/ },
       { label: 'Фармацевты', url: /\/pharmacists/ },
@@ -109,8 +108,8 @@ test.describe('Topbar — CommandPalette (⌘K / клик)', () => {
 
   test('фильтр по тексту работает', async ({ loggedInPage }) => {
     await loggedInPage.getByRole('button', { name: /Найти раздел или аптеку/i }).click()
-    await loggedInPage.getByPlaceholder('Раздел или аптека…', { exact: true }).fill('Rules')
-    await expect(loggedInPage.getByText('Rules Engine').first()).toBeVisible()
+    await loggedInPage.getByPlaceholder('Раздел или аптека…', { exact: true }).fill('Промо')
+    await expect(loggedInPage.getByText('Промо-кампании').first()).toBeVisible()
   })
 })
 

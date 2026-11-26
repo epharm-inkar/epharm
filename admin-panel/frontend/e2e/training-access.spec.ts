@@ -26,7 +26,7 @@ test.describe('Role access — обучение и AI-экзамены', () => {
   test('HQ видит все разделы, а обучение открывается только для просмотра', async ({
     freshPage,
   }) => {
-    await loginForRole(freshPage, ACCOUNTS.bauyrzhan, '/rules')
+    await loginForRole(freshPage, ACCOUNTS.bauyrzhan, '/dashboard')
 
     await openSidebarModule(freshPage, 'Аналитика')
     await expect(moduleTab(freshPage, 'Аналитика', 'Дашборд аналитики')).toBeVisible()
