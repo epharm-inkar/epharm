@@ -1,5 +1,6 @@
 package kz.epharm.posm.identity
 
+import kz.epharm.auth.access.UnifiedAuthorityLock
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
@@ -8,14 +9,17 @@ import kz.epharm.posm.service.PosmDeviceIdentity
 import kz.epharm.posm.service.StandardNDirectoryIdentityLookup
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 /**
  * What a pharmacist types about themselves: at the till (a Standard-N user without a card: IIN and full name) and in the
- * cabinet (a card whose name is cut short: the full name). Nothing here creates a card, a mapping or money: a claim
- * waits for HQ ([IdentityClaimAdminService]) and yields to the Standard-N directory ([IdentityClaimDirectoryReconciler]).
+ * cabinet (a card whose name is cut short: the full name). A till claim with nothing for HQ to look at is confirmed at
+ * once ([IdentityClaimAdminService.autoConfirm], owner 26.11.2026); any other claim waits for HQ. Every claim yields to
+ * the Standard-N directory ([IdentityClaimDirectoryReconciler]).
  */
 @Service
 class IdentityClaimSubmissionService(
@@ -24,6 +28,10 @@ class IdentityClaimSubmissionService(
     private val pharmacists: PharmacistRepository,
     private val mappings: PosmPharmacistMappingRepository,
     private val limiter: IdentityClaimLimiter,
+    private val jdbc: JdbcTemplate,
+    private val admin: IdentityClaimAdminService,
+    /** Off: every till claim waits for HQ, as before 26.11.2026. */
+    @Value("\${epharm.identity-claims.auto-confirm:true}") private val autoConfirm: Boolean,
 ) {
     // ── till ────────────────────────────────────────────────────────────────
 
@@ -52,6 +60,8 @@ class IdentityClaimSubmissionService(
         val iin = IdentityClaimRules.requireIin(req.iin)
         val name = IdentityClaimRules.requireFullName(req.fullName)
 
+        // HQ takes this lock before it locks a claim; taking it first here keeps the till from deadlocking with HQ.
+        if (autoConfirm) UnifiedAuthorityLock.acquire(jdbc)
         if (isKnown(pharmacyId, userId)) conflict("ePharm уже знает вас. Закройте окно и откройте его снова")
         if (mappings.findByPharmacyIdAndExternalUserIdAndActiveTrue(pharmacyId, userId) != null) {
             conflict("Ваш пользователь Стандарт-Н уже привязан к карточке ePharm. Если что-то не так, обратитесь к менеджеру сети")
@@ -59,12 +69,13 @@ class IdentityClaimSubmissionService(
         // The IIN of someone else's card is not refused (HQ decides, it may be one person at two pharmacies), but it is
         // flagged so that HQ looks at it first.
         val other = pharmacists.findByIin(iin)
-        store.upsertPerson(
+        val claimId = store.upsertPerson(
             pharmacyId = pharmacyId, profileId = store.profileIdOf(pharmacyId), userId = userId,
             userName = IdentityClaimRules.cleanUserName(req.standardNUserName), deviceId = deviceId,
             iin = iin, fullName = name,
             conflict = other?.let { IdentityClaimRules.CONFLICT_IIN_OTHER_CARD }, conflictPharmacistId = other?.id,
         )
+        if (autoConfirm && other == null && admin.autoConfirm(claimId) != null) return PosmIdentityDto(STATE_KNOWN)
         return PosmIdentityDto(STATE_PENDING, IdentityClaimRules.maskIin(iin), name)
     }
 

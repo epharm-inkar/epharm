@@ -29,6 +29,11 @@ object IdentityClaimRules {
     const val CONFLICT_IIN_OTHER_CARD = "iin_other_card"
     const val CONFLICT_DIRECTORY_IIN_DIFFERS = "directory_iin_differs"
 
+    /** `decision_reason` of a claim ePharm took without HQ; `decided_by` stays empty. */
+    const val AUTO_CONFIRMED = "auto"
+    /** How HQ sees who decided such a claim. */
+    const val AUTO_DECIDER_NAME = "ePharm, автоматически"
+
     const val NAME_MAX_LENGTH = 255
     private const val WORD_MAX_COUNT = 6
 
