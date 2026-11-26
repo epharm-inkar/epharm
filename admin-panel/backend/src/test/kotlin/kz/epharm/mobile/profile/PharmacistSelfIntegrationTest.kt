@@ -32,7 +32,9 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -231,6 +233,31 @@ class PharmacistSelfIntegrationTest {
         assertThat(groups.first { it["trigger"]["kind"].asText() == "product_any" }
             ["trigger"]["exclude"][0].asText()).isEqualTo("self_offer")
         assertThat(groups.map { it["offers"][0]["product"]["id"].asText() }.toSet()).containsExactly("self_offer")
+    }
+
+    @Test
+    fun `the cabinet language is kept on the card, shown in me and only ru or kk`() {
+        fun choose(body: String, token: String? = bearer) = mvc.perform(
+            put("/api/mobile/me/language").contentType(MediaType.APPLICATION_JSON).content(body)
+                .also { request -> token?.let { request.header(HttpHeaders.AUTHORIZATION, it) } },
+        )
+        mvc.perform(get("/api/mobile/auth/me").header(HttpHeaders.AUTHORIZATION, bearer))
+            .andExpect(status().isOk).andExpect(jsonPath("$.language").isEmpty)
+
+        choose("""{"language":"kk"}""").andExpect(status().isOk).andExpect(jsonPath("$.language").value("kk"))
+            .andExpect(header().string("Cache-Control", "no-store"))
+        pharmacists.flush()
+        assertThat(jdbc.queryForObject("SELECT language FROM pharmacists WHERE id = 'self_a'", String::class.java)).isEqualTo("kk")
+        // The signed subject decides whose card changes: the other card keeps no language.
+        assertThat(jdbc.queryForObject("SELECT language FROM pharmacists WHERE id = 'self_b'", String::class.java)).isNull()
+        mvc.perform(get("/api/mobile/auth/me").header(HttpHeaders.AUTHORIZATION, bearer))
+            .andExpect(status().isOk).andExpect(jsonPath("$.language").value("kk"))
+
+        for (wrong in listOf("""{"language":"en"}""", "{}", """{"language":""}""")) {
+            choose(wrong).andExpect(status().isBadRequest).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+        }
+        choose("""{"language":"ru"}""", token = null).andExpect(status().isUnauthorized)
+        choose("""{"language":"ru"}""").andExpect(status().isOk).andExpect(jsonPath("$.language").value("ru"))
     }
 
     @Test

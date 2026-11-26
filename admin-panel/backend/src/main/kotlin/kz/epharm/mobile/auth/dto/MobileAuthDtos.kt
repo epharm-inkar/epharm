@@ -157,6 +157,8 @@ data class MeDto(
     val coursesDone: Int,
     val coursesTotal: Int,
     val joinedAt: LocalDate,
+    /** `ru` or `kk`: the cabinet's language, kept on the card; null when the pharmacist has not chosen one yet. */
+    val language: String? = null,
 ) {
     companion object {
         fun of(e: PharmacistEntity): MeDto = MeDto(
@@ -176,6 +178,7 @@ data class MeDto(
             coursesDone = e.coursesDone,
             coursesTotal = e.coursesTotal,
             joinedAt = e.joinedAt,
+            language = e.language,
         )
     }
 }

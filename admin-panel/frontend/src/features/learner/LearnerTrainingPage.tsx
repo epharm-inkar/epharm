@@ -31,6 +31,7 @@ import {
   Home,
   IdCard,
   Image,
+  Languages,
   Lock,
   LogOut,
   Loader2,
@@ -54,7 +55,7 @@ import {
   X,
 } from 'lucide-react'
 import { proxyMedia } from '../../lib/media'
-import { useUiStore } from '@/app/store'
+import { useUiStore, type Lang } from '@/app/store'
 import { currentLearnerTranslate, learnerTranslate, useLearnerT } from './learner-i18n'
 import type { CourseLiveRoomDto } from '@/lib/api-types'
 import { parseLoginIdentifier } from './login-identifier'
@@ -92,6 +93,8 @@ type Pharmacist = {
   tier?: string
   balance?: number
   earned30d?: number
+  /** The language kept on the card (26.11.2026): `ru`, `kk`, or null when never chosen. */
+  language?: string | null
 }
 
 type PersonalBalance = {
@@ -464,6 +467,53 @@ function removeTokens() {
   } finally {
     sessionStorage.removeItem(TOKEN_KEY)
   }
+}
+
+/** A language picked in the cabinet that the card does not know yet: picked while signed out, or the save failed. */
+const LANG_UNSAVED_KEY = 'epharm.learner.langUnsaved'
+
+function markLanguageUnsaved(unsaved: boolean) {
+  try {
+    if (unsaved) localStorage.setItem(LANG_UNSAVED_KEY, '1')
+    else localStorage.removeItem(LANG_UNSAVED_KEY)
+  } catch {
+    // A blocked storage only loses the reminder: the next pick saves the language again.
+  }
+}
+
+function languageUnsaved() {
+  try {
+    return localStorage.getItem(LANG_UNSAVED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** The card keeps the cabinet language (owner, 26.11.2026): the till shows notices from HQ in it. */
+async function saveCardLanguage(language: Lang, tokens: Tokens, lifecycle: TokenLifecycle) {
+  markLanguageUnsaved(true)
+  await request<{ language: string | null }>(
+    '/api/mobile/me/language',
+    { method: 'PUT', body: JSON.stringify({ language }), cache: 'no-store', credentials: 'omit' },
+    tokens,
+    lifecycle,
+  )
+  markLanguageUnsaved(false)
+}
+
+/**
+ * After sign-in: a language picked here that the card does not know yet goes to the card; otherwise the card's
+ * language (picked on another device) applies here. Never chosen anywhere: Kazakh already used here goes to the card.
+ */
+function syncCardLanguage(card: string | null | undefined, tokens: Tokens, lifecycle: TokenLifecycle) {
+  const { language, setLanguage } = useUiStore.getState()
+  const saved = card === 'ru' || card === 'kk' ? card : null
+  if (languageUnsaved() || (saved === null && language === 'kk')) {
+    if (saved === language) markLanguageUnsaved(false)
+    else void saveCardLanguage(language, tokens, lifecycle).catch(() => undefined)
+    return
+  }
+  if (saved && saved !== language) setLanguage(saved)
 }
 
 function messageFrom(error: unknown) {
@@ -908,6 +958,17 @@ export default function LearnerTrainingPage() {
     <T,>(path: string) => requestPersonalData<T>(path, tokens!, tokenLifecycle),
     [tokens, tokenLifecycle],
   )
+  // The language switch also keeps the choice on the card, so the till speaks it too (26.11.2026).
+  const pickLanguage = useCallback(
+    (next: Lang) => {
+      if (!tokens) {
+        markLanguageUnsaved(true)
+        return
+      }
+      void saveCardLanguage(next, tokens, tokenLifecycle).catch(() => undefined)
+    },
+    [tokens, tokenLifecycle],
+  )
   const merchForm = useCallback(
     <T,>(path: string, body: FormData) => {
       if (!tokens) return Promise.reject(new Error('Войдите в личный кабинет.'))
@@ -952,6 +1013,7 @@ export default function LearnerTrainingPage() {
         ])
         if (!isCurrent()) return
         setPharmacist(me)
+        syncCardLanguage(me.language, activeTokens, tokenLifecycle)
         setOverview(training)
         setPortalLoadedAt(Date.now())
         coreLoaded = true
@@ -1416,7 +1478,7 @@ export default function LearnerTrainingPage() {
           </div>
 
           <div className="learner-auth-form-panel relative">
-            <LanguageSwitcher className="absolute right-5 top-5" />
+            <LanguageSwitcher className="absolute right-5 top-5" onPick={pickLanguage} />
             <div className="mx-auto w-full max-w-md">
               <div className="mb-7 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-green-100 text-brand-green-700 md:hidden">
                 <ShieldCheck size={24} />
@@ -1533,7 +1595,7 @@ export default function LearnerTrainingPage() {
                   <RefreshCw className={busy ? 'animate-spin' : ''} size={16} /> {t('Обновить')}
                 </button>
               )}
-              <LanguageSwitcher compact />
+              <LanguageSwitcher compact onPick={pickLanguage} />
               <button
                 className="btn btn-outline btn-icon shrink-0 lg:hidden"
                 onClick={() => void logout()}
@@ -1642,6 +1704,7 @@ export default function LearnerTrainingPage() {
               request={merchRequest}
               onRetry={refreshPortal}
               onLogout={logout}
+              onPickLanguage={pickLanguage}
             />
           ) : (
             <OverviewView
@@ -1680,9 +1743,12 @@ function LearnerAuthLayout({ children }: { children: React.ReactNode }) {
 function LanguageSwitcher({
   className = '',
   compact = false,
+  onPick,
 }: {
   className?: string
   compact?: boolean
+  /** Called when the pharmacist picks the other language (the cabinet then keeps it on the card). */
+  onPick?: (language: Lang) => void
 }) {
   const language = useUiStore((state) => state.language)
   const setLanguage = useUiStore((state) => state.setLanguage)
@@ -1703,7 +1769,10 @@ function LanguageSwitcher({
           type="button"
           className={`rounded-lg px-2.5 py-1.5 text-xs font-extrabold transition ${language === value ? 'bg-brand-green-700 text-white' : 'text-ink-500 hover:bg-paper-hover'}`}
           aria-pressed={language === value}
-          onClick={() => setLanguage(value)}
+          onClick={() => {
+            setLanguage(value)
+            if (value !== language) onPick?.(value)
+          }}
         >
           {label}
         </button>
@@ -2336,6 +2405,7 @@ function ProfileView({
   request,
   onRetry,
   onLogout,
+  onPickLanguage,
 }: {
   pharmacist: Pharmacist | null
   overview: Overview | null
@@ -2345,6 +2415,7 @@ function ProfileView({
   request: <T>(path: string, init?: RequestInit) => Promise<T>
   onRetry: () => void | Promise<void>
   onLogout: () => void | Promise<void>
+  onPickLanguage?: (language: Lang) => void
 }) {
   const t = useLearnerT()
   // Same source as the home and course pages (GET /api/mobile/training), not the stored counters of
@@ -2421,6 +2492,19 @@ function ProfileView({
                 total: courses.length,
               })}
             />
+            {/* The language is kept on the card: the till shows notices from HQ in it (26.11.2026). */}
+            <div className="flex flex-wrap items-center gap-3 py-4 last:pb-0" data-testid="profile-language">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-paper-hover text-brand-green-700">
+                <Languages size={19} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-bold text-ink-400">{t('Язык')}</span>
+                <span className="mt-0.5 block text-sm font-semibold text-ink-600">
+                  {t('Кабинет и уведомления от офиса на кассе')}
+                </span>
+              </span>
+              <LanguageSwitcher onPick={onPickLanguage} />
+            </div>
           </div>
         </div>
         {/* Where the name on the card came from, and a full name to propose when it has fewer than two words (26.11.2026). */}

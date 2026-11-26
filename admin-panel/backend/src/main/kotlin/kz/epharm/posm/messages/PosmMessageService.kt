@@ -58,11 +58,11 @@ class PosmMessageService(
         jdbc.update(
             """
             INSERT INTO posm_messages (id, title, body, audience, recipients_total, created_by, created_at, expires_at,
-                                       program_id, program_name, only_at_till)
-            VALUES (?, ?, ?, ?, ?, ?, now(), now() + (? * interval '1 day'), ?, ?, ?)
+                                       program_id, program_name, only_at_till, title_kk, body_kk)
+            VALUES (?, ?, ?, ?, ?, ?, now(), now() + (? * interval '1 day'), ?, ?, ?, ?, ?)
             """.trimIndent(),
             id, draft.title, draft.text, draft.audience.wire, recipients.total, actor, draft.days,
-            program?.id, program?.name, draft.onlyAtTill,
+            program?.id, program?.name, draft.onlyAtTill, draft.titleKk, draft.textKk,
         )
         if (draft.pharmacyIds.isNotEmpty()) {
             jdbc.batchUpdate(
@@ -84,9 +84,9 @@ class PosmMessageService(
         }
         forgetStampAfterCommit()
         log.info(
-            "POSM message {} for {} ({} targets, {} recipients{}, {} days) sent by {}",
+            "POSM message {} for {} ({} targets, {} recipients{}{}, {} days) sent by {}",
             id, draft.audience.wire, draft.pharmacyIds.size + draft.pharmacistIds.size, recipients.total,
-            if (draft.onlyAtTill) ", only at a till" else "", draft.days, actor,
+            if (draft.onlyAtTill) ", only at a till" else "", if (draft.titleKk != null) ", with Kazakh" else "", draft.days, actor,
         )
         return find(id) ?: notFound()
     }
@@ -123,9 +123,11 @@ class PosmMessageService(
         // The till names the person signed in to Standard-N: that is who is at the till now (AtTillService).
         presence.record(device, person.id)
         val till = device.pharmacyId!!
+        // The language the person chose in the cabinet (V128): Kazakh notices for those who chose Kazakh.
+        val language = person.language
         val rows = named.query(
             """
-            SELECT m.id, m.title, m.body, m.created_at, m.expires_at, r.shown_at, r.closed_at
+            SELECT m.id, m.title, m.body, m.title_kk, m.body_kk, m.created_at, m.expires_at, r.shown_at, r.closed_at
             FROM posm_messages m
             LEFT JOIN posm_message_receipts r ON r.message_id = m.id AND r.pharmacist_id = :person
             WHERE m.withdrawn_at IS NULL
@@ -139,10 +141,13 @@ class PosmMessageService(
                 .addValue("days", PosmMessageRules.HISTORY_DAYS)
                 .addValue("limit", PosmMessageRules.PERSON_READ_LIMIT),
         ) { rs, _ ->
+            val (title, text) = PosmMessageRules.localized(
+                language, rs.getString("title"), rs.getString("body"), rs.getString("title_kk"), rs.getString("body_kk"),
+            )
             PosmPersonMessageRow(
                 id = rs.getObject("id", UUID::class.java),
-                title = rs.getString("title"),
-                text = rs.getString("body"),
+                title = title,
+                text = text,
                 createdAt = rs.getTimestamp("created_at").toInstant(),
                 expiresAt = rs.getTimestamp("expires_at").toInstant(),
                 shownAt = rs.getTimestamp("shown_at")?.toInstant(),
@@ -290,6 +295,8 @@ class PosmMessageService(
                 onlyAtTill = row.onlyAtTill,
                 programId = row.programId,
                 programName = row.programName,
+                titleKk = row.titleKk,
+                textKk = row.textKk,
             )
         }
     }
@@ -311,6 +318,8 @@ class PosmMessageService(
         onlyAtTill = rs.getBoolean("only_at_till"),
         programId = rs.getObject("program_id", UUID::class.java),
         programName = rs.getString("program_name"),
+        titleKk = rs.getString("title_kk"),
+        textKk = rs.getString("body_kk"),
     )
 
     private fun ack(id: UUID, rs: ResultSet) = PosmSelfMessageAckDto(
@@ -336,6 +345,8 @@ class PosmMessageService(
         val onlyAtTill: Boolean,
         val programId: UUID?,
         val programName: String?,
+        val titleKk: String?,
+        val textKk: String?,
     )
 
     private data class CachedStamp(val value: Instant?, val atNanos: Long)
@@ -347,7 +358,7 @@ class PosmMessageService(
             SELECT m.id, m.title, m.body, m.audience, m.recipients_total, m.created_by, m.created_at, m.expires_at,
                    m.withdrawn_at, m.withdrawn_by, coalesce(r.shown, 0) AS shown_count, coalesce(r.closed, 0) AS closed_count,
                    (m.withdrawn_at IS NULL AND m.expires_at > now()) AS active,
-                   m.only_at_till, m.program_id, m.program_name
+                   m.only_at_till, m.program_id, m.program_name, m.title_kk, m.body_kk
             FROM posm_messages m
             LEFT JOIN LATERAL (
                 SELECT count(*) AS shown, count(closed_at) AS closed FROM posm_message_receipts x WHERE x.message_id = m.id

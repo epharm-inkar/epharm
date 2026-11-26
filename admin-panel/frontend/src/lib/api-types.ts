@@ -1299,10 +1299,13 @@ export interface CreatePosmMessageRequest {
   programId?: string
   /** Любым адресатам: только тем, кто сидит за кассой в момент отправки. */
   onlyAtTill?: boolean
+  /** Заголовок и текст на казахском, оба или ни одного: их касса покажет тем, кто выбрал казахский в кабинете. */
+  titleKk?: string
+  textKk?: string
 }
 
 /** Кому уйдёт уведомление: то же тело, что у отправки, без заголовка, текста и срока (для подсчёта до отправки). */
-export type PosmAudienceRequest = Omit<CreatePosmMessageRequest, 'title' | 'text' | 'days'>
+export type PosmAudienceRequest = Omit<CreatePosmMessageRequest, 'title' | 'text' | 'days' | 'titleKk' | 'textKk'>
 
 export interface PosmMessageDto {
   id: string
@@ -1331,6 +1334,9 @@ export interface PosmMessageDto {
   /** Курс уведомления «не прошли курс» и его название на момент отправки. */
   programId?: string | null
   programName?: string | null
+  /** Заголовок и текст на казахском, если их написали. Старый backend не шлёт. */
+  titleKk?: string | null
+  textKk?: string | null
 }
 
 /** Фармацевт в поиске адресатов: только то, чем отличить однофамильцев (телефон и ИИН ищутся, но не приходят). */

@@ -9,6 +9,8 @@ import {
   buildAudienceRequest,
   buildRequest,
   courseReminder,
+  courseReminderKk,
+  kazakhParts,
   draftError,
   messageState,
   shortDate,
@@ -125,6 +127,53 @@ describe('кому уйдёт: запрос подсчёта и отправки
     const request = buildAudienceRequest(draft)
     draft.pharmacistIds.push('p2')
     expect(request).toEqual({ audience: 'pharmacists', pharmacistIds: ['p1'] })
+  })
+})
+
+describe('текст на казахском', () => {
+  const ready = { ...EMPTY_DRAFT, title: 'Инвентаризация', text: 'Завтра в 9:00' }
+
+  it('выключен или пустой: казахского варианта нет, всем уходит русский', () => {
+    expect(kazakhParts(ready)).toBeNull()
+    expect(kazakhParts({ ...ready, titleKk: 'Түгендеу', textKk: 'Ертең' })).toBeNull()
+    expect(kazakhParts({ ...ready, withKazakh: true, titleKk: '  ', textKk: '' })).toBeNull()
+    expect(draftError({ ...ready, withKazakh: true })).toBeNull()
+    expect(buildRequest({ ...ready, withKazakh: true })).toEqual({ title: 'Инвентаризация', text: 'Завтра в 9:00', audience: 'all', days: 7 })
+  })
+
+  it('начали писать: нужны и заголовок, и текст, в тех же пределах, что у русского', () => {
+    const kk = { ...ready, withKazakh: true }
+    expect(draftError({ ...kk, titleKk: 'Түгендеу' })).toBe('msg.errTextKk')
+    expect(draftError({ ...kk, textKk: 'Ертең' })).toBe('msg.errTitleKk')
+    expect(draftError({ ...kk, titleKk: 'ә'.repeat(TITLE_MAX + 1), textKk: 'Ертең' })).toBe('msg.errTitleKkLong')
+    expect(draftError({ ...kk, titleKk: 'Түгендеу', textKk: 'ә'.repeat(TEXT_MAX + 1) })).toBe('msg.errTextKkLong')
+    expect(draftError({ ...kk, titleKk: 'ә'.repeat(TITLE_MAX), textKk: 'ә'.repeat(TEXT_MAX) })).toBeNull()
+    // Русский по-прежнему проверяется первым.
+    expect(draftError({ ...kk, title: '', titleKk: 'Түгендеу' })).toBe('msg.errTitle')
+  })
+
+  it('в запрос уходят обрезанные казахские заголовок и текст', () => {
+    expect(buildRequest({ ...ready, withKazakh: true, titleKk: ' Түгендеу ', textKk: ' Ертең сағат 9:00-де ' })).toEqual({
+      title: 'Инвентаризация',
+      text: 'Завтра в 9:00',
+      audience: 'all',
+      days: 7,
+      titleKk: 'Түгендеу',
+      textKk: 'Ертең сағат 9:00-де',
+    })
+  })
+
+  it('напоминание о курсе на казахском: пункт кассы как на кассе, срок только впереди', () => {
+    expect(courseReminderKk({ name: 'Витамины группы B', dueOn: '2026-11-30' }, '2026-11-26')).toEqual({
+      title: 'Курс туралы еске салу',
+      text: '«Витамины группы B» курсын 30.11 дейін өтіңіз: «Мой кабинет» → Оқыту',
+    })
+    expect(courseReminderKk({ name: '«Сорбенты»', dueOn: '2026-11-20' }, '2026-11-26').text).toBe(
+      '«Сорбенты» курсын өтіңіз: «Мой кабинет» → Оқыту',
+    )
+    const long = courseReminderKk({ name: 'я'.repeat(255), dueOn: '2026-12-31' }, '2026-11-26')
+    expect([...long.text].length).toBeLessThanOrEqual(TEXT_MAX)
+    expect(long.text).not.toMatch(/[\u2013\u2014]/)
   })
 })
 

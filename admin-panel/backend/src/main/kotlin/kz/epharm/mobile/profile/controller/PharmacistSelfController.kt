@@ -5,7 +5,10 @@ import kz.epharm.mobile.profile.service.PharmacistSelfService
 import org.springframework.http.CacheControl
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
+import kz.epharm.mobile.profile.dto.PharmacistLanguageDto
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -29,6 +32,13 @@ class PharmacistSelfController(private val service: PharmacistSelfService) {
         @AuthenticationPrincipal principal: PharmacistPrincipal,
         @RequestParam(defaultValue = "30") days: Int,
     ) = privateResponse(service.topProducts(principal.pharmacistId, days))
+
+    /** The cabinet saves the language the pharmacist chose, so tills and notices speak it too. */
+    @PutMapping("/language")
+    fun language(
+        @AuthenticationPrincipal principal: PharmacistPrincipal,
+        @RequestBody body: PharmacistLanguageDto,
+    ) = privateResponse(service.setLanguage(principal.pharmacistId, body.language))
 
     private fun <T> privateResponse(body: T): ResponseEntity<T> =
         ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body)

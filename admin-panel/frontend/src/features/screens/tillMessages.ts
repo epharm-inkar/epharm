@@ -28,6 +28,13 @@ export interface TillMessageDraft {
   /** Любым адресатам: только тем, кто за кассой в момент отправки. */
   onlyAtTill: boolean
   days: number
+  /**
+   * Второй вариант на казахском (Григорий, 26.11.2026: «уведомления на казахском»). Касса покажет его тем, кто выбрал
+   * казахский в кабинете; остальным уйдёт русский.
+   */
+  withKazakh: boolean
+  titleKk: string
+  textKk: string
 }
 
 export const EMPTY_DRAFT: TillMessageDraft = {
@@ -39,6 +46,19 @@ export const EMPTY_DRAFT: TillMessageDraft = {
   programId: '',
   onlyAtTill: false,
   days: DEFAULT_DAYS,
+  withKazakh: false,
+  titleKk: '',
+  textKk: '',
+}
+
+/** Казахский заголовок и текст, если их начали писать. Оба пустые: казахского варианта нет, всем уйдёт русский. */
+export function kazakhParts(
+  draft: Pick<TillMessageDraft, 'withKazakh' | 'titleKk' | 'textKk'>,
+): { title: string; text: string } | null {
+  if (!draft.withKazakh) return null
+  const title = draft.titleKk.trim()
+  const text = draft.textKk.trim()
+  return title || text ? { title, text } : null
 }
 
 /** Ключ текста ошибки для первой проблемы черновика или null, если можно отправлять. */
@@ -49,6 +69,13 @@ export function draftError(draft: TillMessageDraft): string | null {
   if ([...title].length > TITLE_MAX) return 'msg.errTitleLong'
   if (!text) return 'msg.errText'
   if ([...text].length > TEXT_MAX) return 'msg.errTextLong'
+  const kazakh = kazakhParts(draft)
+  if (kazakh) {
+    if (!kazakh.title) return 'msg.errTitleKk'
+    if ([...kazakh.title].length > TITLE_MAX) return 'msg.errTitleKkLong'
+    if (!kazakh.text) return 'msg.errTextKk'
+    if ([...kazakh.text].length > TEXT_MAX) return 'msg.errTextKkLong'
+  }
   if (draft.audience === 'pharmacies' && draft.pharmacyIds.length === 0) return 'msg.errPharmacies'
   if (draft.audience === 'pharmacists' && draft.pharmacistIds.length === 0) return 'msg.errPharmacists'
   if (draft.audience === 'course' && !draft.programId) return 'msg.errCourse'
@@ -71,7 +98,9 @@ export function buildAudienceRequest(draft: TillMessageDraft): PosmAudienceReque
 /** Тело POST /api/admin/posm-messages: только нужный адресатам список. */
 export function buildRequest(draft: TillMessageDraft): CreatePosmMessageRequest {
   const audience = buildAudienceRequest(draft) ?? { audience: draft.audience }
-  return { title: draft.title.trim(), text: draft.text.trim(), days: draft.days, ...audience }
+  const kazakh = kazakhParts(draft)
+  const kk = kazakh ? { titleKk: kazakh.title, textKk: kazakh.text } : {}
+  return { title: draft.title.trim(), text: draft.text.trim(), days: draft.days, ...audience, ...kk }
 }
 
 /**
@@ -117,6 +146,21 @@ export function courseReminder(
   return {
     title: 'Напоминание о курсе',
     text: `Пройдите курс ${quoted(course.name)}${due}: Мой кабинет → Обучение`,
+  }
+}
+
+/**
+ * То же напоминание на казахском, для тех, кто выбрал казахский в кабинете. Пункт меню кассы назван как на кассе
+ * («Мой кабинет»: окна кассы пока на русском), раздел кабинета как в казахском кабинете («Оқыту»).
+ */
+export function courseReminderKk(
+  course: Pick<PosmCourseOptionDto, 'name' | 'dueOn'>,
+  today: string = new Date().toLocaleDateString('sv-SE'),
+): { title: string; text: string } {
+  const due = course.dueOn && course.dueOn >= today ? ` ${shortDate(course.dueOn)} дейін` : ''
+  return {
+    title: 'Курс туралы еске салу',
+    text: `${quoted(course.name)} курсын${due} өтіңіз: «Мой кабинет» → Оқыту`,
   }
 }
 
