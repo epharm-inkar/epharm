@@ -22,6 +22,8 @@ const getFixtures = new Map<string, unknown>([
   ['/api/admin/access/me', { managed: false, version: null, grants: [], roleCeiling: 'HQ_HEAD', canViewAccounts: false, canManageAccounts: false, canViewMerchInventory: false }],
   ['/api/admin/pharmacists', [pharmacist]],
   ['/api/admin/pharmacies', []],
+  // «ИИН указали сами» (26.11.2026): the registry counts the open claims on its button, no claims here.
+  ['/api/admin/posm/identity-claims', []],
   ['/api/admin/training/preferences', []],
   ['/api/admin/training/dashboard', { capabilities: { canManagePreferences: true, canManageAssignments: true } }],
   ['/api/admin/screens/connected', { total: 3, devices: connectedDevices }],
