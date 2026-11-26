@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { AxiosError } from 'axios'
-import { downloadReport, readLedger, type LedgerReport } from './ledgerReports'
+import { downloadReport, ledgerSources, readLedger, type LedgerReport } from './ledgerReports'
 const report: LedgerReport = {
   from: '2026-10-01',
   to: '2026-10-29',
@@ -94,5 +94,20 @@ describe('financial report transport', () => {
       downloadReport('/api/admin/merch/exports/tasks.xlsx', {}, new AbortController().signal),
     ).rejects.toThrow(message)
     expect(get).toHaveBeenCalledOnce()
+  })
+})
+describe('ledger sources', () => {
+  it('names the sales premium and its correction, so the filter can pick them', () => {
+    expect(ledgerSources.sales_premium).toBe('Премия за продажи')
+    expect(ledgerSources.sales_premium_correction).toBe('Корректировка премии')
+    expect(Object.keys(ledgerSources)).toEqual([
+      'receipt_bonus',
+      'training_bonus',
+      'merch_task',
+      'sales_premium',
+      'sales_premium_correction',
+      'admin_adjustment',
+      'payout_reservation',
+    ])
   })
 })
