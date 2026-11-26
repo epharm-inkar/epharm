@@ -1,5 +1,37 @@
 # Admin Console
 
+## 26.11.2026: analytics start, course preview, payouts in development
+
+**Analytics** (`features/dashboard`). The page opens with «Фармацевты в ePharm» (`PharmacistsUsage`): pharmacists in
+the system (everyone except blocked), how many worked with ePharm today and in the last 7 days with their shares, and
+two daily charts since the launch (people, and their share of the system). It reads the same query as the pharmacists
+«Покрытие» tab (`usePharmacistCoverage`, `GET /api/admin/pharmacists/coverage`), so the numbers and the rule are one:
+«worked» is a sale the till attributed, a tip shown or a cabinet sign-in. The page asks for 366 days (the server's
+limit, was 120) and drops the leading days with nobody in the system (`sinceLaunch`), so the chart starts at the first
+pharmacist. Each day carries `active1d` and `coverage1dPct` and the response `activeToday` and `coverageTodayPct`
+(`CoverageMath` in `PharmacistActivityService`, unit-tested without a database); an older backend lacks them and the
+page shows «нет данных» for today and charts only the 7-day line. The share of a past day is counted against the
+roster the system had that day, so people brought in later (for example from the Standard-N directory) raise the
+denominator only from the day they joined, the same as in «Покрытие». «Скачать график» draws both on-screen SVG
+charts, the period and the figures into one PNG (`chartPng.ts`). «Динамика
+принятых рекомендаций» (Pilot vs Control) and «Карта активности» were empty placeholders and are removed.
+
+**Course preview** (`features/lms/CoursePreview`, `features/learner/course/CoursePreviewScreen`). The course drawer
+has the tab «Как видит фармацевт» (the first one for roles that can edit nothing, e.g. HQ_HEAD; editors start on the
+lessons tab). The cabinet's own `LessonPage` runs with `preview`: nothing is saved or sent, no lesson is locked, the
+video is unrestricted, the text does not wait for its reading time, a test is graded in the browser by the server's
+rule (`gradePreviewTest`), a live lesson is a card. The path is the cabinet's `CoursePath`. The phone is an iframe
+with `srcdoc` that carries the page's stylesheets and a React portal into it (`PhoneFrame`): Tailwind's `sm:` and
+`lg:` follow the frame's width, so the layout is the phone's. The frame is `sandbox` (same origin, no scripts of its
+own) and, being `srcdoc`, is not blocked by the admin's `X-Frame-Options: DENY` / `frame-ancestors 'none'`. The
+preview chunk loads on the first open of the tab and only the open lesson loads media. The lessons tab shows one line
+per lesson (video, text length, questions) instead of a player and raw text.
+
+**Payouts.** «Финансы / выплаты» shows «Функционал выплат находится в разработке» at the top; «Сформировать выплату»
+and «Утвердить выплату» are disabled with the reason as a tooltip (`PAYOUTS_ENABLED` in `FinancePage`), reading the
+batches and the Excel report stay. The cabinet profile shows the same notice in place of the card-linking text. Only
+the screens changed: `POST /api/admin/payouts/generate`, `/approve` and the cron on the 1st and 16th are as they were.
+
 ## Explicit unlimited campaign budget — candidate 2026-11-16
 
 Campaign detail offers “Без лимита” only with fresh server-confirmed financial

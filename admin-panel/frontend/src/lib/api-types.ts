@@ -339,6 +339,10 @@ export interface PharmacistCoverageDayDto {
   sellers7d: number
   coveragePct: number
   joined: number
+  /** Worked with ePharm on this very day. Absent from a backend older than 26.11.2026. */
+  active1d?: number
+  /** Share of `total` that worked on this very day, percent. Absent from an older backend. */
+  coverage1dPct?: number
 }
 
 /** GET /api/admin/pharmacists/coverage: how many pharmacists work with ePharm, by day. */
@@ -353,6 +357,9 @@ export interface PharmacistCoverageDto {
   coveragePct: number
   daily: PharmacistCoverageDayDto[]
   generatedAt: string
+  /** Worked with ePharm today so far. Absent from a backend older than 26.11.2026. */
+  activeToday?: number
+  coverageTodayPct?: number
 }
 
 export interface PharmacistDto {
