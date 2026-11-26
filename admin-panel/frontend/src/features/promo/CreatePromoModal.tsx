@@ -330,7 +330,12 @@ export function CreatePromoModal({ open, onClose, onCreate, pending }: CreatePro
               </div>
             </fieldset>
             {form.recommendationType && (
-              <Field label={t('pm.fldOfferProduct')}>
+              <div>
+                {/* Not a <label>: the picker holds buttons, and a label forwards a click to its first button
+                    when the clicked one is gone. That reopened the picker right after the offer was chosen. */}
+                <div className="mb-1.5 text-[12px] font-semibold text-ink-700">
+                  {t('pm.fldOfferProduct')}
+                </div>
                 <PromoProductPicker
                   value={form.product}
                   requireQuery
@@ -345,7 +350,7 @@ export function CreatePromoModal({ open, onClose, onCreate, pending }: CreatePro
                     }))
                   }
                 />
-              </Field>
+              </div>
             )}
             {form.product && (
               <p className="text-[12px] text-ink-500">

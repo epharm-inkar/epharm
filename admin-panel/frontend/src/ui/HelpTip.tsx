@@ -122,7 +122,8 @@ export function HelpTip({ children, topic, className = '' }: HelpTipProps) {
       >
         <span aria-hidden="true">?</span>
       </button>
-      <span id={descId} className="sr-only">
+      {/* Not read in the page flow (hidden), but it is what the button's description points to. */}
+      <span id={descId} hidden>
         {children}
       </span>
       {open &&

@@ -3,7 +3,7 @@
 // без MSW.
 
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -478,6 +478,45 @@ describe('PromoPage — trigger-first campaign creation', () => {
     )
   })
 
+  it('после выбора рекомендуемого товара выбор остаётся закрытым: карточка товара, поиск не возвращается', async () => {
+    const user = userEvent.setup()
+    renderPromo()
+    await openForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Конкретный товар' }))
+    await user.type(screen.getByPlaceholderText(/Поиск товара/i), 'Панк')
+    await user.click(await screen.findByTestId('promo-product-option-prod_1'))
+    await selectOffer(user)
+    const dialog = screen.getByRole('dialog')
+    // оба товара показаны карточкой с «Сменить»; поле поиска и лишняя «Отмена» выбора не вернулись
+    expect(within(dialog).getAllByRole('button', { name: 'Сменить' })).toHaveLength(2)
+    expect(within(dialog).queryByPlaceholderText(/Поиск товара/i)).not.toBeInTheDocument()
+    expect(within(dialog).getAllByRole('button', { name: 'Отмена' })).toHaveLength(1)
+  })
+
+  it('сроки акции стоят в основной части формы, свёрнутые настройки их не содержат, и они уходят в запрос', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(mkPromo({ id: 'pr_dates' }))
+    promoHooks.useCreatePromo.mockReturnValue({ mutateAsync, isPending: false })
+    const user = userEvent.setup()
+    renderPromo()
+    await openForm(user)
+    await user.click(screen.getByRole('radio', { name: 'Конкретный товар' }))
+    await user.type(screen.getByPlaceholderText(/Поиск товара/i), 'Панк')
+    await user.click(await screen.findByTestId('promo-product-option-prod_1'))
+    await selectOffer(user)
+    const settings = screen.getByText(/Дополнительные настройки/).closest('details')!
+    expect(settings).toHaveTextContent(
+      'Дополнительные настройки: идентификаторы, обложка, фото и описание',
+    )
+    expect(within(settings).queryByLabelText('Начало акции')).not.toBeInTheDocument()
+    expect(within(settings).queryByLabelText('Окончание акции')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Начало акции'), { target: { value: '2026-12-01' } })
+    fireEvent.change(screen.getByLabelText('Окончание акции'), { target: { value: '2026-12-31' } })
+    await user.click(screen.getByRole('button', { name: /Создать черновик/ }))
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ dateStart: '2026-12-01', dateEnd: '2026-12-31' }),
+    )
+  })
+
   it('сохраняет группу И МНН одним триггером, не отдельными рекомендациями', async () => {
     const mutateAsync = vi.fn().mockResolvedValue(mkPromo({ id: 'pr_and' }))
     promoHooks.useCreatePromo.mockReturnValue({ mutateAsync, isPending: false })
@@ -607,7 +646,9 @@ describe('PromoPage — trigger-first campaign creation', () => {
     await user.click(screen.getByTestId('create-trigger-option-group:1'))
     await selectOffer(user)
     expect(screen.getByRole('button', { name: /Создать черновик/ })).toBeEnabled()
-    await user.click(screen.getByRole('button', { name: 'Сменить' }))
+    // «Сменить» у триггера: у выбранного рекомендуемого товара теперь тоже есть своя карточка
+    const trigger = screen.getByRole('region', { name: 'Что запускает рекомендацию' })
+    await user.click(within(trigger).getByRole('button', { name: 'Сменить' }))
     expect(screen.getByRole('button', { name: /Создать черновик/ })).toBeDisabled()
     await user.click(screen.getByTestId('create-trigger-option-group:2'))
     expect(screen.getByRole('button', { name: /Создать черновик/ })).toBeEnabled()
