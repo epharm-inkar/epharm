@@ -1834,6 +1834,48 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H08.07",
+    "group": "H08",
+    "name": "Загрузка накопленной премии за продажи по ИИН",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/sales-premium-wallet",
+      "ui": [],
+      "api": ["POST /api/admin/finance/sales-premium/import"],
+      "jobs": [],
+      "data": [
+        "sales_premium_pending",
+        "sales_premium_imports",
+        "pharmacists",
+        "pharmacist_wallet_entries"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumRules.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumPendingCredits.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/service/PharmacistWalletService.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V123__sales_premium_wallet.sql"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Начисления и выплаты",
+      "actions": [
+        "Загрузить накопленную премию за продажи по ИИН: сначала проверка, потом зачисление"
+      ],
+      "scope": "Только HQ_HEAD и SYSTEM_ADMIN; управляемым аккаунтам не выдаётся (NOT_READY)"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "dryRun обязателен; проверка ничего не пишет и показывает то, что сделает настоящая загрузка",
+      "Повтор файла и параллельные загрузки не начисляют второй раз; срез старше уже загруженного даёт 409",
+      "Возврат уменьшает накопленную сумму и баланс, но баланс не уходит ниже нуля, остаток виден в ответе"
+    ],
+    "risks": ["Выплаты не менялись: пакет выплат резервирует весь баланс, премия в нём тоже"],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H09.01",
     "group": "H09",
     "name": "Сводка подключённых касс и длительность соединения",
