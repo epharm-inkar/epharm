@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -7,6 +7,7 @@ import {
   Clock3,
   FileText,
   Image,
+  ListChecks,
   Paperclip,
   Pencil,
   PlayCircle,
@@ -15,7 +16,19 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import { Button, Drawer, Empty, Field, IconButton, Input, Modal, Select, useToast } from '@/ui'
+import {
+  Button,
+  Drawer,
+  Empty,
+  Field,
+  IconButton,
+  Input,
+  Modal,
+  Select,
+  Tabs,
+  useToast,
+  type TabItem,
+} from '@/ui'
 import type {
   CourseDto,
   CourseLessonDto,
@@ -38,6 +51,11 @@ import {
 import { describeError } from '@/lib/describeError'
 import { LiveLessonStudio } from './LiveLessonStudio'
 import { trainingAllowed, type TrainingActions } from './training-actions'
+
+// The pharmacist's view pulls in the learner screens: it loads only when somebody opens that tab.
+const CoursePreview = lazy(() => import('./CoursePreview'))
+
+type DrawerView = 'preview' | 'lessons'
 
 interface CourseEditorDrawerProps {
   courseId: string | null
@@ -142,6 +160,15 @@ export function CourseEditorDrawer({
     () => [...(course?.lessonItems ?? [])].sort((a, b) => a.order - b.order),
     [course?.lessonItems],
   )
+  // Someone who can do nothing to the lessons is here to look at the course, so the pharmacist's view
+  // comes first for them (owner, 26.11.2026); whoever works on the course starts at the lessons.
+  const canWork = canCreateLesson || canEditLesson || canReorder || canDelete || canUpload
+  const [chosenView, setChosenView] = useState<DrawerView | null>(null)
+  const view: DrawerView = chosenView ?? (canWork ? 'lessons' : 'preview')
+  const viewTabs: TabItem<DrawerView>[] = [
+    { value: 'preview', label: 'Как видит фармацевт' },
+    { value: 'lessons', label: canWork ? 'Уроки и настройки' : 'Сведения и уроки' },
+  ]
 
   const saveMetadata = () => {
     if (!editable) return
@@ -197,7 +224,7 @@ export function CourseEditorDrawer({
         title={course?.title ?? 'Онлайн-курс'}
         subtitle={editable ? 'Содержание и настройки курса' : 'Просмотр содержания курса'}
         footer={
-          editable ? (
+          editable && view === 'lessons' ? (
             <Button disabled={updateCourse.isPending} onClick={saveMetadata}>
               {updateCourse.isPending ? 'Сохраняем…' : 'Сохранить курс'}
             </Button>
@@ -210,227 +237,231 @@ export function CourseEditorDrawer({
           </div>
         ) : (
           <div className="flex flex-col gap-6" data-testid="course-editor">
-            <section className="grid gap-3 border-b border-ink-100 pb-6">
-              {metadataError && <ErrorBanner message={metadataError} />}
-              <Field label="Название">
-                <Input
-                  value={title}
-                  disabled={!editable}
-                  onChange={(event) => setTitle(event.target.value)}
-                />
-              </Field>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Категория" optional>
-                  <Input
-                    value={category}
-                    disabled={!editable}
-                    onChange={(event) => setCategory(event.target.value)}
-                  />
-                </Field>
-                <Field label="Бонус, ₸">
-                  <Input
-                    type="number"
-                    min={0}
-                    value={bonus}
-                    disabled={!editable || !allow('courses.configure_bonus')}
-                    onChange={(event) => setBonus(event.target.value)}
-                  />
-                </Field>
-                <Field label="Статус">
-                  <Select
-                    value={status}
-                    disabled={!editable || !allow('courses.publish')}
-                    onChange={(value) => setStatus(value as CourseStatus)}
-                    options={[
-                      { value: 'draft', label: 'Черновик' },
-                      { value: 'published', label: 'Опубликован' },
-                      ...(status === 'archived' ? [{ value: 'archived', label: 'Архив' }] : []),
-                    ]}
-                  />
-                </Field>
-              </div>
-              <Field label="Описание" optional>
-                <textarea
-                  className="inp min-h-24"
-                  value={description}
-                  disabled={!editable}
-                  onChange={(event) => setDescription(event.target.value)}
-                />
-              </Field>
-            </section>
+            <Tabs<DrawerView> items={viewTabs} value={view} onChange={setChosenView} />
 
-            <section>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-[15px] font-extrabold text-ink-900">Уроки</h3>
-                  <div className="mt-0.5 flex gap-3 text-[12px] text-ink-500">
-                    <span className="inline-flex items-center gap-1">
-                      <BookOpen size={14} /> {course.lessons}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Clock3 size={14} /> {course.durationMin} мин.
-                    </span>
+            {view === 'preview' ? (
+              <Suspense
+                fallback={
+                  <div className="py-16 text-center text-[13px] text-ink-500">
+                    Загружаем просмотр…
                   </div>
-                </div>
-                {canCreateLesson && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leading={<Plus size={15} />}
-                    onClick={() => setLessonTarget('new')}
-                  >
-                    Добавить урок
-                  </Button>
-                )}
-              </div>
+                }
+              >
+                <CoursePreview course={course} loading={detail.isLoading} />
+              </Suspense>
+            ) : (
+              <>
+                <section className="grid gap-3 border-b border-ink-100 pb-6">
+                  {metadataError && <ErrorBanner message={metadataError} />}
+                  <Field label="Название">
+                    <Input
+                      value={title}
+                      disabled={!editable}
+                      onChange={(event) => setTitle(event.target.value)}
+                    />
+                  </Field>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <Field label="Категория" optional>
+                      <Input
+                        value={category}
+                        disabled={!editable}
+                        onChange={(event) => setCategory(event.target.value)}
+                      />
+                    </Field>
+                    <Field label="Бонус, ₸">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={bonus}
+                        disabled={!editable || !allow('courses.configure_bonus')}
+                        onChange={(event) => setBonus(event.target.value)}
+                      />
+                    </Field>
+                    <Field label="Статус">
+                      <Select
+                        value={status}
+                        disabled={!editable || !allow('courses.publish')}
+                        onChange={(value) => setStatus(value as CourseStatus)}
+                        options={[
+                          { value: 'draft', label: 'Черновик' },
+                          { value: 'published', label: 'Опубликован' },
+                          ...(status === 'archived' ? [{ value: 'archived', label: 'Архив' }] : []),
+                        ]}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Описание" optional>
+                    <textarea
+                      className="inp min-h-24"
+                      value={description}
+                      disabled={!editable}
+                      onChange={(event) => setDescription(event.target.value)}
+                    />
+                  </Field>
+                </section>
 
-              {lessons.length === 0 ? (
-                <Empty
-                  title="В курсе пока нет уроков"
-                  body={
-                    course.lessons > 0
-                      ? `Старые данные курса содержат счётчик ${course.lessons}, но содержимое ещё не перенесено в редактор.`
-                      : 'Добавьте текстовый материал или видеоурок.'
-                  }
-                  icon={<BookOpen size={26} />}
-                  action={
-                    canCreateLesson ? (
-                      <Button size="sm" onClick={() => setLessonTarget('new')}>
+                <section>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-[15px] font-extrabold text-ink-900">Уроки</h3>
+                      <div className="mt-0.5 flex gap-3 text-[12px] text-ink-500">
+                        <span className="inline-flex items-center gap-1">
+                          <BookOpen size={14} /> {course.lessons}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 size={14} /> {course.durationMin} мин.
+                        </span>
+                      </div>
+                    </div>
+                    {canCreateLesson && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        leading={<Plus size={15} />}
+                        onClick={() => setLessonTarget('new')}
+                      >
                         Добавить урок
                       </Button>
-                    ) : undefined
-                  }
-                />
-              ) : (
-                <div className="divide-y divide-ink-100 border-y border-ink-100">
-                  {lessons.map((lesson, index) => (
-                    <article key={lesson.id} className="py-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-paper-hover text-ink-600">
-                          {lesson.kind === 'live' ? (
-                            <Radio size={18} />
-                          ) : lesson.kind === 'video' ? (
-                            <PlayCircle size={18} />
-                          ) : (
-                            <FileText size={18} />
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 text-left"
-                          onClick={() => setLessonTarget(lesson)}
-                        >
-                          <div className="font-bold text-ink-900">
-                            {index + 1}. {lesson.title}
+                    )}
+                  </div>
+
+                  {lessons.length === 0 ? (
+                    <Empty
+                      title="В курсе пока нет уроков"
+                      body={
+                        course.lessons > 0
+                          ? `Старые данные курса содержат счётчик ${course.lessons}, но содержимое ещё не перенесено в редактор.`
+                          : 'Добавьте текстовый материал или видеоурок.'
+                      }
+                      icon={<BookOpen size={26} />}
+                      action={
+                        canCreateLesson ? (
+                          <Button size="sm" onClick={() => setLessonTarget('new')}>
+                            Добавить урок
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                  ) : (
+                    <div className="divide-y divide-ink-100 border-y border-ink-100">
+                      {lessons.map((lesson, index) => (
+                        <article key={lesson.id} className="py-4">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-paper-hover text-ink-600">
+                              {lesson.kind === 'live' ? (
+                                <Radio size={18} />
+                              ) : lesson.kind === 'video' ? (
+                                <PlayCircle size={18} />
+                              ) : (
+                                <FileText size={18} />
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => setLessonTarget(lesson)}
+                            >
+                              <div className="font-bold text-ink-900">
+                                {index + 1}. {lesson.title}
+                              </div>
+                              <div className="mt-0.5 text-[12px] text-ink-500">
+                                {lessonKindLabels[lesson.kind]} · {lesson.durationMin} мин.
+                              </div>
+                              {lesson.description && (
+                                <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-ink-600">
+                                  {lesson.description}
+                                </p>
+                              )}
+                              <LessonFacts lesson={lesson} />
+                              {(lesson.attachments?.length ?? 0) > 0 && (
+                                <div className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-brand-green-700">
+                                  <Paperclip size={13} /> {lesson.attachments.length} вложений
+                                </div>
+                              )}
+                            </button>
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              {(canReorder || canEditLesson || canDelete) && (
+                                <>
+                                  {canReorder && (
+                                    <IconButton
+                                      tip="Выше"
+                                      aria-label={`Переместить урок ${lesson.title} выше`}
+                                      disabled={index === 0 || reorder.isPending}
+                                      onClick={() => moveLesson(index, -1)}
+                                    >
+                                      <ArrowUp size={16} />
+                                    </IconButton>
+                                  )}
+                                  {canReorder && (
+                                    <IconButton
+                                      tip="Ниже"
+                                      aria-label={`Переместить урок ${lesson.title} ниже`}
+                                      disabled={index === lessons.length - 1 || reorder.isPending}
+                                      onClick={() => moveLesson(index, 1)}
+                                    >
+                                      <ArrowDown size={16} />
+                                    </IconButton>
+                                  )}
+                                  {canEditLesson && (
+                                    <IconButton
+                                      tip="Редактировать"
+                                      aria-label={`Редактировать урок ${lesson.title}`}
+                                      onClick={() => setLessonTarget(lesson)}
+                                    >
+                                      <Pencil size={16} />
+                                    </IconButton>
+                                  )}
+                                  {canDelete && (
+                                    <IconButton
+                                      tip="Удалить"
+                                      aria-label={`Удалить урок ${lesson.title}`}
+                                      disabled={removeLesson.isPending}
+                                      onClick={() => {
+                                        if (!confirm(`Удалить урок «${lesson.title}»?`)) return
+                                        removeLesson.mutate(
+                                          { courseId: course.id, lessonId: lesson.id },
+                                          {
+                                            onSuccess: () => toast.push('Урок удалён'),
+                                            onError: (error) => toast.push(describeError(error)),
+                                          },
+                                        )
+                                      }}
+                                    >
+                                      <Trash2 size={16} />
+                                    </IconButton>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </div>
-                          <div className="mt-0.5 text-[12px] text-ink-500">
-                            {lessonKindLabels[lesson.kind]} · {lesson.durationMin} мин.
-                          </div>
-                          {lesson.description && (
-                            <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-ink-600">
-                              {lesson.description}
-                            </p>
-                          )}
-                          {(lesson.attachments?.length ?? 0) > 0 && (
-                            <div className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-brand-green-700">
-                              <Paperclip size={13} /> {lesson.attachments.length} вложений
+                          {lesson.kind === 'live' && trainingAllowed(actions, 'live.view', true) && (
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#cce8e5] bg-[#f0faf8] px-3 py-2.5">
+                              <div className="flex items-center gap-2 text-[12px] font-bold text-[#087b77]">
+                                <CalendarClock size={15} />
+                                {lesson.liveStartAt
+                                  ? new Date(lesson.liveStartAt).toLocaleString('ru-RU', {
+                                      dateStyle: 'medium',
+                                      timeStyle: 'short',
+                                    })
+                                  : 'Дата эфира не указана'}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                leading={<Radio size={14} />}
+                                onClick={() => setLiveStudioTarget(lesson)}
+                              >
+                                Студия эфира
+                              </Button>
                             </div>
                           )}
-                        </button>
-                        <div className="flex shrink-0 items-center gap-0.5">
-                          {(canReorder || canEditLesson || canDelete) && (
-                            <>
-                              {canReorder && (
-                                <IconButton
-                                  tip="Выше"
-                                  aria-label={`Переместить урок ${lesson.title} выше`}
-                                  disabled={index === 0 || reorder.isPending}
-                                  onClick={() => moveLesson(index, -1)}
-                                >
-                                  <ArrowUp size={16} />
-                                </IconButton>
-                              )}
-                              {canReorder && (
-                                <IconButton
-                                  tip="Ниже"
-                                  aria-label={`Переместить урок ${lesson.title} ниже`}
-                                  disabled={index === lessons.length - 1 || reorder.isPending}
-                                  onClick={() => moveLesson(index, 1)}
-                                >
-                                  <ArrowDown size={16} />
-                                </IconButton>
-                              )}
-                              {canEditLesson && (
-                                <IconButton
-                                  tip="Редактировать"
-                                  aria-label={`Редактировать урок ${lesson.title}`}
-                                  onClick={() => setLessonTarget(lesson)}
-                                >
-                                  <Pencil size={16} />
-                                </IconButton>
-                              )}
-                              {canDelete && (
-                                <IconButton
-                                  tip="Удалить"
-                                  aria-label={`Удалить урок ${lesson.title}`}
-                                  disabled={removeLesson.isPending}
-                                  onClick={() => {
-                                    if (!confirm(`Удалить урок «${lesson.title}»?`)) return
-                                    removeLesson.mutate(
-                                      { courseId: course.id, lessonId: lesson.id },
-                                      {
-                                        onSuccess: () => toast.push('Урок удалён'),
-                                        onError: (error) => toast.push(describeError(error)),
-                                      },
-                                    )
-                                  }}
-                                >
-                                  <Trash2 size={16} />
-                                </IconButton>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      {lesson.videoUrl && (
-                        <video
-                          controls
-                          preload="metadata"
-                          className="mt-3 aspect-video w-full rounded-md bg-ink-900"
-                          src={lesson.videoUrl}
-                        />
-                      )}
-                      {lesson.content && (
-                        <div className="mt-3 whitespace-pre-wrap text-[13px] leading-6 text-ink-700">
-                          {lesson.content}
-                        </div>
-                      )}
-                      {lesson.kind === 'live' && trainingAllowed(actions, 'live.view', true) && (
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#cce8e5] bg-[#f0faf8] px-3 py-2.5">
-                          <div className="flex items-center gap-2 text-[12px] font-bold text-[#087b77]">
-                            <CalendarClock size={15} />
-                            {lesson.liveStartAt
-                              ? new Date(lesson.liveStartAt).toLocaleString('ru-RU', {
-                                  dateStyle: 'medium',
-                                  timeStyle: 'short',
-                                })
-                              : 'Дата эфира не указана'}
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            leading={<Radio size={14} />}
-                            onClick={() => setLiveStudioTarget(lesson)}
-                          >
-                            Студия эфира
-                          </Button>
-                        </div>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
           </div>
         )}
       </Drawer>
@@ -456,6 +487,30 @@ export function CourseEditorDrawer({
         />
       )}
     </>
+  )
+}
+
+/**
+ * What a lesson holds, in one line. The video itself and the text are on the «Как видит фармацевт»
+ * tab and in the lesson editor; a player and a wall of raw text in every row hid the list.
+ */
+function LessonFacts({ lesson }: { lesson: CourseLessonDto }) {
+  const text = lesson.content?.trim() ?? ''
+  const questions = lesson.quizQuestions?.length ?? 0
+  const facts = [
+    lesson.videoUrl ? { Icon: PlayCircle, label: 'Видео загружено' } : null,
+    text ? { Icon: FileText, label: `Текст: ${text.length.toLocaleString('ru-RU')} зн.` } : null,
+    questions > 0 ? { Icon: ListChecks, label: `Вопросов: ${questions}` } : null,
+  ].filter((fact) => fact !== null)
+  if (facts.length === 0) return null
+  return (
+    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-500">
+      {facts.map(({ Icon, label }) => (
+        <span key={label} className="inline-flex items-center gap-1">
+          <Icon size={13} /> {label}
+        </span>
+      ))}
+    </div>
   )
 }
 

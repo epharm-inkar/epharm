@@ -61,6 +61,7 @@ import { videoProgressToSave } from './guardedVideoRules'
 import { CoursePath } from './course/CoursePath'
 import { FinalTest } from './course/FinalTest'
 import { LessonBlock, LessonReader } from './course/LessonReader'
+import { documentOf, scrollToTopOf } from './course/frameWindow'
 import { lessonMinutes, lessonSections } from './course/lessonContent'
 import { SelfCheck, type SelfCheckQuestion } from './course/SelfCheck'
 
@@ -407,6 +408,9 @@ type Overview = {
     score: number
   }
 }
+
+// The admin course preview draws the real lesson screen from these same shapes.
+export type { Tokens, TokenLifecycle, Lesson, Stage, Assignment, QuizSubmissionResult }
 
 const TOKEN_KEY = 'epharm.learner.tokens'
 
@@ -2308,7 +2312,6 @@ function ProfileView({
   onLogout: () => void | Promise<void>
 }) {
   const t = useLearnerT()
-  const [showCardInfo, setShowCardInfo] = useState(false)
   // Same source as the home and course pages (GET /api/mobile/training), not the stored counters of
   // the profile, which only ever grow (26.11.2026: «2 из 10» with the only course done).
   const courses = (overview?.assignments ?? []).filter(
@@ -2400,44 +2403,26 @@ function ProfileView({
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-brand-green-700">
               <CreditCard size={23} />
             </span>
-            <div>
-              <div
-                className="whitespace-nowrap text-base tracking-[0.1em] text-ink-400"
-                aria-hidden="true"
-              >
-                •••• •••• •••• ••••
-              </div>
-              <p className="mt-1 text-xs font-semibold text-ink-500">
-                {t('Карта для будущих выплат')}
-              </p>
+            <div
+              className="whitespace-nowrap text-base tracking-[0.1em] text-ink-400"
+              aria-hidden="true"
+            >
+              •••• •••• •••• ••••
             </div>
           </div>
-          <p className="mt-4 text-sm leading-6 text-ink-500">
-            {t(
-              'Подключение банковской карты пока недоступно. Этот экран не запрашивает и не сохраняет реквизиты.',
-            )}
-          </p>
-          <button
-            type="button"
-            className="btn btn-outline btn-md mt-4 w-full sm:w-auto"
-            aria-expanded={showCardInfo}
-            aria-controls="learner-card-info"
-            onClick={() => setShowCardInfo((visible) => !visible)}
+          {/* Payouts are not connected (owner, 26.11.2026): one plain notice, no offer to link a card. */}
+          <div
+            role="status"
+            data-testid="learner-payouts-notice"
+            className="mt-4 rounded-xl bg-brand-green-50 p-4 text-sm leading-6 text-brand-green-800"
           >
-            <CreditCard size={17} />{' '}
-            {showCardInfo ? t('Скрыть информацию') : t('Как подключить карту')}
-          </button>
-          {showCardInfo && (
-            <p
-              id="learner-card-info"
-              role="status"
-              className="mt-4 rounded-xl bg-brand-green-50 p-4 text-sm leading-6 text-brand-green-800"
-            >
+            <p className="font-extrabold">{t('Функционал выплат находится в разработке')}</p>
+            <p className="mt-1">
               {t(
-                'Привязка карты появится позже. Сейчас реквизиты не запрашиваются, выплаты на карту недоступны.',
+                'Привязка карты и выплаты на карту пока недоступны. Реквизиты не запрашиваются и не сохраняются.',
               )}
             </p>
-          )}
+          </div>
         </section>
         <div className="rounded-2xl bg-white p-5 shadow-card">
           <h2 className="font-extrabold text-ink-900">{t('Безопасность')}</h2>
@@ -3927,12 +3912,13 @@ function StageCard({
   )
 }
 
-function LessonPage({
+export function LessonPage({
   assignment,
   lessonId,
   busy,
   tokens,
   lifecycle,
+  preview = false,
   onBack,
   onOpenLesson,
   onSaveProgress,
@@ -3943,6 +3929,12 @@ function LessonPage({
   busy: boolean
   tokens: Tokens
   lifecycle: TokenLifecycle
+  /**
+   * The admin's course preview (26.11.2026): the same screen the pharmacist sees, but a look, not a
+   * pass. Nothing is saved or sent, no lesson is locked, the video can be wound forward, the text
+   * does not wait for its reading time, and a live lesson shows a card instead of the live room.
+   */
+  preview?: boolean
   onBack: () => void
   onOpenLesson: (lessonId: string) => void
   onSaveProgress: (
@@ -3960,6 +3952,9 @@ function LessonPage({
   ) => Promise<QuizSubmissionResult | null>
 }) {
   const t = useLearnerT()
+  // In the preview nothing blocks the way on, and the lesson is drawn in a frame of its own.
+  const enforced = !preview
+  const articleRef = useRef<HTMLElement | null>(null)
   const stage = assignment.stages.find((candidate) =>
     candidate.course?.lessons.some((lesson) => lesson.id === lessonId),
   )
@@ -3990,7 +3985,8 @@ function LessonPage({
   )
 
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    // The preview draws the lesson in a frame: scroll that window, not the admin page behind it.
+    scrollToTopOf(articleRef.current)
   }, [lessonId])
 
   if (!stage || !lesson) {
@@ -4050,11 +4046,17 @@ function LessonPage({
   const lessonTitles = Object.fromEntries(lessons.map((item) => [item.id, item.title]))
   const scrollToStep = (id: string) =>
     window.requestAnimationFrame(() =>
-      document.getElementById(id)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }),
+      documentOf(articleRef.current)
+        .getElementById(id)
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }),
     )
-  const blockedByPrevious = lessons
-    .slice(0, index)
-    .find((previousLesson) => (previousLesson.required ?? true) && !lessonCompleted(previousLesson))
+  const blockedByPrevious = enforced
+    ? lessons
+        .slice(0, index)
+        .find(
+          (previousLesson) => (previousLesson.required ?? true) && !lessonCompleted(previousLesson),
+        )
+    : undefined
 
   if (stage.status === 'locked' || (stage.status !== 'completed' && blockedByPrevious)) {
     return (
@@ -4080,7 +4082,7 @@ function LessonPage({
     positionSeconds: number,
     mediaDurationSeconds?: number,
   ) {
-    if (progressInFlight.current.has(lesson.id) || read) return
+    if (preview || progressInFlight.current.has(lesson.id) || read) return
     progressInFlight.current.add(lesson.id)
     try {
       const saved = await onSaveProgress(
@@ -4123,6 +4125,12 @@ function LessonPage({
   }
 
   async function finishLesson() {
+    if (preview) {
+      // Nothing is saved in the preview: it only moves on.
+      if (next) onOpenLesson(next.id)
+      else onBack()
+      return
+    }
     if (quizLesson && !read) return
     if (liveLesson && !read && !liveEnded) return
     if (!read) {
@@ -4147,7 +4155,7 @@ function LessonPage({
   }
 
   return (
-    <article>
+    <article ref={articleRef}>
       <button className="btn btn-ghost mb-4 -ml-2" onClick={onBack}>
         <ArrowLeft size={18} /> {t('К содержанию курса')}
       </button>
@@ -4209,7 +4217,7 @@ function LessonPage({
                   className="aspect-video max-h-[70vh] w-full bg-black object-contain"
                   src={primaryVideoUrl}
                   resumeAtSeconds={lesson.lastPositionSeconds ?? 0}
-                  unrestricted={read}
+                  unrestricted={read || preview}
                   onPlay={(progress) => {
                     void persistVideoProgress(
                       Math.max(lastSyncedProgress.current[lesson.id] ?? 0, lesson.progressPct ?? 0),
@@ -4239,16 +4247,19 @@ function LessonPage({
         )}
 
         <div className="space-y-7 p-5 sm:p-8">
-          {liveLesson && (
-            <LearnerLiveLesson
-              assignmentId={assignment.id}
-              stageId={currentStage.id}
-              lesson={lesson}
-              tokens={tokens}
-              lifecycle={lifecycle}
-              onEndedChange={handleLiveEndedChange}
-            />
-          )}
+          {liveLesson &&
+            (preview ? (
+              <LiveLessonPreview lesson={lesson} />
+            ) : (
+              <LearnerLiveLesson
+                assignmentId={assignment.id}
+                stageId={currentStage.id}
+                lesson={lesson}
+                tokens={tokens}
+                lifecycle={lifecycle}
+                onEndedChange={handleLiveEndedChange}
+              />
+            ))}
 
           {lesson.externalUrl && !liveLesson && (
             <section>
@@ -4285,7 +4296,7 @@ function LessonPage({
             <LessonReader
               key={lesson.id}
               content={lesson.content}
-              gated={!read}
+              gated={!read && enforced}
               finishLabel={selfCheckQuestions.length > 0 ? t('К самопроверке') : t('Готово')}
               onFinished={() => {
                 setReaderDone((current) => ({ ...current, [lesson.id]: true }))
@@ -4432,26 +4443,27 @@ function LessonPage({
           <button
             className="btn btn-primary btn-md w-full sm:w-auto"
             disabled={
-              busy ||
-              saving ||
-              (videoLesson && !read && effectiveProgress < threshold) ||
-              (quizLesson && !read) ||
-              (liveLesson && !read && !liveEnded) ||
-              !readerFinished ||
-              !selfCheckFinished
+              enforced &&
+              (busy ||
+                saving ||
+                (videoLesson && !read && effectiveProgress < threshold) ||
+                (quizLesson && !read) ||
+                (liveLesson && !read && !liveEnded) ||
+                !readerFinished ||
+                !selfCheckFinished)
             }
             onClick={finishLesson}
           >
             <Check size={17} />{' '}
-            {quizLesson && !read
+            {enforced && quizLesson && !read
               ? t('Сначала пройдите тест')
-              : liveLesson && !read && !liveEnded
+              : enforced && liveLesson && !read && !liveEnded
                 ? t('Дождитесь окончания эфира')
-                : videoLesson && !read && effectiveProgress < threshold
+                : enforced && videoLesson && !read && effectiveProgress < threshold
                   ? t('Досмотрите видео')
-                  : !readerFinished
+                  : enforced && !readerFinished
                     ? t('Дочитайте урок')
-                    : !selfCheckFinished
+                    : enforced && !selfCheckFinished
                       ? t('Ответьте на вопросы самопроверки')
                       : next
                         ? read
@@ -4837,6 +4849,37 @@ function LiveLessonPlaceholder({
         {action}
       </div>
     </div>
+  )
+}
+
+/**
+ * The admin's course preview has no learner session, so it cannot open the live room: a live lesson
+ * is a card with its schedule instead.
+ */
+function LiveLessonPreview({ lesson }: { lesson: Lesson }) {
+  const t = useLearnerT()
+  return (
+    <section
+      className="overflow-hidden rounded-3xl border border-[#d4e7e5] bg-[#f2f8f7]"
+      data-testid="learner-live-lesson-preview"
+    >
+      <div className="flex items-center gap-3 bg-[#063f43] px-4 py-3.5 text-white">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[#8ce0d8]">
+          <Radio size={20} />
+        </span>
+        <div className="min-w-0">
+          <div className="text-[10px] font-extrabold uppercase tracking-[0.13em] text-white/55">
+            {t('Прямой эфир')}
+          </div>
+          <div className="text-sm font-extrabold">{formatDateTime(lesson.liveStartAt)}</div>
+        </div>
+      </div>
+      <p className="p-4 text-sm leading-6 text-ink-600">
+        {t(
+          'Здесь фармацевт увидит трансляцию, чат и вопросы ведущему. В предпросмотре эфир не подключается.',
+        )}
+      </p>
+    </section>
   )
 }
 

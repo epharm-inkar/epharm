@@ -16,6 +16,12 @@ import type {
 import { USERS } from '@/mocks/fixtures'
 import { useUiStore } from '@/app/store'
 import LMSPage from './LMSPage'
+
+// jsdom does not implement scrolling in the preview frame's own window and says so on every screen.
+vi.mock('@/features/learner/course/frameWindow', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/learner/course/frameWindow')>()),
+  scrollToTopOf: vi.fn(),
+}))
 const exportCaps = vi.hoisted(() => ({
   isSuccess: true,
   isFetchedAfterMount: true,
@@ -613,9 +619,13 @@ describe('Обучение — операционный раздел', () => {
 
     expect(screen.getByTestId('course-editor')).toBeInTheDocument()
     expect(screen.getByText(/Введение/)).toBeInTheDocument()
-    expect(screen.getByText('Текст урока')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Добавить урок' })).toBeInTheDocument()
     expect(screen.getByText('1 вложений')).toBeInTheDocument()
+    // What the lesson holds is one line; the player and the raw text are not dumped into the list.
+    expect(screen.getByText('Видео загружено')).toBeInTheDocument()
+    expect(screen.getByText('Текст: 11 зн.')).toBeInTheDocument()
+    expect(screen.queryByText('Текст урока')).not.toBeInTheDocument()
+    expect(document.querySelector('video')).toBeNull()
   })
 
   it('позволяет выбрать все поддерживаемые аудиовложения урока', async () => {
@@ -1192,5 +1202,169 @@ describe('Обучение — операционный раздел', () => {
       },
       expect.any(Object),
     )
+  })
+})
+
+describe('Курс: «Как видит фармацевт» и список уроков', () => {
+  const asReadOnlyRole = () => {
+    useUiStore.setState({ authedUser: USERS.bauyrzhan })
+    lmsHooks.useTrainingDashboard.mockReturnValue(
+      queryResult({
+        ...dashboard,
+        capabilities: { ...dashboard.capabilities, canManagePrograms: false },
+      }),
+    )
+  }
+  const openCourse = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Онлайн-курсы' }))
+    await user.click(screen.getByRole('button', { name: 'Основы категории' }))
+  }
+  const tab = (name: string) => screen.getByRole('button', { name })
+  /** The cabinet inside the phone frame, once the lazy preview has loaded and drawn the screen. */
+  const phone = async () => {
+    const frame = (await screen.findByTitle(
+      /Предпросмотр курса/,
+      {},
+      { timeout: 8000 },
+    )) as HTMLIFrameElement
+    await waitFor(
+      () =>
+        expect(
+          frame.contentDocument?.getElementById('phone-root')?.childElementCount,
+        ).toBeGreaterThan(0),
+      { timeout: 8000 },
+    )
+    return within(frame.contentDocument!.body)
+  }
+
+  it('редактор начинает со списка уроков и настроек, вкладка «Как видит фармацевт» рядом', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await openCourse(user)
+    expect(tab('Уроки и настройки')).toHaveClass('active')
+    expect(tab('Как видит фармацевт')).not.toHaveClass('active')
+    expect(screen.getByRole('button', { name: 'Сохранить курс' })).toBeInTheDocument()
+    expect(screen.queryByTestId('phone-frame')).not.toBeInTheDocument()
+  })
+
+  it('вкладка «Как видит фармацевт» показывает курс на экране телефона, а «Сохранить курс» там не нужна', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await openCourse(user)
+    await user.click(tab('Как видит фармацевт'))
+    const inside = await phone()
+    expect(tab('Как видит фармацевт')).toHaveClass('active')
+    expect(inside.getByRole('button', { name: 'Начать курс' })).toBeInTheDocument()
+    expect(inside.getByText(/Введение/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Сохранить курс' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Добавить урок' })).not.toBeInTheDocument()
+    // And back: the list and the save button return.
+    await user.click(tab('Уроки и настройки'))
+    expect(screen.getByRole('button', { name: 'Сохранить курс' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Добавить урок' })).toBeInTheDocument()
+  }, 20_000)
+
+  it('урок в предпросмотре: видео рисуется только в рамке телефона и без запретов перемотки', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await openCourse(user)
+    await user.click(tab('Как видит фармацевт'))
+    const inside = await phone()
+    expect(document.querySelector('video')).toBeNull()
+    await user.click(inside.getByRole('button', { name: 'Начать курс' }))
+    await waitFor(() => expect(inside.getByText('Урок 1 из 1')).toBeInTheDocument())
+    const frame = screen.getByTitle(/Предпросмотр курса/) as HTMLIFrameElement
+    const videos = frame.contentDocument!.querySelectorAll('video')
+    expect(videos).toHaveLength(1)
+    expect(videos[0]).toHaveAttribute('src', 'https://epharm.inkar.kz/s3/course.mp4')
+    expect(videos[0].getAttribute('controlslist') ?? '').not.toContain('noplaybackrate')
+    expect(document.querySelector('video')).toBeNull()
+  }, 20_000)
+
+  it('роль только на чтение начинает с вида фармацевта: телефон, без списка и кнопок правки', async () => {
+    asReadOnlyRole()
+    const user = userEvent.setup()
+    renderPage()
+    await openCourse(user)
+    expect(screen.getByTestId('course-editor')).toBeInTheDocument()
+    expect(tab('Как видит фармацевт')).toHaveClass('active')
+    const inside = await phone()
+    expect(inside.getByRole('button', { name: 'Начать курс' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Добавить урок' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Сохранить курс' })).not.toBeInTheDocument()
+    expect(screen.getByText('Просмотр содержания курса')).toBeInTheDocument()
+  }, 20_000)
+
+  it('роль только на чтение видит и список: названия, что в уроках, без кнопок правки', async () => {
+    asReadOnlyRole()
+    const user = userEvent.setup()
+    renderPage()
+    await openCourse(user)
+    await user.click(tab('Сведения и уроки'))
+    expect(screen.getByText(/1\. Введение/)).toBeInTheDocument()
+    expect(screen.getByText('Видео загружено')).toBeInTheDocument()
+    expect(screen.getByText('1 вложений')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Редактировать урок/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Добавить урок' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('phone-frame')).not.toBeInTheDocument()
+  })
+
+  it('кто может загружать материалы, начинает со списка уроков', async () => {
+    exportCaps.data = {
+      managed: true,
+      trainingActions: { 'courses.view': true, 'courses.upload': true, 'courses.publish': true },
+    }
+    const user = userEvent.setup()
+    renderPage('/lms?tab=courses')
+    await user.click(screen.getByRole('button', { name: 'Основы категории' }))
+    expect(tab('Уроки и настройки')).toHaveClass('active')
+    expect(screen.getByRole('button', { name: /1\. Введение/ })).toBeInTheDocument()
+  })
+
+  it('архивный курс нельзя править, поэтому и редактор начинает с вида фармацевта', async () => {
+    lmsHooks.useCourse.mockReturnValue(queryResult({ ...course, status: 'archived' }))
+    const user = userEvent.setup()
+    renderPage('/lms?tab=courses')
+    await user.click(screen.getByRole('button', { name: 'Основы категории' }))
+    expect(tab('Как видит фармацевт')).toHaveClass('active')
+    await phone()
+  }, 20_000)
+
+  it('урок без видео, текста и вопросов не показывает строку «что внутри»', async () => {
+    lmsHooks.useCourse.mockReturnValue(
+      queryResult({
+        ...course,
+        lessonItems: [{ ...course.lessonItems[0], videoUrl: null, content: '', attachments: [] }],
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage('/lms?tab=courses')
+    await user.click(screen.getByRole('button', { name: 'Основы категории' }))
+    expect(screen.getByText(/1\. Введение/)).toBeInTheDocument()
+    expect(screen.queryByText('Видео загружено')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Текст:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Вопросов:/)).not.toBeInTheDocument()
+  })
+
+  it('в списке видно число вопросов урока', async () => {
+    lmsHooks.useCourse.mockReturnValue(
+      queryResult({
+        ...course,
+        lessonItems: [
+          {
+            ...course.lessonItems[0],
+            videoUrl: null,
+            quizQuestions: [
+              { id: 'q1', prompt: 'А?', options: ['1', '2'], correctOption: 0, explanation: '' },
+              { id: 'q2', prompt: 'Б?', options: ['1', '2'], correctOption: 1, explanation: '' },
+            ],
+          },
+        ],
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage('/lms?tab=courses')
+    await user.click(screen.getByRole('button', { name: 'Основы категории' }))
+    expect(screen.getByText('Вопросов: 2')).toBeInTheDocument()
   })
 })

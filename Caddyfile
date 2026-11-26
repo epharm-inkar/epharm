@@ -194,6 +194,9 @@
 # Прямой доступ к серверу: Caddy завершает TLS сам.
 {$ADMIN_DOMAIN} {
 	tls /etc/caddy/tls/fullchain.pem /etc/caddy/tls/private.key
+	# Browsers kept the old «h3» advertisement for 30 days and first tried QUIC, which no longer answers
+	# (one request waited 9 s on 26.11.2026). «clear» makes them forget it at once (RFC 7838).
+	header Alt-Svc "clear"
 	import epharm_routes
 }
 
