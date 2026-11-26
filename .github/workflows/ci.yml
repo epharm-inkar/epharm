@@ -636,10 +636,12 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: |
-          dotnet run --project App.Ui.Tests/CustomerDisplay.Ui.Tests.csproj -c Release --no-build -- --allow-noninteractive --staff-self-showcase "--output=$env:RUNNER_TEMP/staff-ui-proof/showcase"
+          dotnet run --project App.Ui.Tests/CustomerDisplay.Ui.Tests.csproj -c Release --no-build -- --allow-noninteractive --staff-self-showcase --scale=2 "--output=$env:RUNNER_TEMP/staff-ui-proof/showcase"
           if ($LASTEXITCODE -ne 0) { throw 'Staff window showcase failed' }
-          dotnet run --project App.Ui.Tests/CustomerDisplay.Ui.Tests.csproj -c Release --no-build -- --allow-noninteractive --notice-showcase "--output=$env:RUNNER_TEMP/staff-ui-proof/notices"
+          dotnet run --project App.Ui.Tests/CustomerDisplay.Ui.Tests.csproj -c Release --no-build -- --allow-noninteractive --notice-showcase --scale=2 "--output=$env:RUNNER_TEMP/staff-ui-proof/notices"
           if ($LASTEXITCODE -ne 0) { throw 'Notice showcase failed' }
+          dotnet run --project App.Ui.Tests/CustomerDisplay.Ui.Tests.csproj -c Release --no-build -- --allow-noninteractive --recommendation-showcase --scale=2 "--output=$env:RUNNER_TEMP/staff-ui-proof/popups"
+          if ($LASTEXITCODE -ne 0) { throw 'Recommendation showcase failed' }
       - name: Upload native staff window proof
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
