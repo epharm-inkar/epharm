@@ -409,6 +409,8 @@ type Overview = {
 }
 
 const TOKEN_KEY = 'epharm.learner.tokens'
+/** The page-level error banner: a refused lesson save scrolls it into view, the button that caused it is far below. */
+const PAGE_ERROR_ID = 'learner-page-error'
 
 function lessonThreshold(lesson: Lesson) {
   return lesson.kind === 'video' || !!lesson.videoUrl
@@ -819,6 +821,8 @@ export default function LearnerTrainingPage() {
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(Boolean(tokens))
   const [error, setError] = useState('')
+  // The reason the server gave for the last refused lesson save: gone as soon as a later save is accepted.
+  const progressError = useRef('')
   const [availableEvents, setAvailableEvents] = useState<TrainingEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(false)
   const [attendanceOpen, setAttendanceOpen] = useState(false)
@@ -1288,6 +1292,12 @@ export default function LearnerTrainingPage() {
       )
       if (!tokenLifecycle.isCurrent()) return null
       setSelected(updated)
+      // The server accepted the save, so the reason it refused an earlier one no longer holds.
+      if (progressError.current) {
+        const stale = progressError.current
+        progressError.current = ''
+        setError((current) => (current === stale ? '' : current))
+      }
       if (refreshOverview) {
         const refreshed = await request<Overview>(
           '/api/mobile/training',
@@ -1299,8 +1309,11 @@ export default function LearnerTrainingPage() {
         setOverview(refreshed)
       }
       return updated
-    } catch (progressError) {
-      if (tokenLifecycle.isCurrent()) setError(messageFrom(progressError))
+    } catch (saveError) {
+      if (tokenLifecycle.isCurrent()) {
+        progressError.current = messageFrom(saveError)
+        setError(progressError.current)
+      }
       return null
     }
   }
@@ -1529,7 +1542,7 @@ export default function LearnerTrainingPage() {
               </p>
             </div>
           )}
-          {error && <ErrorMessage text={error} />}
+          {error && <ErrorMessage id={PAGE_ERROR_ID} text={error} />}
           {!loading && !selected && !taskId && portalSection === 'home' && (
             <button
               className="btn btn-outline btn-md mb-4"
@@ -1731,9 +1744,10 @@ function PasswordInput({
   )
 }
 
-function ErrorMessage({ text }: { text: string }) {
+function ErrorMessage({ text, id }: { text: string; id?: string }) {
   return (
     <div
+      id={id}
       role="alert"
       className="mt-5 rounded-xl bg-surface-danger px-4 py-3 text-sm font-semibold text-accent-danger"
     >
@@ -4137,7 +4151,15 @@ function LessonPage({
         mediaDurations.current[lesson.id],
       )
       setSaving(false)
-      if (!saved) return
+      if (!saved) {
+        // The reason is in the banner at the top of the page, far above this button: bring it into view.
+        window.requestAnimationFrame(() =>
+          document
+            .getElementById(PAGE_ERROR_ID)
+            ?.scrollIntoView?.({ behavior: 'smooth', block: 'center' }),
+        )
+        return
+      }
     }
     if (next) {
       onOpenLesson(next.id)

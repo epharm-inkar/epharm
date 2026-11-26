@@ -23,10 +23,17 @@ import org.springframework.stereotype.Service
  *
  * Это ЧИСТАЯ аналитика — pending_bonuses / outcome не трогаем. Метод вызывается в транзакции
  * приёма чека (PosSaleService.record), после сохранения pos_sale.
+ *
+ * Дубли одного товара считаются одним товаром (26.11.2026): в products лежат запись товара с сайта
+ * (prod_01K..., часто с локальным кодом Стандарт-Н 8811000...) и запись Daribar (prod_Daribar..., с EAN).
+ * Совет рекомендует одну, касса продаёт другую, и продажа терялась: из 9 настоящих продаж по советам за 30 дней
+ * не засчитывались 6. Теперь продажа засчитывается, если проданный товар это рекомендованный или его дубль
+ * (то же нормализованное имя либо общий штрих-код, см. RulesEngineService.canonicalProductIds).
  */
 @Service
 class RecommendationAttributionService(
     private val eventRepository: RecommendationEventRepository,
+    private val products: RulesEngineService,
 ) {
     private val log = LoggerFactory.getLogger(RecommendationAttributionService::class.java)
 
@@ -42,16 +49,25 @@ class RecommendationAttributionService(
         val candidates = eventRepository.findBySessionIdAndSoldAtIsNull(sessionId)
         if (candidates.isEmpty()) return
 
-        // One sold SKU can close only one recommendation in a receipt. Group scopes may have
-        // shown the same offer for two different scanned products; attributing both would inflate
-        // conversion/revenue. Prefer the accepted event, otherwise the most recent actual show.
-        val winners = candidates
-            // Receipt IDs are generated at the register, not globally scoped identities.
-            // Unknown sellers still have analytical conversion; conflicting known people do not.
+        // Receipt IDs are generated at the register, not globally scoped identities.
+        // Unknown sellers still have analytical conversion; conflicting known people do not.
+        val eligible = candidates
             .filter { it.pharmacyId == sale.pharmacyId &&
                 (it.pharmacistId.isBlank() || sale.pharmacistId.isBlank() || it.pharmacistId == sale.pharmacistId) }
-            .filter { it.recommendSku.isNotBlank() && it.recommendSku in soldProductIds }
-            .groupBy { it.recommendSku }
+            .filter { it.recommendSku.isNotBlank() }
+        if (eligible.isEmpty()) return
+
+        // A product is one product however many records it has: a tip for one record is sold by the other.
+        val canonical = products.canonicalProductIds(soldProductIds + eligible.map { it.recommendSku })
+        fun productOf(id: String) = canonical[id] ?: id
+        val soldProducts = soldProductIds.mapTo(HashSet(), ::productOf)
+
+        // One sold product can close only one recommendation in a receipt. Group scopes may have
+        // shown the same offer for two different scanned products; attributing both would inflate
+        // conversion/revenue. Prefer the accepted event, otherwise the most recent actual show.
+        val winners = eligible
+            .filter { productOf(it.recommendSku) in soldProducts }
+            .groupBy { productOf(it.recommendSku) }
             .values.mapNotNull { group ->
                 group.maxWithOrNull(
                     compareBy(

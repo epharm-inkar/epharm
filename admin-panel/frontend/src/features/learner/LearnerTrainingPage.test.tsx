@@ -1119,6 +1119,130 @@ describe('learner training portal', () => {
     })
   })
 
+  it('says why a watched video is not counted yet, brings it into view, and drops it once the server accepts', async () => {
+    localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
+    const lesson = {
+      id: 'lesson-video',
+      title: 'Видеоурок: как пройти курс',
+      kind: 'video',
+      videoUrl: '/lesson.mp4',
+      durationMin: 2,
+      order: 0,
+      progressPct: 0,
+      attachments: [],
+    }
+    const assignment = {
+      id: 'assignment-1',
+      programName: 'Быстрый старт',
+      pharmacyName: 'Ауэзова 134',
+      city: 'Алматы',
+      status: 'in_progress',
+      format: 'online',
+      progressPct: 0,
+      startedAt: '2026-11-26T10:00:00Z',
+      stages: [
+        {
+          id: 'stage-1',
+          title: 'Курс',
+          type: 'online_course',
+          status: 'in_progress',
+          progressPct: 0,
+          course: { id: 'course-1', title: 'Курс', lessons: [lesson] },
+        },
+      ],
+    }
+    const counted = {
+      ...assignment,
+      progressPct: 100,
+      stages: [
+        {
+          ...assignment.stages[0],
+          status: 'completed',
+          progressPct: 100,
+          course: {
+            ...assignment.stages[0].course,
+            lessons: [{ ...lesson, progressPct: 100, completedAt: '2026-11-26T10:00:08Z' }],
+          },
+        },
+      ],
+    }
+    const reason = 'Видео засчитается через 99 сек. Подождите и повторите'
+    // The first save comes from the player itself, the second from the button: the server refuses both.
+    let refusals = 2
+    const saves: Array<{ progressPct: number; mediaDurationSeconds?: number }> = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/mobile/auth/me') {
+        return json({
+          id: 'ph-1',
+          name: 'Айжан',
+          phone: '+77070000000',
+          pharmacyName: 'Ауэзова 134',
+          city: 'Алматы',
+        })
+      }
+      if (path === '/api/mobile/training/assignments/assignment-1') return json(assignment)
+      if (path === '/api/mobile/training' && (!init?.method || init.method === 'GET')) {
+        return json({
+          total: 1,
+          inProgress: 1,
+          completed: 0,
+          overdue: 0,
+          assignments: [assignment],
+        })
+      }
+      if (path.endsWith('/stages/stage-1/lessons/lesson-video') && init?.method === 'PATCH') {
+        saves.push(JSON.parse(String(init.body)))
+        if (refusals > 0) {
+          refusals -= 1
+          return json({ code: 'CONFLICT', message: reason }, 409)
+        }
+        return json(counted)
+      }
+      return json({ message: `Unexpected request: ${path}` }, 500)
+    })
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    try {
+      renderPortal('/learn/course/assignment-1/lesson/lesson-video')
+      const video = (await screen.findByLabelText('Видео урока')) as HTMLVideoElement
+      // The clip is 6 s long and played to the end.
+      Object.defineProperty(video, 'duration', { configurable: true, value: 6 })
+      Object.defineProperty(video, 'played', {
+        configurable: true,
+        value: { length: 1, start: () => 0, end: () => 6 },
+      })
+      video.currentTime = 6
+      fireEvent.timeUpdate(video)
+
+      // Watched in full, not counted yet: the page says what is missing, not «watch the video» again.
+      const notice = await screen.findByText(reason)
+      expect(notice).toHaveAttribute('role', 'alert')
+      expect(screen.getByText('Просмотрено 100%')).toBeInTheDocument()
+      expect(screen.queryByText(/Досмотрите/)).not.toBeInTheDocument()
+      expect(saves).toEqual([{ progressPct: 100, positionSeconds: 6, mediaDurationSeconds: 6 }])
+
+      // The button far below the banner saves again: refused again, and the reason is brought into view.
+      await userEvent.click(screen.getByRole('button', { name: 'Завершить курс' }))
+      await waitFor(() => expect(saves).toHaveLength(2))
+      await waitFor(() =>
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }),
+      )
+      expect(screen.getByText(reason)).toBeInTheDocument()
+
+      // Accepted at last: the old reason does not stay on the page.
+      await userEvent.click(screen.getByRole('button', { name: 'Завершить курс' }))
+      await waitFor(() => expect(saves).toHaveLength(3))
+      await waitFor(() => expect(screen.queryByText(reason)).not.toBeInTheDocument())
+    } finally {
+      Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+    }
+  })
+
   it.each([true, false])(
     'shows only the score after a quiz attempt and reload (passed: %s)',
     async (passed) => {
