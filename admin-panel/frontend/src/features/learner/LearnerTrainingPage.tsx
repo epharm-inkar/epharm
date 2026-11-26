@@ -28,6 +28,7 @@ import {
   GraduationCap,
   Headphones,
   Home,
+  IdCard,
   Image,
   Lock,
   LogOut,
@@ -80,6 +81,8 @@ type Pharmacist = {
   id: string
   name: string
   phone: string
+  /** The pharmacist's own IIN, shown on their profile (26.11.2026). */
+  iin?: string | null
   pharmacyName: string | null
   status?: string
   city: string
@@ -1775,7 +1778,7 @@ function PortalNavigation({
   const items = [
     { id: 'home' as const, label: t('Главная'), icon: Home },
     { id: 'training' as const, label: t('Обучение'), icon: GraduationCap },
-    { id: 'recommendations' as const, label: t('Советы'), icon: Sparkles },
+    // «Советы» are out of the menu for now (owner, 26.11.2026); /learn/recommendations still opens the page.
     { id: 'certificates' as const, label: t('Сертификаты'), icon: Award },
     { id: 'profile' as const, label: t('Профиль'), icon: UserRound },
   ]
@@ -1800,7 +1803,7 @@ function PortalNavigation({
       {/* Each tab at least as wide as its label, the rest shared equally: «Сертификаты» and
           «Сертификаттар» were cut at phone width (26.11.2026). Below 320 px equal columns again; with
           enlarged system text the bar scrolls sideways instead of pushing a tab off-screen. */}
-      <div className="mx-auto grid max-w-6xl grid-cols-[repeat(5,minmax(max-content,1fr))] gap-1 overflow-x-auto no-scrollbar max-[319px]:grid-cols-5 lg:mx-0 lg:overflow-visible lg:flex lg:w-full lg:flex-col lg:gap-1">
+      <div className="mx-auto grid max-w-6xl grid-cols-[repeat(4,minmax(max-content,1fr))] gap-1 overflow-x-auto no-scrollbar max-[319px]:grid-cols-4 lg:mx-0 lg:overflow-visible lg:flex lg:w-full lg:flex-col lg:gap-1">
         {items.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -2381,6 +2384,7 @@ function ProfileView({
               label={t('Телефон')}
               value={pharmacist?.phone || t('Не указан')}
             />
+            <ProfileRow icon={IdCard} label={t('ИИН')} value={pharmacist?.iin || t('Не указан')} />
             <ProfileRow
               icon={Building2}
               label={t('Аптека')}
@@ -2473,7 +2477,8 @@ function ProfileRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-bold text-ink-400">{label}</span>
-        <span className="mt-0.5 block truncate text-sm font-extrabold text-ink-800">{value}</span>
+        {/* The whole value, wrapped: the pharmacy with its address was cut with «...» (owner, 26.11.2026). */}
+        <span className="mt-0.5 block break-words text-sm font-extrabold text-ink-800">{value}</span>
       </span>
     </div>
   )

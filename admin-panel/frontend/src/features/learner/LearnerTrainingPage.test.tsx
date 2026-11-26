@@ -619,12 +619,15 @@ describe('learner training portal', () => {
       return json({ code: 'NOT_FOUND', message: `Unexpected request: ${path}` }, 500)
     })
 
-    renderPortal()
+    const home = renderPortal()
 
     expect(await screen.findByText('42 000 ₸')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Что предлагать покупателю' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Советы' }))
-    expect(screen.getByRole('heading', { name: 'Что предлагать покупателю' })).toBeInTheDocument()
+    // «Советы» are out of the menu since 26.11.2026; the page still opens by its address.
+    expect(screen.queryByRole('button', { name: 'Советы' })).not.toBeInTheDocument()
+    home.unmount()
+    renderPortal('/learn/recommendations')
+    expect(await screen.findByRole('heading', { name: 'Что предлагать покупателю' })).toBeInTheDocument()
     expect(screen.getByText('Пример кампании')).toBeInTheDocument()
     expect(screen.getByText(/Название группы/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Товар-пример' })).toBeInTheDocument()
@@ -691,21 +694,19 @@ describe('learner training portal', () => {
   it.each([
     {
       language: 'ru' as const,
-      tab: 'Советы',
       and: 'И',
       mnn: 'МНН АСС',
       sameItem: 'Все условия должны совпасть у одного сканируемого товара.',
     },
     {
       language: 'kk' as const,
-      tab: 'Кеңестер',
       and: 'ЖӘНЕ',
       mnn: 'АСС ХПА',
       sameItem: 'Барлық шарт бір сканерленген тауарға сәйкес келуі керек.',
     },
   ])(
     'shows every readonly trigger factor as AND for the same scanned item ($language)',
-    async ({ language, tab, and, mnn, sameItem }) => {
+    async ({ language, and, mnn, sameItem }) => {
       useUiStore.setState({ language })
       localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
@@ -747,8 +748,7 @@ describe('learner training portal', () => {
           })
         return json({ message: `Unexpected request: ${path}` }, 500)
       })
-      renderPortal()
-      await userEvent.click(await screen.findByRole('button', { name: tab, exact: true }))
+      renderPortal('/learn/recommendations')
       expect(await screen.findByText('Точное сочетание')).toBeInTheDocument()
       expect(screen.getByText(/Выбранная группа/)).toBeInTheDocument()
       expect(screen.getByText(`${and} ${mnn}: Выбранное вещество`)).toBeInTheDocument()
@@ -781,12 +781,13 @@ describe('learner training portal', () => {
       return json({ code: 'NOT_FOUND', message: `Unexpected request: ${path}` }, 500)
     })
 
-    renderPortal()
+    const home = renderPortal()
 
     expect(await screen.findByText('Баланс временно недоступен')).toBeInTheDocument()
     expect(screen.queryByText('Активных рекомендаций сейчас нет.')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Советы' }))
-    expect(screen.getByText('Активных рекомендаций сейчас нет.')).toBeInTheDocument()
+    home.unmount()
+    renderPortal('/learn/recommendations')
+    expect(await screen.findByText('Активных рекомендаций сейчас нет.')).toBeInTheDocument()
     expect(screen.queryByText('0 ₸')).not.toBeInTheDocument()
   })
 
@@ -1591,7 +1592,7 @@ describe('learner training portal', () => {
     expect(screen.queryByText('Препараты и бонусы')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Каталог' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Что предлагать покупателю' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Советы' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Советы' })).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Сертификаты' }))
     expect(await screen.findByRole('link', { name: /Завершённый курс/ })).toHaveAttribute(
@@ -1697,6 +1698,52 @@ describe('learner training portal', () => {
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(
       true,
     )
+  })
+
+  it('shows the IIN and the whole pharmacy name on the profile, and no «Советы» tab', async () => {
+    localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
+    const pharmacyName = 'Ирбис Транс Систем г.Талдыкорган Жансугурова 71'
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const path = String(input)
+      if (path === '/api/mobile/auth/me')
+        return json({
+          id: 'ph-1',
+          name: 'Айжан',
+          phone: '+77070000000',
+          iin: '000101500011',
+          pharmacyName,
+          city: 'Талдыкорган',
+        })
+      if (path === '/api/mobile/training')
+        return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
+      if (path === '/api/mobile/me/balance') return json({ balanceKzt: 0, currency: 'KZT' })
+      return json({ items: [], page: 0, size: 20, total: 0, currency: 'KZT' })
+    })
+    renderPortal('/learn/profile')
+    expect(await screen.findByText('000101500011')).toBeInTheDocument()
+    expect(screen.getByText('ИИН')).toBeInTheDocument()
+    // The full name with the address, wrapped, not cut with «...» (owner, 26.11.2026).
+    const pharmacy = screen.getAllByText(pharmacyName).find((node) => node.closest('.divide-y'))
+    expect(pharmacy).toBeDefined()
+    expect(pharmacy).not.toHaveClass('truncate')
+    expect(pharmacy).toHaveClass('break-words')
+    expect(screen.queryByRole('button', { name: 'Советы' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Сертификаты' })).toBeInTheDocument()
+  })
+
+  it('says «Не указан» for a pharmacist without an IIN', async () => {
+    localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const path = String(input)
+      if (path === '/api/mobile/auth/me')
+        return json({ id: 'ph-1', name: 'Айжан', phone: '+77070000000', iin: '', pharmacyName: 'Аптека', city: 'Алматы' })
+      if (path === '/api/mobile/training')
+        return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
+      return json({ items: [], page: 0, size: 20, total: 0, currency: 'KZT' })
+    })
+    renderPortal('/learn/profile')
+    const label = await screen.findByText('ИИН')
+    expect(label.parentElement).toHaveTextContent('ИИННе указан')
   })
 
   it('says on the profile in Kazakh that payouts are in development, with no way to link a card', async () => {
