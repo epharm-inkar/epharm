@@ -82,6 +82,52 @@ class NoRegistrationSelfIntegrationTest {
         Int::class.java, iin,
     )!!
 
+    private fun oldRegistration(status: String) {
+        jdbc.update(
+            """INSERT INTO pharmacists(id,name,iin,phone,password_hash,tier,status,pharmacy_id,pharmacy_name,city)
+               VALUES ('nr-old','Old Registrant',?,'+77015550000','synthetic-old-hash','Silver',?,NULL,NULL,'')""",
+            iin, status,
+        )
+        jdbc.update(
+            "INSERT INTO mobile_refresh_tokens(id,pharmacist_id,token_hash,expires_at) VALUES (?,'nr-old','nr-old-refresh',now()+interval '1 day')",
+            java.util.UUID.randomUUID(),
+        )
+    }
+
+    @Test fun `a card pending from the old registration is taken over by the directory person, credentials dropped`() {
+        oldRegistration("pending")
+        val card = accounts.ensure(StandardNDirectoryPerson(iin, "Синтетикова Айгерим Нурлановна", 0), pharmacy)!!
+        assertEquals("nr-old", card.id)
+        val row = jdbc.queryForMap("SELECT status,name,phone,password_hash,pharmacy_id,account_source FROM pharmacists WHERE id='nr-old'")
+        assertEquals("active", row["status"])
+        assertEquals("Синтетикова Айгерим Нурлановна", row["name"])
+        assertEquals("", row["phone"])
+        assertNull(row["password_hash"])
+        assertEquals(pharmacy, row["pharmacy_id"])
+        assertEquals("standardn", row["account_source"])
+        assertEquals(0, activeSessions())
+        val kept = jdbc.queryForMap("SELECT old_name,old_phone,had_password,new_pharmacy_id FROM pharmacist_registration_replacements WHERE pharmacist_id='nr-old'")
+        assertEquals("Old Registrant", kept["old_name"])
+        assertEquals("+77015550000", kept["old_phone"])
+        assertEquals(true, kept["had_password"])
+        assertEquals(pharmacy, kept["new_pharmacy_id"])
+        // The old phone signs in no more; the second sighting changes nothing.
+        assertThrows(AppException::class.java) { auth.loginByPhone("+77015550000", "anything-1") }
+        accounts.ensure(StandardNDirectoryPerson(iin, "Синтетикова Айгерим Нурлановна", 0), pharmacy)
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM pharmacist_registration_replacements WHERE pharmacist_id='nr-old'", Int::class.java))
+    }
+
+    @Test fun `a blocked card is never taken over`() {
+        oldRegistration("blocked")
+        val card = accounts.ensure(StandardNDirectoryPerson(iin, "Синтетикова Айгерим Нурлановна", 0), pharmacy)!!
+        assertEquals("blocked", card.status.name)
+        val row = jdbc.queryForMap("SELECT name,phone FROM pharmacists WHERE id='nr-old'")
+        assertEquals("Old Registrant", row["name"])
+        assertEquals("+77015550000", row["phone"])
+        assertEquals(1, activeSessions())
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM pharmacist_registration_replacements WHERE pharmacist_id='nr-old'", Int::class.java))
+    }
+
     @Test fun `a card is created once from the directory, without phone or password, and reused`() {
         val person = StandardNDirectoryPerson(iin, "Синтетикова Айгерим Нурлановна", 0)
         val first = accounts.ensure(person, pharmacy)!!
