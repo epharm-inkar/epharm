@@ -16,6 +16,21 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Admin Analytics opens with «Фармацевты в ePharm» (owner, 26.11.2026): how many pharmacists are in the system
+  (everyone except blocked), how many worked with ePharm today and in the last 7 days with the shares, and two
+  charts by day since the launch (people, and their share of the system). «Скачать график» saves both charts with the
+  figures as one PNG for management. The data and the rule are those of the pharmacists «Покрытие» tab.
+  `GET /api/admin/pharmacists/coverage` reaches back up to 366 days (was 120) and every day carries `active1d` and
+  `coverage1dPct`, the response `activeToday` and `coverageTodayPct`; an older backend shows «нет данных» for today.
+  The empty blocks «Динамика принятых рекомендаций» (Pilot vs Control) and «Карта активности» are gone.
+- Admin «Обучение» → «Онлайн-курсы»: the course drawer has a tab «Как видит фармацевт» (the first one for roles that
+  cannot edit): the course on a phone screen as the pharmacist's cabinet draws it, with its path of lessons, the
+  reading in parts, the self-check, the video and the graded test, and a selector and arrows to walk the lessons.
+  It is the cabinet's own lesson screen in a preview mode (nothing is saved or sent, no lesson is locked, the video can
+  be wound forward, the text does not wait for its reading time, a test is graded in the browser, a live lesson is a
+  card). The phone is a frame with the page's own stylesheets, so the layout answers to the phone's width. Only the
+  open lesson loads media. The lessons tab no longer dumps a player and raw text into every row: one line says what a
+  lesson holds.
 - POSM 1.0.99 (Grigoriy, 25.11.2026), built for the pilot: the greeting at the first Standard-N sign-in of a shift
   says «Доброе утро, Имя Отчество! Желаем хорошего дня» (by the time of day), two lines on how ePharm helps and «Что
   такое ePharm»; once per person per shift (again only after 8 hours without them at the till), also after a restart;
@@ -161,6 +176,10 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Changed
 
+- Payouts are in development (owner, 26.11.2026): «Финансы / выплаты» shows «Функционал выплат находится в
+  разработке» at the top, «Сформировать выплату» and «Утвердить выплату» are disabled with the reason as a tooltip, and
+  reading the batches and the Excel report stays. The pharmacist cabinet's profile shows the same notice instead of
+  «Как подключить карту». Only the screens changed: the server routes and the 1st and 16th cron are as they were.
 - Automatic recommendation reward: a recommended product counts when it is added after the actual display in the same
   checkout and stays in the paid receipt; the 120-second addition cutoff is gone (Grigoriy's decision 24.11.2026).
   Producer reports keep their separate 0–120-second metric.
@@ -185,6 +204,15 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Fixed
 
+- POSM 1.0.100 finds a cashier program that runs under another name and tells a till from a manager's computer
+  (26.11.2026: 68 of 506 online tills reported `no_process`, so ePharm could not tell who sells there). The process
+  probe asked for the exact names `zkassa` and `kassir`, so the renamed `zkassa_BACKUP_2_6_88` (Teriskey 2/21;
+  Standard-N still records its session as `zkassa`) was never found. It now accepts `kassir` and any name that starts
+  with `zkassa`, case-insensitively, and the receipt reader uses the same probe. On 10 of the 13 inspected computers
+  only `ManagerXP2` (the Standard-N back office) runs: ePharm was installed on the manager's computer, not on the
+  till. With no cashier program and a `ManagerXP...` process in the session the heartbeat sends the new
+  `staffSourceStatus` `manager_only`; «Все кассы» shows «только «Менеджер»» with the tooltip «Только «Менеджер»
+  Стандарт-Н: ePharm стоит не на кассе». Deploy the server and admin before the till.
 - A video lesson can be finished when its clip is shorter than the planned minutes (26.11.2026: the 6-second clip of
   lesson 2 in the demo course, planned «2 min», showed «Просмотрено 100%» and a red «Досмотрите видео» and answered
   every progress save with 409). The server now reads the real length from the MP4 in the object storage itself

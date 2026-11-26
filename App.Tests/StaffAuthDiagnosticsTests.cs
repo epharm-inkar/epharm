@@ -7,6 +7,9 @@ public sealed class StaffAuthDiagnosticsTests
 {
     [Theory]
     [InlineData("resolved", "resolved")]
+    [InlineData("no_process", "no_process")]
+    [InlineData("manager_only", "manager_only")]
+    [InlineData("MANAGER_ONLY", "unknown")]
     [InlineData("unsupported_session_time", "unsupported_session_time")]
     [InlineData("session_predates_process", "session_predates_process")]
     [InlineData("authenticated", "unknown")]
