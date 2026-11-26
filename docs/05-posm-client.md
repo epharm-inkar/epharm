@@ -2,6 +2,33 @@
 
 Path: `App/` and `Models/`.
 
+## Renamed cashier programs and manager-only computers: 1.0.100 (26.11.2026)
+
+Measured on production on 26.11.2026: 68 of 506 online tills reported the staff source status `no_process`, so ePharm
+could not tell who sells there and the pharmacists saw «Войдите в Стандарт-Н под своим пользователем…» while signed in.
+The process lists of 13 such tills show two causes:
+
+- **A renamed cashier program.** At Teriskey 2/21 the Standard-N cashier runs as `zkassa_BACKUP_2_6_88`; Standard-N still
+  records the session program as `zkassa` (53 receipts since 25.11). `ObserveStaffProcess` asked `GetProcessesByName`
+  for the exact names `zkassa` and `kassir` and never found it. Since 1.0.100 the probe reads the processes of the same
+  Windows session and `StaffProcessPresence.IsCashierProcessName` accepts, case-insensitively, `kassir` and any name that
+  starts with `zkassa`. The rules stay: one cashier program resolves, several are `ambiguous_process`, an unreadable one
+  is `process_unavailable`. The receipt reader's «when did the cashier program start» (`CashierProcessStartedUtc`) uses
+  the same probe. Comparisons of the Standard-N session `PROG` value (`zkassa`, `kassir`) are database values, not
+  process names, and did not change.
+- **ePharm on the manager's computer.** On 10 of the 13 computers no cashier program runs, only `ManagerXP2` (the
+  Standard-N back office); all receipts since 25.11 come from the program `zkassa`, none from `ManagerXP2`. With no
+  cashier program and a process whose name starts with `ManagerXP` in the same session the heartbeat reports the new
+  `staffSourceStatus` `manager_only` instead of `no_process`. A cashier program always wins over the manager program.
+  The server allowlist (`StaffSourceStatus.kt`) and `StaffAuthDiagnostics.NormalizeSource` accept it; «Все кассы» shows
+  the chip «только «Менеджер»» (amber, like `no_process`) and the tooltip «Только «Менеджер» Стандарт-Н: ePharm стоит
+  не на кассе». `staffAuthStatus` stays `local_disabled`, so its allowlists did not change.
+
+Release order: the server and admin first, then the till pilot. A server without this change drops `manager_only` and
+shows «нет диагностики» for that till. Tests: `StaffProcessPresenceTests` (names, renamed, case, manager-only,
+ambiguous), `StaffProcessProbeWindowsTests` (real processes under the till's names; Windows only, skipped elsewhere),
+`StaffAuthDiagnosticsTests`, backend `StaffSourceStatusTest`, admin `staffSourceStatus.test.ts` and `fleetFormat.test.ts`.
+
 ## Greeting, «Что такое ePharm», notices from HQ and the course dot: 1.0.99 (25.11.2026)
 
 The owner's requests of 25.11.2026, built for the pilot (not released):
@@ -496,7 +523,7 @@ for a new poll. Such a task cannot reopen through snooze or produce a new displa
 | `App/EpharmPageWindow.cs`                       | Readable page: «Что такое ePharm», history of notices.             |
 | `App/Services/PharmacistMessageInbox.cs`        | Notice state per person, owed reports, date labels.                |
 | `App/Services/StaffSessionObservation.cs`       | Exact-workstation source observation; strict legacy session guard. |
-| `App/Services/StaffProcessPresence.cs`          | Running cashier process instances (one, none or several).          |
+| `App/Services/StaffProcessPresence.cs`          | Cashier process by name (`kassir`, `zkassa*`); manager-only.       |
 | `App/RecommendationWindow.xaml[.cs]`            | Pharmacist recommendation popup.                                   |
 | `App/CdpForm.xaml[.cs]`                         | POSM customer-phone/CDP form.                                      |
 | `App/Config/EpharmConfig.cs`                    | Config/env parsing.                                                |
