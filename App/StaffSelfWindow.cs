@@ -280,7 +280,8 @@ namespace CustomerDisplay
             }
             stack.Children.Add(new TextBlock
             {
-                Text = "Данные проверит офис. До проверки бонусы не начисляются.",
+                // Since 26.11.2026 a clean claim is taken at once, so a typo would stick: warn before «Отправить».
+                Text = "Проверьте цифры: изменить ИИН потом нельзя. Обычно ePharm принимает данные сразу, иногда их проверяет офис.",
                 Foreground = Brush("#6B7280"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10),
             });
 
