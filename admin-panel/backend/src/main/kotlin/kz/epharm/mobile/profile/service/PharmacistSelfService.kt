@@ -3,6 +3,7 @@ package kz.epharm.mobile.profile.service
 import kz.epharm.catalog.entity.ProductEntity
 import kz.epharm.catalog.repository.ProductRepository
 import kz.epharm.mobile.profile.dto.PharmacistBalanceDto
+import kz.epharm.mobile.profile.dto.PharmacistLanguageDto
 import kz.epharm.mobile.profile.dto.PharmacistOfferDto
 import kz.epharm.mobile.profile.dto.PharmacistRecommendationDto
 import kz.epharm.mobile.profile.dto.PharmacistRecommendationsDto
@@ -42,6 +43,21 @@ class PharmacistSelfService(
 ) {
     @Transactional(readOnly = true)
     fun balance(pharmacistId: String): PharmacistBalanceDto = PharmacistBalanceDto(activeAccount(pharmacistId).balance)
+
+    /** Kept on the card (V128); tills show HQ notices in it when HQ wrote a Kazakh text. */
+    @Transactional
+    fun setLanguage(pharmacistId: String, language: String?): PharmacistLanguageDto {
+        val wanted = language?.trim()?.lowercase()
+        if (wanted == null || wanted !in LANGUAGES) {
+            throw AppException(ErrorCode.VALIDATION_FAILED, "Язык: ru или kk")
+        }
+        val account = activeAccount(pharmacistId)
+        if (account.language != wanted) {
+            account.language = wanted
+            pharmacists.save(account)
+        }
+        return PharmacistLanguageDto(account.language)
+    }
 
     @Transactional(readOnly = true)
     fun recommendations(
@@ -160,6 +176,10 @@ class PharmacistSelfService(
     )
 
     private data class GroupKey(val promoId: String?, val type: RuleType, val trigger: RuleTrigger)
+
+    private companion object {
+        val LANGUAGES = setOf("ru", "kk")
+    }
 }
 
 /** A product the pharmacist sold: catalogue id, name on the receipt, receipts that had it. */

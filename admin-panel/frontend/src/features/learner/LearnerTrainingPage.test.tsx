@@ -718,6 +718,8 @@ describe('learner training portal', () => {
             phone: '+77070000000',
             pharmacyName: 'Аптека',
             city: 'Алматы',
+            // The card already keeps this language: the page only reads.
+            language,
           })
         if (path === '/api/mobile/training')
           return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
@@ -1772,6 +1774,85 @@ describe('learner training portal', () => {
     expect(within(bank).queryByRole('button')).not.toBeInTheDocument()
     // Nothing in Russian is left in the card section.
     expect(bank.textContent).not.toMatch(/[Фф]ункционал выплат/)
+  })
+
+  describe('язык в карточке фармацевта (26.11.2026)', () => {
+    type Call = { path: string; method: string; body?: string }
+    const languageCalls = (calls: Call[]) => calls.filter((call) => call.path === '/api/mobile/me/language')
+
+    function signedIn(card: string | null, calls: Call[]) {
+      localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const path = String(input)
+        const body = typeof init?.body === 'string' ? init.body : undefined
+        calls.push({ path, method: init?.method ?? 'GET', body })
+        if (path === '/api/mobile/auth/me')
+          return json({ id: 'ph-1', name: 'Айжан', phone: '+77070000000', pharmacyName: 'Аптека', city: 'Алматы', language: card })
+        if (path === '/api/mobile/training')
+          return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
+        if (path === '/api/mobile/me/balance') return json({ balanceKzt: 1500 })
+        if (path === '/api/mobile/me/language') return json(JSON.parse(body ?? '{}'))
+        return json({ items: [] })
+      })
+    }
+
+    it('переключатель в профиле сохраняет язык в карточке', async () => {
+      const user = userEvent.setup()
+      const calls: Call[] = []
+      signedIn(null, calls)
+      renderPortal('/learn/profile')
+      const row = await screen.findByTestId('profile-language')
+      expect(row).toHaveTextContent('Кабинет и уведомления от офиса на кассе')
+      expect(languageCalls(calls)).toEqual([])
+
+      await user.click(within(row).getByRole('button', { name: 'Қаз' }))
+      await waitFor(() =>
+        expect(languageCalls(calls)).toEqual([{ path: '/api/mobile/me/language', method: 'PUT', body: '{"language":"kk"}' }]),
+      )
+      expect(document.documentElement.lang).toBe('kk')
+      expect(screen.getByTestId('profile-language')).toHaveTextContent('Тіл')
+      await waitFor(() => expect(localStorage.getItem('epharm.learner.langUnsaved')).toBeNull())
+    })
+
+    it('язык, выбранный на другом устройстве, применяется здесь', async () => {
+      const calls: Call[] = []
+      signedIn('kk', calls)
+      renderPortal('/learn/profile')
+      expect(await screen.findByText('Тіл')).toBeInTheDocument()
+      expect(useUiStore.getState().language).toBe('kk')
+      expect(languageCalls(calls)).toEqual([])
+    })
+
+    it('казахский, которым уже пользовались здесь, уходит в карточку, где язык ещё не выбран', async () => {
+      useUiStore.setState({ language: 'kk' })
+      const calls: Call[] = []
+      signedIn(null, calls)
+      renderPortal('/learn/profile')
+      await waitFor(() =>
+        expect(languageCalls(calls)).toEqual([{ path: '/api/mobile/me/language', method: 'PUT', body: '{"language":"kk"}' }]),
+      )
+    })
+
+    it('язык, выбранный до входа, важнее того, что в карточке', async () => {
+      localStorage.setItem('epharm.learner.langUnsaved', '1')
+      useUiStore.setState({ language: 'kk' })
+      const calls: Call[] = []
+      signedIn('ru', calls)
+      renderPortal('/learn/profile')
+      await waitFor(() => expect(languageCalls(calls)).toHaveLength(1))
+      expect(languageCalls(calls)[0].body).toBe('{"language":"kk"}')
+      expect(useUiStore.getState().language).toBe('kk')
+      await waitFor(() => expect(localStorage.getItem('epharm.learner.langUnsaved')).toBeNull())
+    })
+
+    it('русский в карточке и здесь: ничего не отправляем', async () => {
+      const calls: Call[] = []
+      signedIn('ru', calls)
+      renderPortal('/learn/profile')
+      expect(await screen.findByTestId('profile-language')).toBeInTheDocument()
+      expect(languageCalls(calls)).toEqual([])
+      expect(useUiStore.getState().language).toBe('ru')
+    })
   })
 
   it('selects an offline event through the same mobile training endpoint', async () => {

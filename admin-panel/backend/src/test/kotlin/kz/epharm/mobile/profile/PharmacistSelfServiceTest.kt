@@ -65,6 +65,32 @@ class PharmacistSelfServiceTest {
     }
 
     @Test
+    fun `the cabinet language is saved on the card, trimmed and only as ru or kk`() {
+        every { pharmacists.save(account) } returns account
+        assertNull(account.language)
+
+        assertEquals("kk", service.setLanguage(PHARMACIST_ID, " KK ").language)
+        assertEquals("kk", account.language)
+        // The same language again writes nothing.
+        assertEquals("kk", service.setLanguage(PHARMACIST_ID, "kk").language)
+        verify(exactly = 1) { pharmacists.save(account) }
+
+        for (wrong in listOf(null, "", " ", "en", "kaz", "RU-ru")) {
+            val error = assertThrows(AppException::class.java) { service.setLanguage(PHARMACIST_ID, wrong) }
+            assertEquals(ErrorCode.VALIDATION_FAILED, error.code)
+        }
+        assertEquals("kk", account.language)
+    }
+
+    @Test
+    fun `a pending or blocked account cannot change its language`() {
+        account.status = PharmacistStatus.blocked
+        val error = assertThrows(AppException::class.java) { service.setLanguage(PHARMACIST_ID, "kk") }
+        assertEquals(ErrorCode.USER_NOT_ACTIVE, error.code)
+        assertNull(account.language)
+    }
+
+    @Test
     fun `pending and blocked accounts cannot read balance or recommendations`() {
         for (status in listOf(PharmacistStatus.pending, PharmacistStatus.blocked)) {
             account.status = status

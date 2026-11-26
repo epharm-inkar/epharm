@@ -137,6 +137,43 @@ describe('TillMessagesPanel', () => {
     )
   })
 
+  it('текст на казахском уходит вместе с русским, виден в предпросмотре и в подтверждении', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await user.type(screen.getByTestId('till-message-title'), 'Инвентаризация')
+    await user.type(screen.getByTestId('till-message-text'), 'Завтра в 9:00')
+    expect(screen.queryByTestId('till-message-title-kk')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('switch', { name: 'Добавить текст на казахском' }))
+    await user.type(screen.getByTestId('till-message-title-kk'), 'Түгендеу')
+
+    // Половину казахской пары не отправляем.
+    await user.click(screen.getByTestId('till-message-send'))
+    expect(screen.getByTestId('till-message-error')).toHaveTextContent('Введите текст на казахском или выключите казахский текст')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.type(screen.getByTestId('till-message-text-kk'), 'Ертең сағат 9:00-де')
+    expect(screen.getByTestId('till-message-preview')).toHaveTextContent('Завтра в 9:00')
+    expect(screen.getByTestId('till-message-preview-kk')).toHaveTextContent('Түгендеу')
+    expect(screen.getByTestId('till-message-preview-kk')).toHaveTextContent('Ертең сағат 9:00-де')
+    await user.click(screen.getByTestId('till-message-send'))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByTestId('till-message-confirm-kk')).toHaveTextContent(
+      'Кто выбрал казахский язык в кабинете, увидит текст на казахском.',
+    )
+    await user.click(within(dialog).getByTestId('till-message-confirm'))
+    expect(sendMutate).toHaveBeenCalledWith(
+      {
+        title: 'Инвентаризация',
+        text: 'Завтра в 9:00',
+        audience: 'all',
+        days: 7,
+        titleKk: 'Түгендеу',
+        textKk: 'Ертең сағат 9:00-де',
+      },
+      expect.anything(),
+    )
+  })
+
   it('не отправляет без заголовка и текста и говорит, чего не хватает', async () => {
     const user = userEvent.setup()
     renderPanel()
@@ -265,6 +302,9 @@ describe('TillMessagesPanel', () => {
           programId: 'course-b',
           onlyAtTill: true,
           days: 7,
+          // Тем, кто выбрал казахский, напоминание уходит на казахском.
+          titleKk: 'Курс туралы еске салу',
+          textKk: '«Витамины группы B» курсын 31.12 дейін өтіңіз: «Мой кабинет» → Оқыту',
         },
         expect.anything(),
       )

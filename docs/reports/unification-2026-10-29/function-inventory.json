@@ -8717,6 +8717,53 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "L19.12",
+    "group": "L19",
+    "name": "Язык кабинета в карточке фармацевта: русский или казахский",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/kazakh-language-notices",
+      "ui": [
+        "admin-panel/frontend/src/features/learner/LearnerTrainingPage.tsx",
+        "admin-panel/frontend/src/features/learner/learner-i18n.ts",
+        "admin-panel/frontend/src/features/screens/TillMessagesPanel.tsx"
+      ],
+      "api": [
+        "PUT /api/mobile/me/language"
+      ],
+      "jobs": [],
+      "data": [
+        "pharmacists",
+        "posm_messages"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/profile/controller/PharmacistSelfController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/mobile/profile/service/PharmacistSelfService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/messages/PosmMessageService.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V128__pharmacist_language_kk_notices.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/mobile/profile/PharmacistSelfIntegrationTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/messages/PosmMessageIntegrationTest.kt"
+      ]
+    },
+    "target": {
+      "section": "ЛК фармацевта",
+      "subsection": "Рекомендации / баланс / сертификаты / профиль",
+      "actions": [
+        "Переключатель Рус / Қаз сохраняет язык в карточке фармацевта; касса показывает уведомления офиса на этом языке"
+      ],
+      "scope": "Свой PharmacistPrincipal; меняется только своя карточка; только ru или kk"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "PUT /api/mobile/me/language принимает только ru и kk и меняет карточку из токена; GET /api/mobile/auth/me отдаёт language (null, пока не выбран)",
+      "Уведомление офиса с казахским заголовком и текстом: выбравшим казахский касса показывает казахский, остальным русский; половина казахской пары отклоняется"
+    ],
+    "risks": [
+      "Окна кассы пока на русском: на казахском только текст уведомлений офиса"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "L20.01",
     "group": "L20",
     "name": "Flutter overview / assignment / start / stage progress",

@@ -50,7 +50,14 @@ function MessageRow({ message, onWithdraw }: { message: PosmMessageDto; onWithdr
     <li className="hairline rounded-xl border bg-white p-4" data-testid={`till-message-${message.id}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-extrabold text-ink-900">{message.title}</div>
+          <div className="text-[14px] font-extrabold text-ink-900">
+            {message.title}
+            {message.titleKk && (
+              <span className="ml-2 rounded-full bg-paper-hover px-2 py-0.5 align-middle text-[11px] font-bold text-ink-600" title={message.titleKk}>
+                {t('msg.kkBadge')}
+              </span>
+            )}
+          </div>
           <div className="mt-0.5 text-[12px] text-ink-500">
             {localDateTime(message.createdAt)}, {message.createdBy}
           </div>

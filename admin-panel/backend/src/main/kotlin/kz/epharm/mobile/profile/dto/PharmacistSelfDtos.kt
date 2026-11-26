@@ -7,6 +7,9 @@ import java.time.LocalDate
 
 data class PharmacistBalanceDto(val balanceKzt: Long, val currency: String = "KZT")
 
+/** The cabinet's language kept on the card (V128): `ru` or `kk`. */
+data class PharmacistLanguageDto(val language: String? = null)
+
 data class PharmacistRecommendationsDto(
     val items: List<PharmacistRecommendationDto>,
     val page: Int,

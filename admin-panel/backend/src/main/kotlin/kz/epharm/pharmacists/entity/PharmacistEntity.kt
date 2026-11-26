@@ -100,6 +100,10 @@ class PharmacistEntity(
 
     @Column(name = "name_source", nullable = false, length = 16)
     var nameSource: String = "registration",
+
+    /** The language the pharmacist chose in the cabinet: `ru`, `kk` or null when not chosen yet (V128). */
+    @Column(name = "language", length = 2)
+    var language: String? = null,
 ) {
     var tier: PharmacistTier
         get() = PharmacistTier.valueOf(tierRaw)

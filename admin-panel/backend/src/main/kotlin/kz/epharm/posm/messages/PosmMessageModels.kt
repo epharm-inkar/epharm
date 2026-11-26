@@ -40,6 +40,9 @@ data class CreatePosmMessageRequest(
     val programId: String? = null,
     /** Any audience: only the people who sit at a till when the notice is sent; false when absent. */
     val onlyAtTill: Boolean? = null,
+    /** The Kazakh title and text (V128): both or neither. People who chose Kazakh read them; the rest read Russian. */
+    val titleKk: String? = null,
+    val textKk: String? = null,
 )
 
 /** One notice as HQ sees it in the admin, with how many people saw it at a till and how many closed it. */
@@ -70,6 +73,9 @@ data class PosmMessageAdminDto(
     /** The course of audience «course», with its name as it was when the notice was sent. */
     val programId: UUID? = null,
     val programName: String? = null,
+    /** The Kazakh title and text, when HQ wrote them (V128). */
+    val titleKk: String? = null,
+    val textKk: String? = null,
 )
 
 /**

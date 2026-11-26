@@ -30,6 +30,9 @@ data class PosmMessageDraft(
     val days: Int,
     val programId: UUID? = null,
     val onlyAtTill: Boolean = false,
+    /** The Kazakh title and text (V128): both or neither. */
+    val titleKk: String? = null,
+    val textKk: String? = null,
 ) {
     val choice: PosmAudienceChoice get() = PosmAudienceChoice(audience, pharmacyIds, pharmacistIds, programId, onlyAtTill)
 }
@@ -57,6 +60,9 @@ object PosmMessageRules {
     const val MAX_PHARMACIES = 1000
     const val MAX_PHARMACISTS = 2000
     const val ID_MAX = 64
+
+    /** Added to the messages about the Kazakh title and text. */
+    private const val KK = " на казахском"
 
     /** The till's history covers this many days and at most this many notices. */
     const val HISTORY_DAYS = 30L
@@ -91,10 +97,29 @@ object PosmMessageRules {
         val audience = audience(request)
         val days = days(request.days)
         val choice = choice(audience, request)
+        val kazakh = kazakh(request.titleKk, request.textKk)
         return PosmMessageDraft(
             title, text, audience, choice.pharmacyIds, choice.pharmacistIds, days, choice.programId, choice.onlyAtTill,
+            kazakh?.first, kazakh?.second,
         )
     }
+
+    /**
+     * The Kazakh title and text (owner, 26.11.2026: «уведомления на казахском»): both or neither, cleaned and limited
+     * like the Russian ones. Null when HQ left both empty: then everybody reads the Russian text.
+     */
+    fun kazakh(rawTitle: String?, rawText: String?): Pair<String, String>? {
+        val hasTitle = !rawTitle.isNullOrBlank()
+        val hasText = !rawText.isNullOrBlank()
+        if (!hasTitle && !hasText) return null
+        if (!hasTitle) invalid("Введите заголовок на казахском или очистите казахский текст")
+        if (!hasText) invalid("Введите текст на казахском или очистите казахский заголовок")
+        return title(rawTitle, KK) to text(rawText, KK)
+    }
+
+    /** The title and text a person reads: the Kazakh ones when the person chose Kazakh and HQ wrote them. */
+    fun localized(language: String?, title: String, text: String, titleKk: String?, textKk: String?): Pair<String, String> =
+        if (language == "kk" && !titleKk.isNullOrBlank() && !textKk.isNullOrBlank()) titleKk to textKk else title to text
 
     /** The audience part of a request alone, for the count before sending (no title and no text yet). */
     fun choice(request: CreatePosmMessageRequest): PosmAudienceChoice = choice(audience(request), request)
@@ -130,21 +155,21 @@ object PosmMessageRules {
     fun searchLimit(raw: Int?): Int = (raw ?: DEFAULT_SEARCH_LIMIT).coerceIn(1, MAX_SEARCH_LIMIT)
 
     /** One line: control characters removed, spaces collapsed, at most 120 characters. */
-    fun title(raw: String?): String {
+    fun title(raw: String?, language: String = ""): String {
         val clean = INNER_SPACES.replace(strip(raw.orEmpty(), keepLineBreaks = false), " ").trim()
-        if (clean.isEmpty()) invalid("Введите заголовок")
-        if (clean.codePointCount(0, clean.length) > TITLE_MAX) invalid("Заголовок до $TITLE_MAX знаков")
+        if (clean.isEmpty()) invalid("Введите заголовок$language")
+        if (clean.codePointCount(0, clean.length) > TITLE_MAX) invalid("Заголовок$language до $TITLE_MAX знаков")
         return clean
     }
 
     /** Paragraphs kept (at most one empty line between them), trailing spaces cut, at most 1000 characters. */
-    fun text(raw: String?): String {
+    fun text(raw: String?, language: String = ""): String {
         val lines = strip(raw.orEmpty().replace("\r\n", "\n").replace('\r', '\n'), keepLineBreaks = true)
             .split('\n')
             .map { INNER_SPACES.replace(it, " ").trim() }
         val clean = BLANK_LINES.replace(lines.joinToString("\n"), "\n\n").trim()
-        if (clean.isEmpty()) invalid("Введите текст уведомления")
-        if (clean.codePointCount(0, clean.length) > TEXT_MAX) invalid("Текст до $TEXT_MAX знаков")
+        if (clean.isEmpty()) invalid("Введите текст уведомления$language")
+        if (clean.codePointCount(0, clean.length) > TEXT_MAX) invalid("Текст$language до $TEXT_MAX знаков")
         return clean
     }
 

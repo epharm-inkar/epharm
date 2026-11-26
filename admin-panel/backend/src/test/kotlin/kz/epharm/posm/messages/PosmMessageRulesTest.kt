@@ -128,6 +128,53 @@ class PosmMessageRulesTest {
         assertEquals("Сәлем 👋", PosmMessageRules.text("Сәлем 👋"))
     }
 
+    @Test fun `a Kazakh title and text go together and are cleaned like the Russian ones`() {
+        val none = PosmMessageRules.draft(request())
+        assertNull(none.titleKk)
+        assertNull(none.textKk)
+        assertNull(PosmMessageRules.draft(request().copy(titleKk = "  ", textKk = "")).titleKk)
+
+        val both = PosmMessageRules.draft(request().copy(titleKk = "  Түгендеу\u0000 ", textKk = "Ертең  9:00-де.\r\n\r\n\r\nКеліңіз. "))
+        assertEquals("Түгендеу", both.titleKk)
+        assertEquals("Ертең 9:00-де.\n\nКеліңіз.", both.textKk)
+        // The Russian ones are what they were.
+        assertEquals("Инвентаризация", both.title)
+
+        assertEquals(
+            "Введите текст на казахском или очистите казахский заголовок",
+            invalid { PosmMessageRules.draft(request().copy(titleKk = "Түгендеу")) },
+        )
+        assertEquals(
+            "Введите заголовок на казахском или очистите казахский текст",
+            invalid { PosmMessageRules.draft(request().copy(textKk = "Мәтін")) },
+        )
+        assertEquals(
+            "Заголовок на казахском до 120 знаков",
+            invalid { PosmMessageRules.draft(request().copy(titleKk = "ә".repeat(121), textKk = "Мәтін")) },
+        )
+        assertEquals(
+            "Текст на казахском до 1000 знаков",
+            invalid { PosmMessageRules.draft(request().copy(titleKk = "Тақырып", textKk = "ә".repeat(1001))) },
+        )
+        // Only invisible characters: as empty as no title at all.
+        assertEquals(
+            "Введите заголовок на казахском",
+            invalid { PosmMessageRules.draft(request().copy(titleKk = "\u200B\u200B", textKk = "Мәтін")) },
+        )
+    }
+
+    @Test fun `a person who chose Kazakh reads the Kazakh text, everybody else the Russian one`() {
+        val ru = "Инвентаризация" to "Завтра в 9:00."
+        val kk = "Түгендеу" to "Ертең сағат 9:00-де."
+        assertEquals(kk, PosmMessageRules.localized("kk", ru.first, ru.second, kk.first, kk.second))
+        assertEquals(ru, PosmMessageRules.localized("ru", ru.first, ru.second, kk.first, kk.second))
+        // Not chosen yet: Russian.
+        assertEquals(ru, PosmMessageRules.localized(null, ru.first, ru.second, kk.first, kk.second))
+        // HQ wrote no Kazakh text: Russian for everybody.
+        assertEquals(ru, PosmMessageRules.localized("kk", ru.first, ru.second, null, null))
+        assertEquals(ru, PosmMessageRules.localized("kk", ru.first, ru.second, " ", kk.second))
+    }
+
     @Test fun `days are between 1 and 30`() {
         assertEquals(1, PosmMessageRules.days(1))
         assertEquals(30, PosmMessageRules.days(30))

@@ -34,7 +34,9 @@ import {
   buildAudienceRequest,
   buildRequest,
   courseReminder,
+  courseReminderKk,
   draftError,
+  kazakhParts,
   type TillMessageDraft,
 } from './tillMessages'
 
@@ -45,8 +47,8 @@ export function TillMessagesPanel() {
   const toast = useToast()
   const [draft, setDraft] = useState<TillMessageDraft>(EMPTY_DRAFT)
   const [people, setPeople] = useState<PosmPersonDto[]>([])
-  // Заголовок и текст, которые подставила кнопка «Напомнить о курсе»: пока их не правили, смена курса их обновляет.
-  const [autoFilled, setAutoFilled] = useState<{ title: string; text: string } | null>(null)
+  // Заголовки и тексты, которые подставила кнопка «Напомнить о курсе»: пока их не правили, смена курса их обновляет.
+  const [autoFilled, setAutoFilled] = useState<Pick<TillMessageDraft, 'title' | 'text' | 'titleKk' | 'textKk'> | null>(null)
   const [tried, setTried] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [withdrawing, setWithdrawing] = useState<PosmMessageDto | null>(null)
@@ -76,6 +78,7 @@ export function TillMessagesPanel() {
   )
 
   const error = draftError(draft)
+  const kazakh = kazakhParts(draft)
   const nobody = previewData?.frozen === true && previewData.recipients === 0
   const update = (patch: Partial<TillMessageDraft>) => setDraft((current) => ({ ...current, ...patch }))
   const daysLabel = t(`msg.day${draft.days}`)
@@ -105,18 +108,23 @@ export function TillMessagesPanel() {
   const remind = () => {
     const picked = courseList.find((item) => item.id === draft.programId) ?? courseList[0]
     if (!picked) return
-    const filled = courseReminder(picked)
+    const filled = reminderFor(picked)
     setAutoFilled(filled)
-    update({ audience: 'course', programId: picked.id, onlyAtTill: true, title: filled.title, text: filled.text })
+    update({ audience: 'course', programId: picked.id, onlyAtTill: true, withKazakh: true, ...filled })
   }
 
   const chooseCourse = (programId: string) => {
     const picked = courseList.find((item) => item.id === programId)
-    const untouched = autoFilled !== null && draft.title === autoFilled.title && draft.text === autoFilled.text
+    const untouched =
+      autoFilled !== null &&
+      draft.title === autoFilled.title &&
+      draft.text === autoFilled.text &&
+      draft.titleKk === autoFilled.titleKk &&
+      draft.textKk === autoFilled.textKk
     if (picked && untouched) {
-      const filled = courseReminder(picked)
+      const filled = reminderFor(picked)
       setAutoFilled(filled)
-      update({ programId, title: filled.title, text: filled.text })
+      update({ programId, ...filled })
     } else {
       update({ programId })
     }
@@ -204,6 +212,39 @@ export function TillMessagesPanel() {
             />
           </Field>
 
+          <div className="hairline rounded-xl border bg-paper-hover/40 p-3" data-testid="till-message-kk">
+            <Toggle
+              on={draft.withKazakh}
+              onChange={(withKazakh) => update({ withKazakh })}
+              label={t('msg.kkToggle')}
+            />
+            <div className="mt-1 text-[12px] text-ink-500">{t('msg.kkHint')}</div>
+            {draft.withKazakh && (
+              <div className="mt-3 flex flex-col gap-3">
+                <Field label={t('msg.titleKk')} hint={t('msg.counter', { n: [...draft.titleKk].length, max: TITLE_MAX })}>
+                  <Input
+                    value={draft.titleKk}
+                    maxLength={TITLE_MAX}
+                    lang="kk"
+                    placeholder={t('msg.titleKkPlaceholder')}
+                    onChange={(e) => update({ titleKk: e.target.value })}
+                    data-testid="till-message-title-kk"
+                  />
+                </Field>
+                <Field label={t('msg.textKk')} hint={t('msg.counter', { n: [...draft.textKk].length, max: TEXT_MAX })}>
+                  <textarea
+                    className="inp min-h-24"
+                    value={draft.textKk}
+                    maxLength={TEXT_MAX}
+                    lang="kk"
+                    onChange={(e) => update({ textKk: e.target.value })}
+                    data-testid="till-message-text-kk"
+                  />
+                </Field>
+              </div>
+            )}
+          </div>
+
           <div>
             <div className="mb-1.5 text-[12px] font-semibold text-ink-700">{t('msg.audience')}</div>
             <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t('msg.audience')}>
@@ -276,6 +317,7 @@ export function TillMessagesPanel() {
           </Field>
 
           <Preview title={draft.title} text={draft.text} />
+          {kazakh && <Preview title={kazakh.title} text={kazakh.text} label={t('msg.previewKk')} testId="till-message-preview-kk" />}
 
           {tried && (error || nobody) && (
             <div className="text-[12px] font-semibold text-accent-danger" role="alert" data-testid="till-message-error">
@@ -321,6 +363,7 @@ export function TillMessagesPanel() {
               {t('msg.countLine', { n: previewData.recipients, atTill: previewData.atTillNow })}
             </div>
           )}
+          {kazakh && <div data-testid="till-message-confirm-kk">{t('msg.confirmKk')}</div>}
           {draft.onlyAtTill && <div>{t('msg.confirmOnlyAtTill')}</div>}
           {draft.audience === 'course' && <div>{t('msg.confirmCourse')}</div>}
           {draft.audience === 'all' && !draft.onlyAtTill && <div className="font-semibold text-ink-900">{t('msg.confirmAll')}</div>}
@@ -351,13 +394,30 @@ export function TillMessagesPanel() {
   )
 }
 
+/** Напоминание о курсе на двух языках: казахское для тех, кто выбрал казахский в кабинете. */
+function reminderFor(course: Parameters<typeof courseReminder>[0]) {
+  const ru = courseReminder(course)
+  const kk = courseReminderKk(course)
+  return { title: ru.title, text: ru.text, titleKk: kk.title, textKk: kk.text }
+}
+
 /** Как уведомление выглядит на кассе: тёмная шапка, заголовок, текст и кнопка (касса показывает их по-русски). */
-function Preview({ title, text }: { title: string; text: string }) {
+function Preview({
+  title,
+  text,
+  label,
+  testId = 'till-message-preview',
+}: {
+  title: string
+  text: string
+  label?: string
+  testId?: string
+}) {
   const t = useT()
   return (
     <div>
-      <div className="mb-1.5 text-[12px] font-semibold text-ink-700">{t('msg.preview')}</div>
-      <div className="max-w-[420px] overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm" data-testid="till-message-preview">
+      <div className="mb-1.5 text-[12px] font-semibold text-ink-700">{label ?? t('msg.preview')}</div>
+      <div className="max-w-[420px] overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm" data-testid={testId}>
         <div className="bg-recommendation-ink px-4 py-2.5 text-[13px] font-semibold text-white">{t('msg.previewHeader')}</div>
         <div className="px-4 py-3">
           <div className="text-[15px] font-extrabold text-ink-900">{title.trim() || t('msg.previewTitle')}</div>

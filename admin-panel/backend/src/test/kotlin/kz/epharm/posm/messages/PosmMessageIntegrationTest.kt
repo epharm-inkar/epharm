@@ -215,6 +215,41 @@ class PosmMessageIntegrationTest {
         assertThat(listed(id)["closedCount"].asInt()).isEqualTo(1)
     }
 
+    @Test fun `people who chose Kazakh read the Kazakh text at the till, the others the Russian one`() {
+        // Aigerim chose Kazakh in the cabinet; Erbol has not chosen a language.
+        jdbc.update("UPDATE pharmacists SET language = 'kk' WHERE id = ?", AIGERIM)
+        val created = send(
+            mapOf(
+                "title" to "Инвентаризация", "text" to "Завтра в 9:00.", "audience" to "all",
+                "titleKk" to " Түгендеу ", "textKk" to "Ертең сағат 9:00-де.",
+            ),
+        ).andExpect(status().isCreated).json()
+        assertThat(created["title"].asText()).isEqualTo("Инвентаризация")
+        assertThat(created["titleKk"].asText()).isEqualTo("Түгендеу")
+        assertThat(created["textKk"].asText()).isEqualTo("Ертең сағат 9:00-де.")
+        assertThat(listed(created["id"].asText())["titleKk"].asText()).isEqualTo("Түгендеу")
+
+        val aigerim = feed(tillA, PHARMACY, "51").andExpect(status().isOk).json()["messages"].single()
+        assertThat(aigerim["title"].asText()).isEqualTo("Түгендеу")
+        assertThat(aigerim["text"].asText()).isEqualTo("Ертең сағат 9:00-де.")
+        val erbol = feed(tillA, PHARMACY, "52").json()["messages"].single()
+        assertThat(erbol["title"].asText()).isEqualTo("Инвентаризация")
+        assertThat(erbol["text"].asText()).isEqualTo("Завтра в 9:00.")
+
+        // A notice without a Kazakh text reaches her in Russian.
+        val russian = send(mapOf("title" to "Только по-русски", "text" to "Текст.", "audience" to "all")).andExpect(status().isCreated).json()
+        assertThat(russian["titleKk"].isNull).isTrue()
+        assertThat(feed(tillA, PHARMACY, "51").json()["messages"].map { it["title"].asText() })
+            .containsExactly("Только по-русски", "Түгендеу")
+
+        // Half of the Kazakh pair is refused, and nothing is written.
+        assertThat(
+            send(mapOf("title" to "x", "text" to "y", "audience" to "all", "titleKk" to "Тек тақырып"))
+                .andExpect(status().isBadRequest).json()["message"].asText(),
+        ).isEqualTo("Введите текст на казахском или очистите казахский заголовок")
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM posm_messages", Long::class.java)).isEqualTo(2)
+    }
+
     @Test fun `the till's minute check learns when notices changed`() {
         val created = send(mapOf("title" to "Новое", "text" to "Текст.", "audience" to "all")).json()
         val noticeAt = notice(tillA)["messagesAt"].asText()
