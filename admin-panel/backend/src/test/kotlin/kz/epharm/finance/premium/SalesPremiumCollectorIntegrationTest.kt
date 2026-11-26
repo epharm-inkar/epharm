@@ -39,7 +39,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 
 /**
- * The daily collector of the sales premium (26.11.2026): the November matrix seeded by V124, the matrix upload, a
+ * The daily collector of the sales premium (26.11.2026): the November matrix seeded by V125, the matrix upload, a
  * calculation from a fake Standard-N through the real import, the figures it leaves, the audit row of the job, the month
  * statement and the HTTP surface. The import itself is covered by [SalesPremiumIntegrationTest]. Every test works in its
  * own month, because the audit table keeps the cut-offs.

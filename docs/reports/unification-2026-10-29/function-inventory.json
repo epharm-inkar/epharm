@@ -1856,7 +1856,7 @@
         "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumRules.kt",
         "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumPendingCredits.kt",
         "admin-panel/backend/src/main/kotlin/kz/epharm/finance/service/PharmacistWalletService.kt",
-        "admin-panel/backend/src/main/resources/db/migration/V123__sales_premium_wallet.sql"
+        "admin-panel/backend/src/main/resources/db/migration/V124__sales_premium_wallet.sql"
       ]
     },
     "target": {
@@ -2011,7 +2011,7 @@
       "files": [
         "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumOperationsController.kt",
         "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumMatrix.kt",
-        "admin-panel/backend/src/main/resources/db/migration/V124__sales_premium_matrix_and_figures.sql"
+        "admin-panel/backend/src/main/resources/db/migration/V125__sales_premium_matrix_and_figures.sql"
       ]
     },
     "target": {

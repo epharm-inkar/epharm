@@ -33,7 +33,9 @@ import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.pharmacists.service.PharmacistService
 import kz.epharm.posm.self.PosmSelfRequest
 import kz.epharm.posm.self.PosmSelfService
+import kz.epharm.posm.self.StandardNAccountService
 import kz.epharm.posm.service.PosmDeviceIdentity
+import kz.epharm.posm.service.StandardNDirectoryPerson
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
 import org.assertj.core.api.Assertions.assertThat
@@ -93,6 +95,7 @@ class SalesPremiumIntegrationTest {
     @Autowired private lateinit var wallet: PharmacistWalletService
     @Autowired private lateinit var pharmacistService: PharmacistService
     @Autowired private lateinit var selfService: PosmSelfService
+    @Autowired private lateinit var accounts: StandardNAccountService
     @Autowired private lateinit var people: PharmacistRepository
     @Autowired private lateinit var chains: ChainRepository
     @Autowired private lateinit var pharmacies: PharmacyRepository
@@ -349,6 +352,27 @@ class SalesPremiumIntegrationTest {
         assertThat(pendingRows("2025-10")).isZero()
         assertThat(jdbc.queryForObject("SELECT context_key FROM pharmacist_wallet_entries WHERE pharmacist_id=?", String::class.java, card.id))
             .isEqualTo("premium:2025-10")
+    }
+
+    @Test
+    fun `a pending registration taken over by the Standard-N directory person is credited with the waiting premium after the commit`() {
+        val pharmacyId = "prem-adopt-pharmacy"
+        jdbc.update("""INSERT INTO chains(id,name,"group") VALUES ('prem-adopt-chain','Synthetic','pilot') ON CONFLICT DO NOTHING""")
+        jdbc.update(
+            """INSERT INTO pharmacies(id,name,chain_id,chain_name,city,"group",standardn_profile_id,standardn_profile_source)
+               VALUES (?, 'Synthetic adopt pharmacy', 'prem-adopt-chain', 'Synthetic', 'Алматы', 'pilot', 7101, 'manual') ON CONFLICT DO NOTHING""",
+            pharmacyId,
+        )
+        val registration = person(status = PharmacistStatus.pending)
+        service.apply(request("2026-06", "2026-06-20", false, listOf(row(registration.iin, 900, 9.0))), actor)
+        assertThat(pendingRows("2026-06")).isEqualTo(1)
+        assertThat(balance(registration.id)).isZero()
+
+        val card = accounts.ensure(StandardNDirectoryPerson(registration.iin, "Синтетикова Айгерим Нурлановна", 0), pharmacyId)!!
+
+        assertThat(card.id).isEqualTo(registration.id)
+        eventually("the waiting premium is credited after the takeover") { balance(registration.id) == 900L }
+        assertThat(pendingRows("2026-06")).isZero()
     }
 
     @Test

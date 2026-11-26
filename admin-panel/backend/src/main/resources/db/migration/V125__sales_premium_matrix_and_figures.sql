@@ -1,7 +1,7 @@
--- V124: the daily collector of the sales premium (26.11.2026). The server now computes the premium itself from the
+-- V125: the daily collector of the sales premium (26.11.2026). The server now computes the premium itself from the
 -- central Standard-N database, so it needs the matrix of the month (which products pay how much per pack) and a place
 -- to keep each seller's latest packs for the statement. Nothing here moves money: the wallet, the ledger and the
--- pending table are those of V123.
+-- pending table are those of V124.
 
 -- 1. The matrix of a month: one row per product (Standard-N WARES.ID, GUID in upper case) and the bonus per pack in
 --    tenge. A product that pays nothing has a zero bonus and is still read, so its packs are counted. A month's matrix

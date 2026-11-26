@@ -4,12 +4,12 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * V124 seeds the November 2026 matrix from the owner's list. The database is not needed to know that every tuple
+ * V125 seeds the November 2026 matrix from the owner's list. The database is not needed to know that every tuple
  * would pass the table's CHECK constraints and that the list arrived whole.
  */
 class SalesPremiumMatrixSeedTest {
-    private val sql = checkNotNull(javaClass.getResource("/db/migration/V124__sales_premium_matrix_and_figures.sql")) {
-        "V124 is not on the classpath"
+    private val sql = checkNotNull(javaClass.getResource("/db/migration/V125__sales_premium_matrix_and_figures.sql")) {
+        "V125 is not on the classpath"
     }.readText(Charsets.UTF_8)
 
     private val tuple = Regex("""\('2026-11', '([0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12})', '((?:[^']|'')*)', (\d+)\)""")

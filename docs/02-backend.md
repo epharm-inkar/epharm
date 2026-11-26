@@ -6,7 +6,7 @@ The monthly premium for selling the products of the month's matrix (bonus per pa
 returns, per seller IIN) is computed from the central Standard-N database, by the server's daily collector (see below)
 or outside ePharm, and arrives as cumulative month-to-date amounts, again every day. ePharm only credits it to the
 pharmacist wallet as earned money; payouts are separate work. Package `finance.premium` (pure rules in
-`SalesPremiumRules`, tested without a database), V123 and V124.
+`SalesPremiumRules`, tested without a database), V124 and V125.
 
 - `POST /api/admin/finance/sales-premium/import` `{period: "2026-11", through: "2026-11-25", dryRun, rows: [{iin,
   amountKzt, packs?}]}`. HQ_HEAD and SYSTEM_ADMIN only (`@PreAuthorize`; a finance reviewer approves payouts but does
@@ -35,7 +35,7 @@ pharmacist wallet as earned money; payouts are separate work. Package `finance.p
   valid credits back). Imports of one month are serialised by an advisory lock; pharmacist rows are locked in id
   order, like the payout generation, so the two never wait for each other. Every real import writes one append-only row
   to `sales_premium_imports` (admin, role, month, cut-off, SHA-256 of the figures, counts and sums, no IIN, name or
-  phone). V123 widens the ledger constraints: `sales_premium` needs earned = amount, `sales_premium_correction`
+  phone). V124 widens the ledger constraints: `sales_premium` needs earned = amount, `sales_premium_correction`
   needs a negative amount equal to earned, every other source keeps its rule.
 - Response: `rows`, `matched`, `credited`, `corrections {count, appliedKzt, uncoveredKzt}`, `unchanged`, `pending
   {count, sumKzt, notActiveCount}`, `ambiguous {count, sumKzt, iins}`, `packsTotal`, `auditId`. `matched + pending +
@@ -45,7 +45,7 @@ pharmacist wallet as earned money; payouts are separate work. Package `finance.p
   entries name the source "Премия за продажи, ноябрь 2026". The admin roster's 30-day earned figure is clamped at
   zero too. The HQ ledger report knows both sources. A payout batch reserves the whole balance, premium included.
 
-### Daily collector from Standard-N (26.11.2026, V124)
+### Daily collector from Standard-N (26.11.2026, V125)
 
 The server can compute the figures itself and give them to the same import (`SalesPremiumService`), so nothing here
 credits money by another route. Files: `SalesPremiumCollector` (one calculation), `SalesPremiumAggregator`
@@ -75,7 +75,7 @@ month's products), `SalesPremiumStatement`, `SalesPremiumOperationsController`.
   409, the job skips. Several backend instances would not corrupt anything: the import is idempotent and serialised per
   month by its advisory lock, the Standard-N side is read only.
 - Matrix: table `sales_premium_matrix(period, ware_id, name, bonus_per_pack)`; `ware_id` is the Standard-N product id
-  (GUID in upper case, `WARES.ID`), an empty bonus is zero. V124 seeds `2026-11` (188 products, one with a zero bonus)
+  (GUID in upper case, `WARES.ID`), an empty bonus is zero. V125 seeds `2026-11` (188 products, one with a zero bonus)
   from the owner's list. A later month is uploaded with `POST /api/admin/finance/sales-premium/matrix?period=2026-12&
   dryRun=true|false`, body = the CSV (UTF-8, header with `ware_id`, `bonus_per_pack`, optional `promo_name`; comma or
   semicolon; decimal comma accepted; a bad row refuses the whole file). It replaces the whole month; the answer compares
@@ -106,7 +106,7 @@ month's products), `SalesPremiumStatement`, `SalesPremiumOperationsController`.
   import (the ledger holds tenge only). The IIN is written as `="050112345678"` so that Excel keeps a leading zero;
   packs use a decimal comma; a text that starts with `=`, `+`, `-` or `@` gets a leading apostrophe. The download is
   logged (admin id, month, rows), and the response is `no-store`.
-- Tables of V124: `sales_premium_matrix`, `sales_premium_figures`. Nothing is dropped or rewritten; V123 and the wallet
+- Tables of V125: `sales_premium_matrix`, `sales_premium_figures`. Nothing is dropped or rewritten; V124 and the wallet
   stay as they are. Rollback: an older backend ignores both tables.
 
 ## Explicit campaign funding mode — candidate 2026-11-16

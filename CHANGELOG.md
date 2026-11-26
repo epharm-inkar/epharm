@@ -25,7 +25,7 @@ All notable production changes to Epharm are recorded here. The format follows
   the commit and a sweep every 10 minutes). Every real import leaves one audit row without IINs. The till's
   «Заработано за месяц» and last entries ("Премия за продажи, ноябрь 2026") and the cabinet balance include it; the
   HQ ledger report filters both new sources. Tables `sales_premium_pending`, `sales_premium_imports`, ledger
-  constraints widened (V123). Payouts are not changed: a payout batch reserves the whole balance, premium included.
+  constraints widened (V124). Payouts are not changed: a payout batch reserves the whole balance, premium included.
 - Sales premium collected by the server (26.11.2026): the daily job `SalesPremiumJob` reads the sales and returns of the
   month's matrix products from the central Standard-N database (read only, one query per product, the `STANDARDN_*`
   bridge of the directory), adds them up per seller IIN (packs = minus receipts and returns, times the bonus per pack,
@@ -35,7 +35,7 @@ All notable production changes to Epharm are recorded here. The format follows
   recompute?period=2026-11&dryRun=true|false` runs it now (totals only, no IINs), `GET .../statement.csv?period=2026-11`
   is the month statement for accounting (`ФИО;ИИН;аптека;город;упаковок;начислено;статус`, UTF-8 with BOM, semicolons),
   `POST .../matrix?period=...&dryRun=...` replaces the matrix of a month from a CSV (HQ_HEAD, SYSTEM_ADMIN). Tables
-  `sales_premium_matrix` (the November matrix of 188 products is seeded) and `sales_premium_figures` (V124). The four
+  `sales_premium_matrix` (the November matrix of 188 products is seeded) and `sales_premium_figures` (V125). The four
   routes are in the API inventory (H08.07 to H08.11), which the CI check «ops / config contracts» needed.
 - Admin Analytics opens with «Фармацевты в ePharm» (owner, 26.11.2026): how many pharmacists are in the system
   (everyone except blocked), how many worked with ePharm today and in the last 7 days with the shares, and two

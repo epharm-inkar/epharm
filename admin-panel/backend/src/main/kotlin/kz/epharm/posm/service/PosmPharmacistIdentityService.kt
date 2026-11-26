@@ -79,10 +79,15 @@ class PosmPharmacistIdentityService(
             )
         }
 
+        if (bound.recipient != null) {
+            return PosmPharmacistIdentity(bound.recipient.id, bound.recipient.name,
+                PharmacistIdentitySource.STANDARDN_RPS_BINDING, reportedId, reportedName)
+        }
         if (bound.exists) {
-            return PosmPharmacistIdentity(bound.recipient?.id.orEmpty(),bound.recipient?.name ?: reportedName,
-                if (bound.recipient != null) PharmacistIdentitySource.STANDARDN_RPS_BINDING else PharmacistIdentitySource.STANDARDN_UNMAPPED,
-                reportedId,reportedName)
+            // INK-209: an old binding without a fresh proof gives nobody the receipt, but it must not hide the
+            // central directory either. The weaker paths (internal id, same name) stay closed for a bound account.
+            return fromDirectory(useDirectory, pharmacyId, reportedId, reportedName)
+                ?: PosmPharmacistIdentity("", reportedName, PharmacistIdentitySource.STANDARDN_UNMAPPED, reportedId, reportedName)
         }
 
         // A native account ID is not an ePharm account ID, even when their strings collide.
@@ -99,24 +104,7 @@ class PosmPharmacistIdentityService(
             )
         }
 
-        val person = if (useDirectory) directory?.find(pharmacyId, reportedId) else null
-        if (person != null) {
-            // A person may sell in several pharmacies: the IIN, not the home pharmacy, identifies them.
-            val account = pharmacistRepository.findByIin(person.iin) ?: accounts?.ensure(person, pharmacyId)
-            val registered = account?.takeIf { it.status == PharmacistStatus.active }
-            return PosmPharmacistIdentity(
-                pharmacistId = registered?.id.orEmpty(),
-                pharmacistName = registered?.name ?: person.fullName,
-                source = if (registered != null) {
-                    PharmacistIdentitySource.STANDARDN_DIRECTORY
-                } else {
-                    PharmacistIdentitySource.STANDARDN_DIRECTORY_UNREGISTERED
-                },
-                reportedPharmacistId = reportedId,
-                reportedPharmacistName = reportedName,
-                sellerIin = person.iin.validIin(),
-            )
-        }
+        fromDirectory(useDirectory, pharmacyId, reportedId, reportedName)?.let { return it }
 
         val nameMatch = reportedName?.let { name ->
             pharmacistRepository.findAllByPharmacyIdAndNameIgnoreCaseAndStatusRaw(
@@ -146,6 +134,36 @@ class PosmPharmacistIdentityService(
             },
             reportedPharmacistId = reportedId,
             reportedPharmacistName = reportedName,
+        )
+    }
+
+    private fun fromDirectory(
+        useDirectory: Boolean,
+        pharmacyId: String,
+        reportedId: String?,
+        reportedName: String?,
+    ): PosmPharmacistIdentity? {
+        val person = (if (useDirectory) directory?.find(pharmacyId, reportedId) else null) ?: return null
+        // A person may sell in several pharmacies: the IIN, not the home pharmacy, identifies them.
+        // A card still pending from the old registration is taken over by the directory person (INK-209).
+        val existing = pharmacistRepository.findByIin(person.iin)
+        val account = if (existing == null || existing.status == PharmacistStatus.pending) {
+            accounts?.ensure(person, pharmacyId) ?: existing
+        } else {
+            existing
+        }
+        val registered = account?.takeIf { it.status == PharmacistStatus.active }
+        return PosmPharmacistIdentity(
+            pharmacistId = registered?.id.orEmpty(),
+            pharmacistName = registered?.name ?: person.fullName,
+            source = if (registered != null) {
+                PharmacistIdentitySource.STANDARDN_DIRECTORY
+            } else {
+                PharmacistIdentitySource.STANDARDN_DIRECTORY_UNREGISTERED
+            },
+            reportedPharmacistId = reportedId,
+            reportedPharmacistName = reportedName,
+            sellerIin = person.iin.validIin(),
         )
     }
 
