@@ -73,7 +73,11 @@ POSM:
 - Recommendation matching is barcode/EAN-first.
 - `sku` / Standard-N `iPartID` is diagnostic only.
 - Backend fallback matches normalized item name only if unique.
-- Ambiguous barcode/name matches are skipped.
+- Ambiguous barcode/name matches are skipped. Exception (26.11.2026, analytics only): records of the products table
+  that are duplicates of one product (same normalized name, or a shared barcode with the same numbers, doses and
+  forms) are one product. `RulesEngineService.resolveToProductIds` resolves a name carried only by duplicates, and
+  `RecommendationAttributionService` closes a tip when the sold line is the recommended record or its duplicate
+  (`RulesEngineService.canonicalProductIds`). Showing tips and every money path (`resolveStrongProductIds`) stay strict.
 - POSM endpoints require `X-Posm-Key`.
 - Screen updates use HTTP polling; SSE mode was cancelled.
 - Cash-desk online count uses heartbeat. `GET /api/admin/screens/connected` резолвит
@@ -137,6 +141,10 @@ POSM:
   Жёлтая метка, как у `no_process`; список статусов: `StaffSourceStatus.kt` (сервер), `staffSourceStatus.ts` и
   `fleetFormat.ts` (админка). Переименованная программа кассира (`zkassa_BACKUP_2_6_88`) теперь находится кассой и
   `no_process` не даёт.
+- Видеоурок засчитывается по настоящей длине ролика (26.11.2026): сервер сам читает длину MP4 из MinIO
+  (`shared/media/Mp4Duration`, `VideoClipLengths`, кэш по URL) и по ней считает, сколько времени должно пройти
+  (`TrainingService.videoGuardSeconds`). Плановые минуты и цифра из браузера нужны, только когда файл не прочитать
+  (WebM, чужой адрес, MinIO не отвечает). Отказ называет, сколько секунд осталось ждать.
 - Задания фармацевта (25.11.2026) = его активные назначения обучения, отдельной системы заданий нет. Касса
   читает их через `POST /api/posm/self/tasks`; правила показа, статусов и порядка в
   `training/tasks/PharmacistTaskFeed.kt` (чистая функция, `PharmacistTaskFeedTest`). Награда = `completion_bonus`

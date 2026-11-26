@@ -213,6 +213,21 @@ All notable production changes to Epharm are recorded here. The format follows
   till. With no cashier program and a `ManagerXP...` process in the session the heartbeat sends the new
   `staffSourceStatus` `manager_only`; «Все кассы» shows «только «Менеджер»» with the tooltip «Только «Менеджер»
   Стандарт-Н: ePharm стоит не на кассе». Deploy the server and admin before the till.
+- A video lesson can be finished when its clip is shorter than the planned minutes (26.11.2026: the 6-second clip of
+  lesson 2 in the demo course, planned «2 min», showed «Просмотрено 100%» and a red «Досмотрите видео» and answered
+  every progress save with 409). The server now reads the real length from the MP4 in the object storage itself
+  (`moov` > `mvhd`, version 0 and 1, `moov` at the start or the end, small ranged reads, kept per URL for 30 minutes)
+  and counts the lesson when the clip has been watched; what the browser reports no longer matters for a clip the
+  server could measure, so nothing can be skipped. The former rule (planned minutes, the browser's figure between
+  half and double of them) stays only for a file that cannot be read (WebM, an address outside our storage). A
+  refusal says how long to wait («Видео засчитается через 42 сек. Подождите и повторите»), the cabinet brings that
+  reason into view and removes it as soon as the server accepts a save.
+- Tips for a product that exists twice in the products table (a website record `prod_01K...` and a Daribar record
+  `prod_Daribar...`) are counted as accepted when the till sells the other record: 6 of 9 real tip sales in 30 days
+  were lost this way («Тайлолфен хот 20 г № 12» sold 255 times under 8811000 codes, never to the recommended id).
+  Duplicates (same normalized name, or a shared barcode with the same numbers, doses and forms) are one product in the
+  sale journal and in tip attribution only; showing tips and every money path stay strict and never match by name.
+  The name index also logs one summary line per call instead of one warning per catalogue name (hundreds per scan).
 - «Принято» in the admin was always 0: the Dashboard tiles and top lists, Lift and the pharmacy registry column
   `rulesAccepted` counted `recommendation_events.outcome='accepted'`, which no till sends since POSM 1.0.13
   made the popup informational (no accept key, no `/outcome` call; on 25.11 there were 0 accepted among 113 thousand

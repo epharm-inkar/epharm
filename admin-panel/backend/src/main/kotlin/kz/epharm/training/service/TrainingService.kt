@@ -14,6 +14,7 @@ import kz.epharm.lms.repository.CourseRepository
 import kz.epharm.lms.repository.CourseLessonRepository
 import kz.epharm.lms.repository.CourseLessonAttachmentRepository
 import kz.epharm.lms.dto.CourseContentDto
+import kz.epharm.lms.entity.CourseLessonEntity
 import kz.epharm.lms.entity.CourseLessonKind
 import kz.epharm.lms.entity.CourseLiveStatus
 import kz.epharm.lms.entity.CourseStatus
@@ -22,6 +23,7 @@ import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
+import kz.epharm.shared.media.VideoClipLengths
 import kz.epharm.training.domain.DuplicateAssignmentPolicy
 import kz.epharm.training.domain.EventParticipantStatus
 import kz.epharm.training.domain.OfflineEventStatus
@@ -136,6 +138,7 @@ class TrainingService(
     private val courseRepository: CourseRepository,
     private val courseLessonRepository: CourseLessonRepository,
     private val courseLessonAttachmentRepository: CourseLessonAttachmentRepository,
+    private val videoClipLengths: VideoClipLengths,
     private val jdbcTemplate: JdbcTemplate,
     private val objectMapper: ObjectMapper,
 ) {
@@ -1444,12 +1447,19 @@ class TrainingService(
         val requestedProgress = maxOf(progress.progressPct, req.progressPct)
         if (lesson.kind == CourseLessonKind.video && lesson.durationMin > 0 && requestedProgress > progress.progressPct) {
             val elapsedSeconds = Duration.between(progress.startedAt, now).seconds.coerceAtLeast(0)
-            val durationSeconds = videoGuardSeconds(lesson.durationMin, req.mediaDurationSeconds)
-            val allowedProgress = (((elapsedSeconds + videoProgressGraceSeconds) * 100L) / durationSeconds)
-                .toInt()
-                .coerceIn(0, 100)
-            if (requestedProgress > allowedProgress) {
-                conflict("Досмотрите видео: урок засчитается, когда видео будет просмотрено")
+            // The length the server read from the file wins: a clip shorter than the planned minutes is
+            // finished when it has been watched, and nobody can claim a shorter clip than the real one.
+            val guardSeconds = videoGuardSeconds(
+                lesson.durationMin,
+                req.mediaDurationSeconds,
+                videoClipLengths.lengthSeconds(lessonClipUrl(lesson)),
+            )
+            if (requestedProgress > allowedVideoProgress(elapsedSeconds, guardSeconds, videoProgressGraceSeconds)) {
+                conflict(
+                    videoNotCountedMessage(
+                        videoWaitSeconds(requestedProgress, elapsedSeconds, guardSeconds, videoProgressGraceSeconds),
+                    ),
+                )
             }
         }
         progress.progressPct = requestedProgress
@@ -2914,6 +2924,12 @@ class TrainingService(
         return assignment
     }
 
+    /** The clip the cabinet plays for a lesson: its own video, otherwise the first video material attached to it. */
+    private fun lessonClipUrl(lesson: CourseLessonEntity): String? =
+        lesson.videoUrl?.takeIf { it.isNotBlank() }
+            ?: courseLessonAttachmentRepository.findAllByLessonIdOrderByCreatedAtAsc(lesson.id)
+                .firstOrNull { it.contentType.startsWith("video/") }?.mediaUrl
+
     private fun lockAttemptWrites(assignmentId: UUID) {
         // Serialize before ORM reads without reversing the existing event/stage row-lock order.
         jdbcTemplate.queryForList("select pg_advisory_xact_lock(hashtextextended(?, 0))", "training-attempt:$assignmentId")
@@ -2938,13 +2954,36 @@ class TrainingService(
 }
 
 /**
- * Seconds a video lesson must play before it may count as watched. Lesson minutes are whole and
- * rounded up, so a 95-second clip set as «2 min» could never reach 100% (pharmacists saw «можно
- * сохранить до 78%» after watching to the end, 25.11.2026). The browser's own measurement wins
- * when it is plausible: between half and double the planned length.
+ * Seconds a video lesson must play before it may count as watched.
+ *
+ * The length the server read from the clip itself ([clipSeconds]) is the truth: a 6-second clip set as
+ * «2 min» is finished when it has been watched (26.11.2026: the pharmacist saw «Просмотрено 100%» and could
+ * not complete the lesson), and what the browser reports cannot shorten or lengthen it.
+ *
+ * Only when the file cannot be read does the former rule apply. Lesson minutes are whole and rounded up, so
+ * a 95-second clip set as «2 min» could never reach 100% (pharmacists saw «можно сохранить до 78%» after
+ * watching to the end, 25.11.2026): the browser's own measurement wins when it is plausible, between half
+ * and double the planned length, and the planned minutes stand otherwise.
  */
-internal fun videoGuardSeconds(durationMin: Int, mediaDurationSeconds: Int?): Long {
+internal fun videoGuardSeconds(durationMin: Int, mediaDurationSeconds: Int?, clipSeconds: Long? = null): Long {
+    if (clipSeconds != null && clipSeconds > 0) return clipSeconds
     val planned = durationMin.toLong().coerceAtLeast(1) * 60L
     val measured = mediaDurationSeconds?.toLong()?.takeIf { it >= planned / 2 && it <= planned * 2 }
     return (measured ?: planned).coerceAtLeast(1)
+}
+
+/** Percent of a clip that may count as watched after [elapsedSeconds] of real time, with the grace of a slow start. */
+internal fun allowedVideoProgress(elapsedSeconds: Long, guardSeconds: Long, graceSeconds: Long): Int =
+    (((elapsedSeconds + graceSeconds) * 100L) / guardSeconds.coerceAtLeast(1)).toInt().coerceIn(0, 100)
+
+/** Seconds still to wait before [requestedPct] may count: the smallest wait that lifts the allowed figure to it. */
+internal fun videoWaitSeconds(requestedPct: Int, elapsedSeconds: Long, guardSeconds: Long, graceSeconds: Long): Long {
+    val needed = (requestedPct.toLong() * guardSeconds.coerceAtLeast(1) + 99) / 100
+    return (needed - elapsedSeconds - graceSeconds).coerceAtLeast(1)
+}
+
+/** What the learner is told when the video has not been counted yet: the time that is still missing. */
+internal fun videoNotCountedMessage(waitSeconds: Long): String {
+    val wait = if (waitSeconds < 120) "$waitSeconds сек." else "${(waitSeconds + 59) / 60} мин."
+    return "Видео засчитается через $wait Подождите и повторите"
 }

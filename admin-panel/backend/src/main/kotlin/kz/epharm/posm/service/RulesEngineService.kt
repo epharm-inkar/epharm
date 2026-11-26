@@ -303,8 +303,56 @@ class RulesEngineService(
     fun resolveToProductIds(items: List<CartItemDto>): List<String?> {
         val byBarcode = barcodeIndex(items)
         val byIpart = ipartIndex(items)
-        val byName = nameIndex(items, byBarcode, byIpart)
-        return items.map { resolveOne(it, byIpart, byBarcode, byName)?.id }
+        val groups = nameGroups(items, byBarcode, byIpart)
+        val duplicated = groups.count { it.value.size > 1 }
+        if (duplicated > 0) {
+            log.debug("POSM resolveToProductIds: {} names are carried by duplicate records of one product", duplicated)
+        }
+        val keyed = items.map { exactLine(it, byIpart, byBarcode) }
+        val soldByKey = keyed.mapNotNullTo(HashSet()) { it.product?.id }
+        return items.mapIndexed { index, item ->
+            val line = keyed[index]
+            when {
+                line.product != null -> line.product.id
+                line.closed -> null
+                else -> nameProductId(item, groups, soldByKey)
+            }
+        }
+    }
+
+    /**
+     * Which of [ids] are duplicate records of one product: the products table holds a website catalogue record
+     * and a Daribar record of the same medicine, and a tip may recommend one while the till sells the other.
+     * Two records are duplicates when they carry the same normalized name, or share a barcode and their names
+     * agree on every number, dose, form and qualifier. Each id maps to the smallest id of its group (to itself
+     * when it has no duplicate among [ids] or is unknown). Only the ids asked for are looked at, so this stays
+     * a primary key read. For analytics (tip attribution): money keeps the exact identifiers of
+     * [resolveStrongProductIds].
+     */
+    @Transactional(readOnly = true)
+    fun canonicalProductIds(ids: Collection<String>): Map<String, String> {
+        val wanted = ids.filter { it.isNotBlank() }.toSet()
+        if (wanted.size < 2) return wanted.associateWith { it }
+        return canonicalIds(wanted, productRepository.findMatchProductsByIds(wanted))
+    }
+
+    internal fun canonicalIds(wanted: Set<String>, products: List<ProductEntity>): Map<String, String> {
+        val distinct = products.distinctBy { it.id }.sortedBy { it.id }
+        val names = distinct.associate { it.id to normalizeName(it.name) }
+        val codes = distinct.associate { it.id to it.scanBarcodes().toSet() }
+        val group = distinct.associate { it.id to it.id }.toMutableMap()
+        for ((i, a) in distinct.withIndex()) {
+            for (b in distinct.subList(i + 1, distinct.size)) {
+                val sameName = names.getValue(a.id).isNotEmpty() && names[a.id] == names[b.id]
+                val sameCode = codes.getValue(a.id).intersect(codes.getValue(b.id)).isNotEmpty() &&
+                    compatibleNameIdentity(nameFingerprint(a.name), nameFingerprint(b.name))
+                if (!sameName && !sameCode) continue
+                val keep = minOf(group.getValue(a.id), group.getValue(b.id))
+                val drop = maxOf(group.getValue(a.id), group.getValue(b.id))
+                if (keep != drop) group.replaceAll { _, label -> if (label == drop) keep else label }
+            }
+        }
+        return wanted.associateWith { group[it] ?: it }
     }
 
     /** Money never uses names or falls back past an explicitly supplied, unknown/ambiguous EAN. */
@@ -348,15 +396,15 @@ class RulesEngineService(
     }
 
     /**
-     * Индекс нормализованное-имя → товар. Строим только если есть позиции без точного матча, но с
-     * именем (чтобы не грузить каталог зря). Детерминированный порядок + защита от коллизий имён.
+     * Нормализованное имя → разные товары (по id), которые его носят. Строим только если есть позиции без
+     * точного матча, но с именем (чтобы не грузить каталог зря). Детерминированный порядок.
      */
-    private fun nameIndex(
+    private fun nameGroups(
         cart: List<CartItemDto>,
         byBarcode: Map<String, ProductEntity?>,
         byIpart: Map<String, ProductEntity>,
         candidates: List<ProductEntity>? = null,
-    ): Map<String, ProductEntity> {
+    ): Map<String, List<ProductEntity>> {
         val needName = cart.any { item ->
             val ipart = item.sku?.trim()?.takeIf { it.isNotEmpty() }
             val bc = item.barcode?.trim()?.takeIf { it.isNotEmpty() }
@@ -368,8 +416,67 @@ class RulesEngineService(
         return (candidates ?: productRepository.findAllByOrderByNameAsc())
             .filter { it.name.isNotBlank() }
             .groupBy { normalizeName(it.name) }
-            .mapNotNull { (norm, products) -> uniqueOrWarn(norm, products, "имя")?.let { norm to it } }
-            .toMap()
+            .mapValues { (_, products) -> products.distinctBy { it.id } }
+    }
+
+    /**
+     * Индекс нормализованное-имя → товар для показа рекомендаций: имя, которое носят несколько товаров,
+     * неоднозначно и не матчится. Одна строка в лог на вызов, а не по строке на каждое имя: в каталоге много
+     * дублей одного товара, и раньше лог заливало сотнями строк на каждый скан.
+     */
+    private fun nameIndex(
+        cart: List<CartItemDto>,
+        byBarcode: Map<String, ProductEntity?>,
+        byIpart: Map<String, ProductEntity>,
+        candidates: List<ProductEntity>? = null,
+    ): Map<String, ProductEntity> {
+        val groups = nameGroups(cart, byBarcode, byIpart, candidates)
+        val ambiguous = groups.filterValues { it.size > 1 }
+        if (ambiguous.isNotEmpty()) {
+            val (name, products) = ambiguous.entries.first()
+            log.warn(
+                "POSM resolveCart: имён с несколькими товарами {}, такие позиции не матчим, например '{}' указывает на {}",
+                ambiguous.size, name, products.map { it.id },
+            )
+        }
+        return groups.filterValues { it.size == 1 }.mapValues { it.value.single() }
+    }
+
+    /** What the exact keys say about a line: the product they name, and whether a supplied EAN closed the question. */
+    private class KeyedLine(val product: ProductEntity?, val closed: Boolean)
+
+    private fun exactLine(
+        item: CartItemDto,
+        byIpart: Map<String, ProductEntity>,
+        byBarcode: Map<String, ProductEntity?>,
+    ): KeyedLine {
+        val bc = item.barcode?.trim()?.takeIf { it.isNotEmpty() }
+        // A known EAN is final even when it belongs to several products: no other key or name may override it.
+        if (bc != null && bc in byBarcode) return KeyedLine(byBarcode[bc], closed = true)
+        val ipart = item.sku?.trim()?.takeIf { it.isNotEmpty() }
+        return KeyedLine(ipart?.let { byIpart[it] }, closed = false)
+    }
+
+    /**
+     * Product of a line that no exact key resolved, by its name (sale journal and tip attribution).
+     * Records that carry the same normalized name are duplicates of one product, so a name carried by several
+     * of them is not ambiguous: the line resolves to one of them, always the same one. When another line of the
+     * same receipt already stands for that product by an exact key, this line is left unresolved as it was, so
+     * the lines that payout checks look for under a product id stay exactly the ones the exact keys found.
+     */
+    private fun nameProductId(
+        item: CartItemDto,
+        groups: Map<String, List<ProductEntity>>,
+        soldByKey: Set<String>,
+    ): String? {
+        val name = item.name?.takeIf { it.isNotBlank() } ?: return null
+        val group = groups[normalizeName(name)] ?: return null
+        if (!compatibleNameIdentity(nameFingerprint(name), nameFingerprint(group.first().name))) return null
+        return when {
+            group.size == 1 -> group.single().id
+            group.any { it.id in soldByKey } -> null
+            else -> group.minWith(compareBy({ if (it.scanBarcodes().isEmpty()) 1 else 0 }, { it.id })).id
+        }
     }
 
     /** Резолв одной позиции: сначала EAN/GTIN, потом локальный iPartID, затем имя. */
