@@ -321,7 +321,7 @@ export function validatePromoRulesConfig(
     const replacementIndex = activeReplacements.get(promoTriggerKey(ref))
     if (replacementIndex == null) return
     const message =
-      'Один триггер нельзя одновременно включить как замену и кросс-селл одного товара. Отключите одну из пар или измените условия.'
+      'Один триггер нельзя одновременно включить как замену и допродажу одного товара. Отключите одну из пар или измените условия.'
     errors[
       `replacements[${replacementIndex}].${promoTriggerKind(ref) === 'product' ? 'medusaProductId' : 'triggerValue'}`
     ] = message

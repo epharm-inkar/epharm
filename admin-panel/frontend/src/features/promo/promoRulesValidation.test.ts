@@ -132,7 +132,7 @@ describe('promo rules validation contract', () => {
       ],
     })
     expect(validatePromoRulesConfig(input, messages)['crossSells[0].triggerValue']).toMatch(
-      /замену и кросс-селл/,
+      /замену и допродажу/,
     )
     input.crossSells[0].active = false
     expect(validatePromoRulesConfig(input, messages)).toEqual({})

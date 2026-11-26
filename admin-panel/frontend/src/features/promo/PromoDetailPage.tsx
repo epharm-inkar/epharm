@@ -5,7 +5,7 @@
 //
 // T1: один товар Medusa, цена read-only (из Medusa, почасовой рефреш), единый
 //     бонус фармацевту, опц. override фото/описания. Порогов больше нет.
-// T2: секция «Замены и кросс-селл» — авторинг правил из кампании (см. PromoRulesEditor).
+// T2: секция «Замены и допродажи» — авторинг правил из кампании (см. PromoRulesEditor).
 
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
@@ -706,7 +706,7 @@ export default function PromoDetailPage() {
               {t('pd.productSection')}
             </div>
             {/* Продвигаемый товар выбирается ТОЛЬКО при создании кампании (1:1) и здесь
-                не меняется — показываем read-only. Замены/кросс-селл к нему — ниже. */}
+                не меняется — показываем read-only. Замены/допродажи к нему — ниже. */}
             <Field label={t('pm.fldProduct')} hint={t('pd.productLocked')}>
               <div
                 className="rounded-xl border border-ink-100 bg-paper-card px-3 py-2.5"
@@ -941,7 +941,7 @@ export default function PromoDetailPage() {
             )}
           </div>
 
-          {/* T2 — Замены и кросс-селл (правила, авторинг из кампании) */}
+          {/* T2 — Замены и допродажи (правила, авторинг из кампании) */}
           {changes && (
             <PromoRulesEditor
               key={`${promo.id}:${changes.revision}`}
@@ -1060,7 +1060,7 @@ export default function PromoDetailPage() {
             </p>
             {[
               ...changes.bundle.rules.replacements.map((pair) => ({ pair, kind: 'Замена' })),
-              ...changes.bundle.rules.crossSells.map((pair) => ({ pair, kind: 'Кросс-селл' })),
+              ...changes.bundle.rules.crossSells.map((pair) => ({ pair, kind: 'Допродажа' })),
             ].map(({ pair, kind }, index) => (
               <div key={index} className="rounded-lg border border-ink-100 p-3">
                 <strong>

@@ -13,6 +13,7 @@ import {
   ProgressBar,
   SearchInput,
   Select,
+  TableScroll,
   useToast,
 } from '@/ui'
 import {
@@ -1548,37 +1549,39 @@ function AnalyticsTab({
           )}
           <TrainingLearningExport mode="assignments" allowed={canExportXlsx} />
         </div>
-        <table className="w-full text-[13px]" data-testid="training-analytics-table">
-          <thead className="hairline border-b text-left text-[11px] font-bold uppercase text-ink-500">
-            <tr>
-              <th className="px-5 py-2.5">Формат</th>
-              <th className="px-3 py-2.5">Назначено</th>
-              <th className="px-3 py-2.5">Начали</th>
-              <th className="px-3 py-2.5">Завершили</th>
-              <th className="px-3 py-2.5">Просрочили</th>
-              <th className="px-5 py-2.5">Завершение</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-100">
-            {rows.map((row) => (
-              <tr key={row.format}>
-                <td className="px-5 py-3 font-extrabold text-ink-900">
-                  {FORMAT_LABEL[row.format]}
-                </td>
-                <td className="num px-3 py-3">{row.assigned}</td>
-                <td className="num px-3 py-3">{row.started}</td>
-                <td className="num px-3 py-3">{row.completed}</td>
-                <td className="num px-3 py-3">{row.overdue}</td>
-                <td className="px-5 py-3">
-                  <div className="flex min-w-[150px] items-center gap-2">
-                    <ProgressBar value={row.completionRate} />
-                    <span className="num w-10 text-right font-bold">{row.completionRate}%</span>
-                  </div>
-                </td>
+        <TableScroll>
+          <table className="w-full text-[13px]" data-testid="training-analytics-table">
+            <thead className="hairline border-b text-left text-[11px] font-bold uppercase text-ink-500">
+              <tr>
+                <th className="px-5 py-2.5">Формат</th>
+                <th className="px-3 py-2.5">Назначено</th>
+                <th className="px-3 py-2.5">Начали</th>
+                <th className="px-3 py-2.5">Завершили</th>
+                <th className="px-3 py-2.5">Просрочили</th>
+                <th className="px-5 py-2.5">Завершение</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-ink-100">
+              {rows.map((row) => (
+                <tr key={row.format}>
+                  <td className="px-5 py-3 font-extrabold text-ink-900">
+                    {FORMAT_LABEL[row.format]}
+                  </td>
+                  <td className="num px-3 py-3">{row.assigned}</td>
+                  <td className="num px-3 py-3">{row.started}</td>
+                  <td className="num px-3 py-3">{row.completed}</td>
+                  <td className="num px-3 py-3">{row.overdue}</td>
+                  <td className="px-5 py-3">
+                    <div className="flex min-w-[150px] items-center gap-2">
+                      <ProgressBar value={row.completionRate} />
+                      <span className="num w-10 text-right font-bold">{row.completionRate}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableScroll>
       </section>
     </div>
   )

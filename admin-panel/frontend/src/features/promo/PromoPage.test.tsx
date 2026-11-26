@@ -560,7 +560,7 @@ describe('PromoPage — trigger-first campaign creation', () => {
     ['Группа ACC', 'group:1', 'acc_group'],
     ['Подгруппа ACC', 'subgroup:1', 'acc_subgroup'],
     ['МНН ACC', 'mnn:1', 'acc_mnn'],
-  ])('%s выбирается с поиском и создаёт неактивный кросс-селл', async (label, key, kind) => {
+  ])('%s выбирается с поиском и создаёт неактивную допродажу', async (label, key, kind) => {
     const mutateAsync = vi.fn().mockResolvedValue(mkPromo())
     promoHooks.useCreatePromo.mockReturnValue({ mutateAsync, isPending: false })
     const user = userEvent.setup()

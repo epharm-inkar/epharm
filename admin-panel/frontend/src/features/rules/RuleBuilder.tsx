@@ -46,7 +46,7 @@ export function RuleBuilder({ rule }: RuleBuilderProps) {
           <div className="min-w-0">
             <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.06em] text-ink-400">
               {t('rules.hMeta', {
-                type: rule.type === 'substitution' ? t('rules.tReplace') : t('rules.tabCross'),
+                type: rule.type === 'substitution' ? t('rules.tReplace') : t('rules.tCross'),
                 id: rule.id,
                 n: rule.pharmacies,
                 date: updatedAtShort,

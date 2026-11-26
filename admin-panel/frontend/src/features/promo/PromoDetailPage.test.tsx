@@ -556,7 +556,7 @@ describe('PromoDetailPage — T1 (товар, цена read-only, бонус)', 
 })
 
 describe('PromoDetailPage — T2 (секция правил)', () => {
-  it('рендерит секцию «Замены и кросс-селл» со счётчиками', () => {
+  it('рендерит секцию «Замены и допродажи» со счётчиками', () => {
     promoRulesHooks.usePromoRules.mockReturnValue({
       data: {
         promoId: 'pr_1',

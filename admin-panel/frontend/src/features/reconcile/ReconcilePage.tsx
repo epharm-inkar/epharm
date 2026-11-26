@@ -10,6 +10,7 @@ import {
   Metric,
   PageHeader,
   SectionCard,
+  TableScroll,
   Tabs,
   useToast,
   type TabItem,
@@ -163,7 +164,7 @@ export default function ReconcilePage() {
             <div className="px-5 pt-4">
               <Tabs<RecTab> items={TABS} value={tab} onChange={setTab} />
             </div>
-            <div className="flex-1">
+            <TableScroll className="flex-1">
               {isLoading && receipts.length === 0 ? (
                 <Empty
                   title={t('rec.loading')}
@@ -209,7 +210,7 @@ export default function ReconcilePage() {
                   </tbody>
                 </table>
               )}
-            </div>
+            </TableScroll>
           </div>
 
           <SectionCard title={t('rec.howTitle')} subtitle={t('rec.howSub')}>

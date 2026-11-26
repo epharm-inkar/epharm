@@ -120,7 +120,7 @@ describe('RulesPage — базовый рендер (пустой список)'
   it('показывает H1 «Rules Engine» и подзаголовок', () => {
     renderRules()
     expect(screen.getByRole('heading', { level: 1, name: /Rules Engine/i })).toBeInTheDocument()
-    expect(screen.getByText(/Правила замены и кросс-селл/i)).toBeInTheDocument()
+    expect(screen.getByText(/Правила замены и допродажи/i)).toBeInTheDocument()
   })
 
   it('рендерит SummaryBar с 4 секциями (все значения на нуле)', () => {
@@ -135,7 +135,7 @@ describe('RulesPage — базовый рендер (пустой список)'
   it('рендерит 3 таба, у каждого count = 0', () => {
     renderRules()
     expect(screen.getByRole('button', { name: /Замены/ })).toHaveTextContent('0')
-    expect(screen.getByRole('button', { name: /Кросс-селл/ })).toHaveTextContent('0')
+    expect(screen.getByRole('button', { name: /Допродажи/ })).toHaveTextContent('0')
     expect(screen.getByRole('button', { name: /Архив/ })).toHaveTextContent('0')
   })
 
@@ -164,7 +164,7 @@ describe('RulesPage — Bug E regression: переключение таба на
     await user.click(screen.getByTestId('rule-row-r_s1'))
 
     // Переключаемся на пустой crosssell-таб
-    await user.click(screen.getByRole('button', { name: /Кросс-селл/ }))
+    await user.click(screen.getByRole('button', { name: /Допродажи/ }))
 
     // Левый список — Empty state «Правил пока нет»; правый builder — «Выберите правило»
     expect(screen.getByText(/Выберите правило/i)).toBeInTheDocument()
@@ -174,10 +174,10 @@ describe('RulesPage — Bug E regression: переключение таба на
 })
 
 describe('RulesPage — табы и фильтры (пустой список)', () => {
-  it('переключение между Замены / Кросс-селл / Архив — каждый показывает Empty', async () => {
+  it('переключение между Замены / Допродажи / Архив — каждый показывает Empty', async () => {
     const user = userEvent.setup()
     renderRules()
-    await user.click(screen.getByRole('button', { name: /Кросс-селл/ }))
+    await user.click(screen.getByRole('button', { name: /Допродажи/ }))
     expect(screen.getByText(/Правил пока нет/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Архив/ }))
     expect(screen.getByText(/Здесь окажутся правила, отправленные в архив/i)).toBeInTheDocument()
@@ -252,7 +252,7 @@ describe('RulesPage — отображение списка', () => {
     setProductsResponse([mkProduct({ id: 'p_aql' }), mkProduct({ id: 'p_aqm' })])
     renderRules()
     expect(screen.getByRole('button', { name: /Замены/ })).toHaveTextContent('2')
-    expect(screen.getByRole('button', { name: /Кросс-селл/ })).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: /Допродажи/ })).toHaveTextContent('1')
     expect(screen.getByRole('button', { name: /Архив/ })).toHaveTextContent('1')
   })
 })
