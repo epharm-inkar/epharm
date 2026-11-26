@@ -695,7 +695,7 @@ function PairCard({
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-0 flex-1 basis-40">
-            <div className="truncate text-[13px] font-bold text-ink-900">
+            <div className="text-[13px] font-bold text-ink-900 max-sm:line-clamp-2 max-sm:break-words sm:truncate">
               {isBroadTrigger ? r.triggerLabel || r.name : r.name}
             </div>
             {isBroadTrigger && (
@@ -886,7 +886,7 @@ function PairCard({
           <ul className="divide-hairline overflow-hidden rounded-lg border bg-white">
             <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] font-bold text-ink-900">
+                <div className="text-[12px] font-bold text-ink-900 max-sm:line-clamp-2 max-sm:break-words sm:truncate">
                   {promotedName || t('pr.previewNoName')}
                 </div>
                 <div className="text-[10px] font-semibold text-brand-green-700">
@@ -927,7 +927,9 @@ function PairCard({
                   aria-invalid={offerError ? true : undefined}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12px] font-bold text-ink-900">{offer.name}</div>
+                    <div className="text-[12px] font-bold text-ink-900 max-sm:line-clamp-2 max-sm:break-words sm:truncate">
+                      {offer.name}
+                    </div>
                     {offer.brand && (
                       <div className="truncate text-[10px] font-semibold text-ink-400">
                         {offer.brand}
