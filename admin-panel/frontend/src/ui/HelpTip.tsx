@@ -106,7 +106,15 @@ export function HelpTip({ children, topic, className = '' }: HelpTipProps) {
         aria-expanded={open}
         aria-describedby={descId}
         data-testid="help-tip"
-        onClick={() => setPinned((value) => !value)}
+        onClick={() => {
+          // A click keeps the bubble open; the next click closes it even while the mouse is still over.
+          if (pinned) {
+            setPinned(false)
+            setHover(false)
+          } else {
+            setPinned(true)
+          }
+        }}
         onPointerEnter={(event) => event.pointerType === 'mouse' && setHover(true)}
         onPointerLeave={(event) => event.pointerType === 'mouse' && setHover(false)}
         onBlur={() => setPinned(false)}

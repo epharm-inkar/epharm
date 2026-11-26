@@ -132,7 +132,7 @@ export default function ReconcilePage() {
         <RecommendationRewardsQueue />
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
             <Metric
               label={t('rec.mQueue')}
               value={s?.queue ?? 0}
@@ -214,7 +214,7 @@ export default function ReconcilePage() {
           </div>
 
           <SectionCard title={t('rec.howTitle')} subtitle={t('rec.howSub')}>
-            <div className="grid grid-cols-3 gap-3 text-[13px]">
+            <div className="grid grid-cols-1 gap-3 text-[13px] md:grid-cols-3">
               <div className="card-soft p-4">
                 <div className="mb-2 flex items-center gap-2 text-brand-green-700">
                   <IconCheck size={16} />

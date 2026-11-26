@@ -34,7 +34,7 @@ export default function SettingsPage() {
       <PageHeader title={t('page.settings.title')} subtitle={t('page.settings.subtitle')} />
 
       <SectionCard title={t('settings.profile')} subtitle={t('settings.profileSub')}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label={t('settings.name')}>
             <Input value={authedUser?.name ?? ''} disabled />
           </Field>

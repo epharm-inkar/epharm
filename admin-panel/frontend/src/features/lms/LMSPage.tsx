@@ -585,7 +585,7 @@ function OverviewTab({
       </div>
       <section className="card p-5">
         <h2 className="text-[15px] font-extrabold text-ink-900">Назначения по формату</h2>
-        <div className="mt-4 grid grid-cols-3 gap-4">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
           {(Object.keys(FORMAT_LABEL) as Array<keyof typeof FORMAT_LABEL>).map((format) => (
             <div key={format} className="hairline rounded-lg border px-4 py-3">
               <div className="text-[12px] font-semibold text-ink-500">{FORMAT_LABEL[format]}</div>
@@ -866,7 +866,7 @@ function AssignmentsTab({
   return (
     <div className="flex flex-col gap-4">
       <section
-        className="card grid grid-cols-[repeat(4,minmax(0,1fr))_190px] overflow-hidden"
+        className="card grid grid-cols-2 overflow-hidden sm:grid-cols-[repeat(4,minmax(0,1fr))_190px]"
         data-testid="assignment-summary"
       >
         <AssignmentSummaryMetric label="Всего назначений" value={totalAssignments} />
@@ -887,7 +887,7 @@ function AssignmentsTab({
           progress={totalAssignments ? (overdueAssignments / totalAssignments) * 100 : 0}
           tone="danger"
         />
-        <div className="flex items-center border-l border-ink-100 px-5 py-3">
+        <div className="col-span-2 flex items-center border-ink-100 px-4 py-3 sm:col-span-1 sm:border-l sm:px-5">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-400">
               Сегодня
@@ -1092,7 +1092,7 @@ function AssignmentSummaryMetric({
         ? 'bg-accent-danger'
         : 'bg-brand-green-500'
   return (
-    <div className="border-r border-ink-100 px-5 py-3 last:border-r-0">
+    <div className="border-r border-ink-100 px-4 py-3 last:border-r-0 max-sm:border-b max-sm:even:border-r-0 sm:px-5">
       <div className="flex items-baseline justify-between gap-3">
         <div className="num text-[22px] font-extrabold tracking-[-0.02em] text-ink-900">
           {formatNum(value)}
@@ -1540,7 +1540,7 @@ function AnalyticsTab({
         />
       </div>
       <section className="card overflow-hidden">
-        <div className="hairline flex items-center justify-between border-b px-5 py-3">
+        <div className="hairline flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
           <div>
             <h2 className="text-[15px] font-extrabold text-ink-900">Эффективность по форматам</h2>
             <p className="text-[11px] text-ink-500">
@@ -1611,16 +1611,16 @@ function TrainingSettingsTab({ capabilities }: { capabilities?: TrainingCapabili
     ['Экспорт отчётов', capabilities.canExport],
   ] as const
   return (
-    <div className="grid grid-cols-[1.3fr_1fr] gap-4">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
       <section className="card overflow-hidden">
         <div className="hairline border-b px-5 py-4">
           <h2 className="text-[15px] font-extrabold text-ink-900">Права текущего пользователя</h2>
         </div>
         <div className="divide-y divide-ink-100">
           {permissions.map(([label, allowed]) => (
-            <div key={label} className="flex items-center justify-between px-5 py-3 text-[13px]">
+            <div key={label} className="flex items-center justify-between gap-3 px-5 py-3 text-[13px]">
               <span className="font-semibold text-ink-700">{label}</span>
-              <span className={`chip ${allowed ? 'chip-green' : 'chip-ink'}`}>
+              <span className={`chip flex-none ${allowed ? 'chip-green' : 'chip-ink'}`}>
                 {allowed ? 'Разрешено' : 'Только просмотр'}
               </span>
             </div>

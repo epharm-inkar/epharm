@@ -521,7 +521,7 @@ describe('DashboardPage — loading/error', () => {
   })
 })
 
-describe('DashboardPage — подсказки «?» и ширина журнала', () => {
+describe('DashboardPage: подсказки «?» и ширина журнала', () => {
   it('у журнала и у каждого показателя есть подсказка простыми словами', () => {
     setAnalytics(mkAnalytics())
     renderPage()

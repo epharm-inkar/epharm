@@ -850,6 +850,14 @@ describe('Обучение — операционный раздел', () => {
     expect(screen.queryByRole('button', { name: 'Новая программа' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Приостановить' })).not.toBeInTheDocument()
     expect(screen.getByTestId('training-read-only')).toHaveTextContent('Только просмотр')
+    // рядом с плашкой стоит «?»: почему нельзя править и кто может
+    expect(screen.getByRole('button', { name: 'Что это? Только просмотр' })).toHaveAccessibleDescription(
+      /Править могут системный администратор и руководитель обучения/,
+    )
+    // и «?» у заголовка: что такое программа, онлайн-курс и назначение
+    expect(screen.getByRole('button', { name: 'Что это? Обучение' })).toHaveAccessibleDescription(
+      /Назначение: программа, выданная конкретному фармацевту, со сроком/,
+    )
   })
 
   it('HQ_HEAD не может открыть модалку назначения через прямую ссылку', () => {

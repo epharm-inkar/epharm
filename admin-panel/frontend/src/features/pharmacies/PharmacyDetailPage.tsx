@@ -153,9 +153,9 @@ export default function PharmacyDetailPage() {
         </Button>
       }
     >
-      <div className="grid grid-cols-3 gap-5" data-testid="pharmacy-detail">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3" data-testid="pharmacy-detail">
         {/* Левая колонка: редактор */}
-        <div className="col-span-2 flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
           {saveErr && (
             <div className="rounded-lg bg-surface-danger px-3 py-2 text-[12px] font-semibold text-accent-danger">
               {saveErr}
@@ -166,7 +166,7 @@ export default function PharmacyDetailPage() {
             <div className="text-[13px] font-extrabold uppercase tracking-[0.06em] text-ink-500">
               {t('phd.mainData')}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label={t('phd.fldName')}>
                 <Input value={form.name} onChange={(e) => setField({ name: e.target.value })} />
               </Field>
@@ -193,7 +193,7 @@ export default function PharmacyDetailPage() {
                 <Toggle on={form.active} onChange={(v) => setField({ active: v })} />
               </Field>
             </div>
-            <div className="hairline flex items-center justify-end gap-2 border-t pt-3">
+            <div className="hairline flex flex-wrap items-center justify-end gap-2 border-t pt-3">
               <Button variant="ghost" onClick={goBack}>
                 {t('common.cancel')}
               </Button>

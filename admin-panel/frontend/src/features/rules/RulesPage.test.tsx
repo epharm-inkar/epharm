@@ -123,6 +123,15 @@ describe('RulesPage — базовый рендер (пустой список)'
     expect(screen.getByText(/Правила замены и допродажи/i)).toBeInTheDocument()
   })
 
+  it('подсказка «?» у заголовка: правила только смотрят, создаются в кампаниях', () => {
+    renderRules()
+    const tip = screen.getByRole('button', { name: 'Что это? Rules Engine' })
+    expect(tip).toHaveAccessibleDescription(/Править их тут нельзя: правила создаются в промо-кампаниях/)
+    expect(tip).toHaveAccessibleDescription(
+      /что пробили \(товар, МНН или группа\), что предложить, бонус и статус/,
+    )
+  })
+
   it('рендерит SummaryBar с 4 секциями (все значения на нуле)', () => {
     renderRules()
     expect(screen.getByText('Активных правил')).toBeInTheDocument()

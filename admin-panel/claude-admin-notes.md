@@ -98,6 +98,12 @@ POSM:
   поверх конфига — поэтому dev-скрипт `run-kassa.ps1`/`publish-exe.ps1` всегда dev; для прода идём
   через setup-autostart.bat, а не run.bat. Сборка на Mac: `dotnet publish App/CustomerDisplay.csproj
 -r win-x64 --self-contained -p:EnableWindowsTargeting=true -p:Version=x.y.z`.
+- Админка, вид и подсказки (26.11.2026): таблица в `.admin-console main` настоящая таблица (`width: 100%`), широкая прокручивается
+  в своей обёртке (`ui/TableScroll` или любой `overflow-x-auto`), не страница; правило `display: block` убрано, его возврат ловит
+  `ui/TableScroll.test.tsx`. Подсказка «?» это `ui/HelpTip` (тексты `help.*` в `dict.ts`, ru и kk, каждый проверен по коду).
+  Кампания: «Главное» всегда открыто, «Дополнительно» свёрнуто (`ui/Disclosure`), поля и запрос сохранения те же. В админке слово
+  «Допродажа» (во мн. ч. «Допродажи»); в коде и по сети остаётся `crosssell`. Бонус платится за любую продажу товара кампании,
+  замены и допродажи только показывают подсказку на кассе.
 - Показ рекомендации пингуется в backend (`POST .../{eventId}/shown` → `displayed_at`) через тот же
   outbox; продажа атрибутируется к показу по `session_id` (V032: `sold_at` / `sale_id` /
   `seconds_to_sale`). Аналитика — Dashboard «Журнал показов и продаж»

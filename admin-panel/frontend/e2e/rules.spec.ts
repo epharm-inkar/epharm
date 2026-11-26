@@ -33,7 +33,7 @@ test.describe('Rules — список', () => {
 test.describe('Rules — табы', () => {
   test('переключение «Допродажи» меняет список', async ({ loggedInPage }) => {
     await loggedInPage.getByRole('button', { name: /Допродажи/ }).click()
-    // На пустом архиве показывается empty state OR rules. На допродажах — 2 rules.
+    // На пустом архиве показывается empty state OR rules. На допродажах 2 rules.
     const rows = loggedInPage.locator('[data-testid^="rule-row-"]')
     await expect(rows.first()).toBeVisible({ timeout: 5_000 })
   })

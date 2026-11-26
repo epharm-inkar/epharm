@@ -830,7 +830,7 @@ describe('PromoPage — ручной рефреш цен Medusa (A2)', () => {
   })
 })
 
-describe('PromoPage — карточка кампании без поломок разметки', () => {
+describe('PromoPage: карточка кампании без поломок разметки', () => {
   it('бюджет: подпись над значением, а числа и «Без лимита бюджета» не ломаются посреди слова', () => {
     setPromosResponse([mkPromo({ budget: 0, budgetUnlimited: true, spent: 0 })])
     renderPromo()
