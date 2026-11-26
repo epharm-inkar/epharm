@@ -118,6 +118,60 @@ class StandardNDirectorySellerIdentityTest {
         verify(exactly = 0) { accounts.ensure(any(), any()) }
     }
 
+    @Test fun `an old till binding without a fresh proof does not hide the directory (INK-209)`() {
+        every { bindings.resolve("ph", "device", any(), "34", at, "41", "ws") } returns SourceStaffBindingService.Resolution(true)
+        every { directory.find("ph", "34") } returns directoryPerson
+        every { people.findByIin(iin) } returns person("ph_person", pharmacy = "ph")
+        val result = receipt()
+        assertEquals("ph_person", result.pharmacistId)
+        assertEquals(PharmacistIdentitySource.STANDARDN_DIRECTORY, result.source)
+        assertEquals(iin, result.sellerIin)
+    }
+
+    @Test fun `an unproven binding without a directory row stays unmapped and skips the weak paths`() {
+        every { bindings.resolve("ph", "device", any(), "34", at, "41", "ws") } returns SourceStaffBindingService.Resolution(true)
+        every { directory.find("ph", "34") } returns null
+        val result = receipt(name = "Synthetic Registered")
+        assertEquals("", result.pharmacistId)
+        assertEquals(PharmacistIdentitySource.STANDARDN_UNMAPPED, result.source)
+        verify(exactly = 0) { people.findAllByPharmacyIdAndNameIgnoreCaseAndStatusRaw(any(), any(), any()) }
+        verify(exactly = 0) { people.findById(any()) }
+    }
+
+    @Test fun `an unproven binding never reaches the directory for recommendation requests`() {
+        every { bindings.resolve("ph", "device", any(), "34", at, "41", "ws") } returns SourceStaffBindingService.Resolution(true)
+        val result = service.resolve("ph", "34", null, "device", namespace, at, "41", "ws")
+        assertEquals(PharmacistIdentitySource.STANDARDN_UNMAPPED, result.source)
+        verify { directory wasNot Called }
+    }
+
+    @Test fun `a conflicting binding still blocks the directory`() {
+        every { bindings.resolve("ph", "device", any(), "34", at, "41", "ws") } returns
+            SourceStaffBindingService.Resolution(true, blocksHq = true)
+        val result = receipt()
+        assertEquals(PharmacistIdentitySource.STANDARDN_UNMAPPED, result.source)
+        verify { directory wasNot Called }
+    }
+
+    @Test fun `a card pending from the old registration goes to the account service and receives the receipt (INK-209)`() {
+        val accounts = mockk<kz.epharm.posm.self.StandardNAccountService>()
+        val withAccounts = PosmPharmacistIdentityService(people, mappings, bindings, directory, accounts)
+        every { directory.find("ph", "34") } returns directoryPerson
+        every { people.findByIin(iin) } returns person("ph_old", pharmacy = "ph", status = PharmacistStatus.pending)
+        every { accounts.ensure(directoryPerson, "ph") } returns person("ph_old", pharmacy = "ph")
+        val result = withAccounts.resolve("ph", "34", null, "device", namespace, at, "41", "ws", useDirectory = true)
+        assertEquals("ph_old", result.pharmacistId)
+        assertEquals(PharmacistIdentitySource.STANDARDN_DIRECTORY, result.source)
+    }
+
+    @Test fun `a pending card without the account service keeps the receipt unregistered`() {
+        every { directory.find("ph", "34") } returns directoryPerson
+        every { people.findByIin(iin) } returns person("ph_old", pharmacy = "ph", status = PharmacistStatus.pending)
+        val result = receipt()
+        assertEquals("", result.pharmacistId)
+        assertEquals(PharmacistIdentitySource.STANDARDN_DIRECTORY_UNREGISTERED, result.source)
+    }
+
     @Test fun `directory beats a weak same-name match`() {
         every { directory.find("ph", "34") } returns directoryPerson
         every { people.findByIin(iin) } returns null
