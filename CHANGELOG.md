@@ -16,6 +16,16 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Sales premium from Standard-N (server, 26.11.2026): the November premium, computed outside ePharm from the central
+  Standard-N database per seller IIN, is loaded as cumulative month-to-date amounts and credited to the pharmacist
+  wallet as earned money. `POST /api/admin/finance/sales-premium/import` (SYSTEM_ADMIN, HQ_HEAD; `dryRun` first)
+  credits the difference to the ledger, so a repeated or concurrent file writes nothing; a return writes a
+  `sales_premium_correction` that never takes the balance below zero and reports the uncovered rest. Sellers without
+  an active card wait in `sales_premium_pending` and are credited when the card appears or turns active (hook after
+  the commit and a sweep every 10 minutes). Every real import leaves one audit row without IINs. The till's
+  «Заработано за месяц» and last entries ("Премия за продажи, ноябрь 2026") and the cabinet balance include it; the
+  HQ ledger report filters both new sources. Tables `sales_premium_pending`, `sales_premium_imports`, ledger
+  constraints widened (V123). Payouts are not changed: a payout batch reserves the whole balance, premium included.
 - POSM 1.0.99 (Grigoriy, 25.11.2026), built for the pilot: the greeting at the first Standard-N sign-in of a shift
   says «Доброе утро, Имя Отчество! Желаем хорошего дня» (by the time of day), two lines on how ePharm helps and «Что
   такое ePharm»; once per person per shift (again only after 8 hours without them at the till), also after a restart;

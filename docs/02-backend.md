@@ -1,5 +1,49 @@
 # Backend
 
+## Sales premium from Standard-N (26.11.2026)
+
+The monthly premium for selling the products of the month's matrix (bonus per pack times packs, receipts minus
+returns, per seller IIN) is computed outside ePharm from the central Standard-N database and sent as cumulative
+month-to-date amounts, again every day. ePharm only credits it to the pharmacist wallet as earned money; payouts are
+separate work. Package `finance.premium` (pure rules in `SalesPremiumRules`, tested without a database), V123.
+
+- `POST /api/admin/finance/sales-premium/import` `{period: "2026-11", through: "2026-11-25", dryRun, rows: [{iin,
+  amountKzt, packs?}]}`. HQ_HEAD and SYSTEM_ADMIN only (`@PreAuthorize`; a finance reviewer approves payouts but does
+  not load premiums). In the unified route catalog it is `NOT_READY` like the payouts: a legacy HQ account works, a
+  managed account gets 403 until the route is migrated. `dryRun` must be in the file: Jackson reads a missing primitive
+  Boolean as false, so the field is nullable and a file without it is 400. `dryRun: true` runs in a read-only
+  transaction and writes nothing; `false` credits and writes the audit row.
+- Input checks (400 naming the rows): period `YYYY-MM`; `through` a day of that month, not after today in
+  Asia/Almaty; 1 to 5000 rows; IIN exactly 12 digits (no checksum, the cards come from the same directory); `amountKzt`
+  a whole number of tenge from 0 to 20 000 000 (a guard against tiyn instead of tenge); `packs` optional, 0 or more;
+  an IIN twice in one file is refused.
+- Delta: the active card is found by IIN (`pharmacists.iin` is unique; if several active cards ever existed the IIN is
+  reported as `ambiguous` and nobody is guessed). Delta = cumulative figure minus the net premium already in the
+  ledger for that month (`sales_premium` minus `sales_premium_correction`, context `premium:<period>`), read under the
+  pharmacist row lock, so a repeated or a concurrent file writes nothing the second time. A rise is one
+  `sales_premium` entry (earned and balance up, `sourceId = premium:<period>:<pharmacistId>:<through>`; another run of
+  the same cut-off with other figures adds `#2`, `#3`). A fall is one `sales_premium_correction`: earned and balance go
+  down by the same amount, never below a zero balance; the rest is returned as `uncoveredKzt` and is asked again by
+  every following file while the source still says the lower figure.
+- A seller without an active card (no card, or a pending or blocked one) is kept in `sales_premium_pending(iin,
+  period, amount_kzt, through)` with the latest figure (zero is never stored) and credited when a card with that IIN
+  appears or becomes active: `PharmacistCardReady` is published by `PharmacistService.create/activate/unblock` and
+  `StandardNAccountService.ensure`, handled after the commit by one background thread, and `SalesPremiumSweep`
+  checks every 10 minutes (`app.finance.sales-premium.sweep-delay-ms`) for anything a hook missed.
+- Safety: a file whose `through` is older than the latest loaded one of the month is 409 (its lower figures would take
+  valid credits back). Imports of one month are serialised by an advisory lock; pharmacist rows are locked in id
+  order, like the payout generation, so the two never wait for each other. Every real import writes one append-only row
+  to `sales_premium_imports` (admin, role, month, cut-off, SHA-256 of the figures, counts and sums, no IIN, name or
+  phone). V123 widens the ledger constraints: `sales_premium` needs earned = amount, `sales_premium_correction`
+  needs a negative amount equal to earned, every other source keeps its rule.
+- Response: `rows`, `matched`, `credited`, `corrections {count, appliedKzt, uncoveredKzt}`, `unchanged`, `pending
+  {count, sumKzt, notActiveCount}`, `ambiguous {count, sumKzt, iins}`, `packsTotal`, `auditId`. `matched + pending +
+  ambiguous` always add up to `rows`.
+- Reading it back: the cabinet balance (`GET /api/mobile/me/balance`) is `pharmacists.balance`; the till's "earned in
+  the month" (`PosmSelfService`) sums `earned_delta_kzt` of the Almaty month and is clamped at zero; its last
+  entries name the source "Премия за продажи, ноябрь 2026". The admin roster's 30-day earned figure is clamped at
+  zero too. The HQ ledger report knows both sources. A payout batch reserves the whole balance, premium included.
+
 ## Explicit campaign funding mode — candidate 2026-11-16
 
 `PromoDto` and create accept `budgetUnlimited=false` by default; update accepts a
@@ -481,6 +525,7 @@ The backend is a modular monolith under package `kz.epharm`.
 | `pharmacists`                         | Pharmacist registry, status, balance.                                                               |
 | `finance`                             | Payout batches, items, approval, scheduler.                                                         |
 | `finance.merch`                       | Disabled-by-default verified CRM executor grants, signed approvals and idempotent monetary rewards. |
+| `finance.premium`                     | Sales premium from Standard-N: daily cumulative import by IIN, wallet credit and correction, pending sellers. |
 | `screens`                             | Broadcast/screen media and playlists.                                                               |
 | `banners`                             | Admin-managed mobile banners.                                                                       |
 | `medusa`                              | Historical Medusa client and durable read-only product snapshot.                                    |
@@ -560,6 +605,8 @@ sale attribution or wallet eligibility. Redis/local presence expiry applies norm
 - `/api/admin/pharmacists/**`
 - `/api/admin/reconcile/**`, including `/submit` and `/import-excel`
 - `/api/admin/payouts/**`
+- `/api/admin/finance/sales-premium/import` (POST): daily sales premium load, SYSTEM_ADMIN/HQ_HEAD only, see
+  [Sales premium](#sales-premium-from-standard-n-26112026)
 - `/api/admin/screens/**`, including `/connected`, `/broadcast`, and per-slot broadcast replacement
   at `/broadcast/slots/{1..12}`
 - `/api/admin/app-releases/**`

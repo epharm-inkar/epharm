@@ -141,6 +141,11 @@ POSM:
   читает их через `POST /api/posm/self/tasks`; правила показа, статусов и порядка в
   `training/tasks/PharmacistTaskFeed.kt` (чистая функция, `PharmacistTaskFeedTest`). Награда = `completion_bonus`
   версии программы: `courses.bonus` в кошелёк не начисляется (импорт пакета копирует его в версию).
+- Премия за продажи из Стандарт-Н (26.11.2026): `finance.premium`, V123, `POST /api/admin/finance/sales-premium/import`
+  (HQ_HEAD, SYSTEM_ADMIN; сначала `dryRun:true`). Файл несёт накопленные с 1-го числа суммы по ИИН, зачисляется разница
+  с журналом (`sales_premium`, возврат = `sales_premium_correction`, баланс не ниже нуля, остаток в `uncoveredKzt`).
+  Без активной карточки сумма ждёт в `sales_premium_pending` и начисляется сама (хук после коммита + проверка раз в
+  10 минут). Срез старше уже загруженного за месяц даёт 409. Выплаты не менялись: батч резервирует весь баланс.
 
 ## Design
 

@@ -1682,6 +1682,16 @@
     "mode": "NOT_READY"
   },
   {
+    "api": "POST /api/admin/finance/sales-premium/import",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_premium",
+      "action": "import",
+      "kind": "FINANCIAL"
+    },
+    "mode": "NOT_READY"
+  },
+  {
     "api": "POST /api/admin/fulfillment/devices",
     "permission": {
       "module": "pharmacies_products",
