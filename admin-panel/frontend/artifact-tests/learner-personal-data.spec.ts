@@ -388,12 +388,10 @@ for (const viewport of [
         fullPage: true,
         animations: 'disabled',
       })
-      await page.getByRole('button', { name: 'Советы', exact: true }).click()
+      // «Советы» are out of the menu since 26.11.2026 (owner); the page still opens by its address.
+      await expect(page.getByRole('button', { name: 'Советы', exact: true })).toHaveCount(0)
+      await page.goto('/learn/recommendations')
       await expect(page).toHaveURL(/\/learn\/recommendations$/)
-      await expect(page.getByRole('button', { name: 'Советы', exact: true })).toHaveAttribute(
-        'aria-current',
-        'page',
-      )
       await expect(page.getByRole('button', { name: 'Главная', exact: true })).not.toHaveAttribute(
         'aria-current',
         'page',
@@ -472,7 +470,7 @@ for (const failure of [
     await expect(page.getByText(failure.message, { exact: true }).first()).toBeVisible()
     await expect(page.getByText(/889\s*999\s*₸/)).toHaveCount(0)
     await expect(page.getByText(/36\s*941\s*₸/)).toHaveCount(0)
-    await page.getByRole('button', { name: 'Советы', exact: true }).click()
+    await page.goto('/learn/recommendations')
     await expect(page).toHaveURL(/\/learn\/recommendations$/)
     await expect(page.getByText(failure.message, { exact: true }).first()).toBeVisible()
     await expect(page.getByText('Активных рекомендаций сейчас нет.', { exact: true })).toHaveCount(

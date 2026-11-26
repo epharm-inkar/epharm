@@ -140,11 +140,13 @@ describe('real AppRouter learner personal data routes', () => {
     expect(useUiStore.getState().authedUser).toBeNull()
   })
 
-  it('navigates from the personal balance through the real recommendations route', async () => {
+  it('keeps the real recommendations route while «Советы» are out of the menu', async () => {
     localStorage.setItem('epharm.learner.tokens', JSON.stringify(learnerTokens))
-    renderRouter('/learn')
+    const home = renderRouter('/learn')
     expect((await screen.findAllByText(/31\s*415\s*₸/))[0]).toBeInTheDocument()
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Советы', exact: true }))
+    expect(screen.queryByRole('button', { name: 'Советы', exact: true })).not.toBeInTheDocument()
+    home.unmount()
+    renderRouter('/learn/recommendations')
     expect(
       await screen.findByRole(
         'heading',

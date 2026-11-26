@@ -7,6 +7,10 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Removed
 
+- Pharmacist cabinet, 26.11.2026 (owner): the «Советы» tab is out of the menu for now (four tabs; the page still
+  opens at `/learn/recommendations`). «Данные фармацевта» on the profile shows the pharmacist's IIN (from
+  `/api/mobile/auth/me`, «Не указан» when empty) and every value in full: the pharmacy with its address wraps
+  instead of being cut with «...».
 - POSM 1.0.97 (Grigoriy, 25.11.2026: «окна входа не должно быть»): the till no longer has a sign-in window. The old
   «Вход / регистрация сотрудника» window, its tray icon and menu, the employee grant channel from the till
   (`StaffAuthClient`), the process-scoped session state, the prompt policy and the capability polling are deleted
