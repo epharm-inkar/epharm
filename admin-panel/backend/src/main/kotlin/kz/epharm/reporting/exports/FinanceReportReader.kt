@@ -107,7 +107,10 @@ class FinanceReportReader(private val jdbc: NamedParameterJdbcTemplate) {
     }
 
     companion object {
-        val SOURCES = setOf("receipt_bonus", "training_bonus", "merch_task", "admin_adjustment", "payout_reservation")
+        val SOURCES = setOf(
+            "receipt_bonus", "training_bonus", "merch_task", "admin_adjustment", "payout_reservation",
+            "sales_premium", "sales_premium_correction",
+        )
         fun ensureReportSize(size: Int) { if (size > ReportWorkbook.MAX_ROWS) throw AppException(ErrorCode.VALIDATION_FAILED,
             "Больше ${ReportWorkbook.MAX_ROWS} строк: сузьте фильтры; результат не усечён", HttpStatus.PAYLOAD_TOO_LARGE) }
         fun exactSum(values: List<Long>): Long = try { values.fold(0L, Math::addExact) } catch (_: ArithmeticException) {

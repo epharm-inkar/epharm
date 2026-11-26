@@ -1,5 +1,114 @@
 # Backend
 
+## Sales premium from Standard-N (26.11.2026)
+
+The monthly premium for selling the products of the month's matrix (bonus per pack times packs, receipts minus
+returns, per seller IIN) is computed from the central Standard-N database, by the server's daily collector (see below)
+or outside ePharm, and arrives as cumulative month-to-date amounts, again every day. ePharm only credits it to the
+pharmacist wallet as earned money; payouts are separate work. Package `finance.premium` (pure rules in
+`SalesPremiumRules`, tested without a database), V124 and V125.
+
+- `POST /api/admin/finance/sales-premium/import` `{period: "2026-11", through: "2026-11-25", dryRun, rows: [{iin,
+  amountKzt, packs?}]}`. HQ_HEAD and SYSTEM_ADMIN only (`@PreAuthorize`; a finance reviewer approves payouts but does
+  not load premiums). In the unified route catalog it is `NOT_READY` like the payouts: a legacy HQ account works, a
+  managed account gets 403 until the route is migrated. `dryRun` must be in the file: Jackson reads a missing primitive
+  Boolean as false, so the field is nullable and a file without it is 400. `dryRun: true` runs in a read-only
+  transaction and writes nothing; `false` credits and writes the audit row.
+- Input checks (400 naming the rows): period `YYYY-MM`; `through` a day of that month, not after today in
+  Asia/Almaty; 1 to 5000 rows; IIN exactly 12 digits (no checksum, the cards come from the same directory); `amountKzt`
+  a whole number of tenge from 0 to 20 000 000 (a guard against tiyn instead of tenge); `packs` optional, 0 or more;
+  an IIN twice in one file is refused.
+- Delta: the active card is found by IIN (`pharmacists.iin` is unique; if several active cards ever existed the IIN is
+  reported as `ambiguous` and nobody is guessed). Delta = cumulative figure minus the net premium already in the
+  ledger for that month (`sales_premium` minus `sales_premium_correction`, context `premium:<period>`), read under the
+  pharmacist row lock, so a repeated or a concurrent file writes nothing the second time. A rise is one
+  `sales_premium` entry (earned and balance up, `sourceId = premium:<period>:<pharmacistId>:<through>`; another run of
+  the same cut-off with other figures adds `#2`, `#3`). A fall is one `sales_premium_correction`: earned and balance go
+  down by the same amount, never below a zero balance; the rest is returned as `uncoveredKzt` and is asked again by
+  every following file while the source still says the lower figure.
+- A seller without an active card (no card, or a pending or blocked one) is kept in `sales_premium_pending(iin,
+  period, amount_kzt, through)` with the latest figure (zero is never stored) and credited when a card with that IIN
+  appears or becomes active: `PharmacistCardReady` is published by `PharmacistService.create/activate/unblock` and
+  `StandardNAccountService.ensure`, handled after the commit by one background thread, and `SalesPremiumSweep`
+  checks every 10 minutes (`app.finance.sales-premium.sweep-delay-ms`) for anything a hook missed.
+- Safety: a file whose `through` is older than the latest loaded one of the month is 409 (its lower figures would take
+  valid credits back). Imports of one month are serialised by an advisory lock; pharmacist rows are locked in id
+  order, like the payout generation, so the two never wait for each other. Every real import writes one append-only row
+  to `sales_premium_imports` (admin, role, month, cut-off, SHA-256 of the figures, counts and sums, no IIN, name or
+  phone). V124 widens the ledger constraints: `sales_premium` needs earned = amount, `sales_premium_correction`
+  needs a negative amount equal to earned, every other source keeps its rule.
+- Response: `rows`, `matched`, `credited`, `corrections {count, appliedKzt, uncoveredKzt}`, `unchanged`, `pending
+  {count, sumKzt, notActiveCount}`, `ambiguous {count, sumKzt, iins}`, `packsTotal`, `auditId`. `matched + pending +
+  ambiguous` always add up to `rows`.
+- Reading it back: the cabinet balance (`GET /api/mobile/me/balance`) is `pharmacists.balance`; the till's "earned in
+  the month" (`PosmSelfService`) sums `earned_delta_kzt` of the Almaty month and is clamped at zero; its last
+  entries name the source "Премия за продажи, ноябрь 2026". The admin roster's 30-day earned figure is clamped at
+  zero too. The HQ ledger report knows both sources. A payout batch reserves the whole balance, premium included.
+
+### Daily collector from Standard-N (26.11.2026, V125)
+
+The server can compute the figures itself and give them to the same import (`SalesPremiumService`), so nothing here
+credits money by another route. Files: `SalesPremiumCollector` (one calculation), `SalesPremiumAggregator`
+(`PremiumAccumulator`, pure), `StandardNPremiumSource` (`FirebirdPremiumSource` behind the interface
+`StandardNPremiumSource`, mocked in the tests), `SalesPremiumJob` (the daily schedule), `SalesPremiumMatrix` (the
+month's products), `SalesPremiumStatement`, `SalesPremiumOperationsController`.
+
+- Source: the central Standard-N database through the same connection factory and `STANDARDN_*` settings as the
+  pharmacist directory (`app.standardn-directory.*`; it needs `STANDARDN_DIRECTORY_ENABLED=true` and the read-only user).
+  The connection is read only (`isReadOnly`), WIN1251, one connection per calculation, one prepared query per matrix
+  product (`PARTS` joined to `DOC_DETAIL`, `DOCS` of type 3 and 9, `SESSIONS` and `USERS` by outer join, group by
+  profile, user, IIN, name, document type) with `DOC_COMMITDATE >= first day` and `< day after the cut-off`.
+  Receipts (type 3) carry negative quantities, returns (type 9) positive ones: packs = minus the sum of both.
+- Window: the month of yesterday, through yesterday, in Asia/Almaty. On the 1st that is the month that has just ended
+  with its last day as the final cut-off. The figures are cumulative from the 1st, so a missed day is made up by the next.
+- Premium of a seller = sum over the products of packs x `bonus_per_pack`, rounded to whole tenge once, at the end, per
+  IIN (the same person under several Standard-N users or pharmacies is one seller). A seller whose month is below zero
+  (returns of earlier sales) is sent with zero, as the import accepts no negative figure. Lines without a usable IIN
+  (empty or not 12 digits, or a session without a user) are summed apart per Standard-N user and reported in
+  `withoutIin {sellers, packs, amountKzt}`; they are never credited. Products with a zero bonus are read too, so their
+  packs count (`packs` of the answer is the net of every seller with or without IIN).
+- Only a complete read is imported: one failed product query aborts the run before anything is sent (a figure that
+  misses a product would be read by the import as a return and take premium back). The read is stopped after 25 minutes.
+  If every product of the matrix has no sale, nothing is sent. A wrong read is also bounded by the import itself: a
+  correction never takes the balance below zero, and the next good read credits the difference again.
+- One calculation at a time (`AtomicBoolean` in `SalesPremiumCollector`): a second request from an administrator is
+  409, the job skips. Several backend instances would not corrupt anything: the import is idempotent and serialised per
+  month by its advisory lock, the Standard-N side is read only.
+- Matrix: table `sales_premium_matrix(period, ware_id, name, bonus_per_pack)`; `ware_id` is the Standard-N product id
+  (GUID in upper case, `WARES.ID`), an empty bonus is zero. V125 seeds `2026-11` (188 products, one with a zero bonus)
+  from the owner's list. A later month is uploaded with `POST /api/admin/finance/sales-premium/matrix?period=2026-12&
+  dryRun=true|false`, body = the CSV (UTF-8, header with `ware_id`, `bonus_per_pack`, optional `promo_name`; comma or
+  semicolon; decimal comma accepted; a bad row refuses the whole file). It replaces the whole month; the answer compares
+  with what the month has (`added`, `removed`, `changed`, `loadedThrough`). A changed matrix re-prices the whole month
+  from the 1st at the next calculation, sales before the change included.
+- Job: `SalesPremiumJobScheduler` ticks every minute on a thread of its own (a slow Standard-N never holds the shared
+  scheduler thread of the payouts and the other jobs); `SalesPremiumJob` runs the first attempt at 06:40 Asia/Almaty and,
+  while the database does not open (it is closed at night), retries every 30 minutes until 11:00. Settings
+  `SALES_PREMIUM_JOB_ENABLED` (default `false`: nothing is read or written), `SALES_PREMIUM_JOB_START`,
+  `SALES_PREMIUM_JOB_DEADLINE`, `SALES_PREMIUM_JOB_RETRY_MINUTES` (`app.finance.sales-premium.job.*`; a mistyped time is
+  logged and replaced by its default). After a success the day is done, also after a restart: a real run leaves an
+  audit row in `sales_premium_imports` with the fixed system actor (`actor_id` all zeros, role `SYSTEM_JOB`) and the job
+  looks for one of today. The scheduler is not part of the `test` profile.
+- Log line per calculation: period, cut-off, products, packs, amount, sellers, sellers without IIN, matched, pending,
+  credited, corrections. No IIN or name is logged.
+- `POST /api/admin/finance/sales-premium/recompute?period=2026-11&dryRun=true|false` runs the same calculation now
+  (HQ_HEAD, SYSTEM_ADMIN). `dryRun` is required (a missing flag is 400); without `period` it is the month of yesterday.
+  The answer is totals only: `products`, `productsWithSales`, `packs`, `sellers`, `sellersWithPremium`, `premiumKzt`,
+  `withoutIin`, `negativeSellers` and the import's own answer under `imported` (`matched`, `pending`, `credited`,
+  `corrections`, `ambiguous` without the IINs). A closed Standard-N is 503, a running calculation 409, a month without
+  a matrix 409. It works with the job switched off: run the dry run first, compare with the owner's check figures,
+  then switch the job on.
+- `GET /api/admin/finance/sales-premium/statement.csv?period=2026-11`: the month statement for accounting, UTF-8 with
+  a BOM, semicolons, CRLF: `ФИО;ИИН;аптека;город;упаковок;начислено;статус`. The credited premium comes from the wallet
+  ledger (net of corrections, per pharmacist card), the people who wait for a card from `sales_premium_pending` (their
+  name, pharmacy and city from the Standard-N directory snapshot; what a blocked card already has in the ledger is not
+  counted twice). The packs come from `sales_premium_figures`, the latest figure per IIN and month written by every real
+  import (the ledger holds tenge only). The IIN is written as `="050112345678"` so that Excel keeps a leading zero;
+  packs use a decimal comma; a text that starts with `=`, `+`, `-` or `@` gets a leading apostrophe. The download is
+  logged (admin id, month, rows), and the response is `no-store`.
+- Tables of V125: `sales_premium_matrix`, `sales_premium_figures`. Nothing is dropped or rewritten; V124 and the wallet
+  stay as they are. Rollback: an older backend ignores both tables.
+
 ## Explicit campaign funding mode — candidate 2026-11-16
 
 `PromoDto` and create accept `budgetUnlimited=false` by default; update accepts a
@@ -481,6 +590,7 @@ The backend is a modular monolith under package `kz.epharm`.
 | `pharmacists`                         | Pharmacist registry, status, balance.                                                               |
 | `finance`                             | Payout batches, items, approval, scheduler.                                                         |
 | `finance.merch`                       | Disabled-by-default verified CRM executor grants, signed approvals and idempotent monetary rewards. |
+| `finance.premium`                     | Sales premium from Standard-N: daily collector (job, matrix, statement), cumulative import by IIN, wallet credit and correction, pending sellers. |
 | `screens`                             | Broadcast/screen media and playlists.                                                               |
 | `banners`                             | Admin-managed mobile banners.                                                                       |
 | `medusa`                              | Historical Medusa client and durable read-only product snapshot.                                    |
@@ -560,6 +670,9 @@ sale attribution or wallet eligibility. Redis/local presence expiry applies norm
 - `/api/admin/pharmacists/**`
 - `/api/admin/reconcile/**`, including `/submit` and `/import-excel`
 - `/api/admin/payouts/**`
+- `/api/admin/finance/sales-premium/import` (POST), `/recompute` (POST), `/statement.csv` (GET), `/matrix` (POST): sales
+  premium load, calculation from Standard-N now, month statement and matrix of the month, SYSTEM_ADMIN/HQ_HEAD only, see
+  [Sales premium](#sales-premium-from-standard-n-26112026)
 - `/api/admin/screens/**`, including `/connected`, `/broadcast`, and per-slot broadcast replacement
   at `/broadcast/slots/{1..12}`
 - `/api/admin/app-releases/**`

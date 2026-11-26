@@ -241,6 +241,16 @@
     "mode": "NOT_READY"
   },
   {
+    "api": "GET /api/admin/finance/sales-premium/statement.csv",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_premium",
+      "action": "export",
+      "kind": "EXPORT"
+    },
+    "mode": "NOT_READY"
+  },
+  {
     "api": "GET /api/admin/fulfillment/devices",
     "permission": {
       "module": "pharmacies_products",
@@ -1678,6 +1688,36 @@
       "subsection": "products",
       "action": "create",
       "kind": "ORDINARY"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "POST /api/admin/finance/sales-premium/import",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_premium",
+      "action": "import",
+      "kind": "FINANCIAL"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "POST /api/admin/finance/sales-premium/matrix",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_premium",
+      "action": "upload",
+      "kind": "FINANCIAL"
+    },
+    "mode": "NOT_READY"
+  },
+  {
+    "api": "POST /api/admin/finance/sales-premium/recompute",
+    "permission": {
+      "module": "motivation",
+      "subsection": "sales_premium",
+      "action": "sync",
+      "kind": "FINANCIAL"
     },
     "mode": "NOT_READY"
   },
