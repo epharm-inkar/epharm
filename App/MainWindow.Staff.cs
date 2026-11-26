@@ -83,25 +83,38 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>
+    /// The cashier programs and the Standard-N manager program running in this Windows session. Names are matched by
+    /// <see cref="StaffProcessPresence.IsCashierProcessName"/>, not by the exact «zkassa»: a copy kept under another name
+    /// («zkassa_BACKUP_2_6_88») is the cashier too, and a computer with only «ManagerXP2» reports «manager_only».
+    /// </summary>
     private static StaffProcessPresence ObserveStaffProcess()
     {
         try
         {
             using var current = Process.GetCurrentProcess();
-            var values = new System.Collections.Generic.List<string>();
+            var running = new System.Collections.Generic.List<StaffRunningProcess>();
             var unreadable = false;
-            foreach (var name in new[] { "zkassa", "kassir" })
-                foreach (var process in Process.GetProcessesByName(name))
-                    using (process)
+            foreach (var process in Process.GetProcesses())
+                using (process)
+                {
+                    string name;
+                    try { name = process.ProcessName; }
+                    catch { continue; }
+                    var cashier = StaffProcessPresence.IsCashierProcessName(name);
+                    if (!cashier && !StaffProcessPresence.IsManagerProcessName(name)) continue;
+                    try
                     {
-                        try {
-                            if (process.SessionId != current.SessionId) continue;
-                            values.Add(process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" +
-                                process.StartTime.ToUniversalTime().Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                        }
-                        catch { unreadable = true; }
+                        if (process.SessionId != current.SessionId) continue;
+                        var id = process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                        // The manager program only has to run; the cashier program is told apart by its start.
+                        running.Add(new(name, cashier
+                            ? id + ":" + process.StartTime.ToUniversalTime().Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                            : id));
                     }
-            var presence = StaffProcessPresence.FromInstances(values);
+                    catch { if (cashier) unreadable = true; }
+                }
+            var presence = StaffProcessPresence.FromProcesses(running);
             // An unreadable peer prevents source attribution.
             return unreadable ? presence with { Status = "process_unavailable" } : presence;
         }

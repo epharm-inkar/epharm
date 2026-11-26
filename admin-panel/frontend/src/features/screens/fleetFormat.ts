@@ -73,6 +73,9 @@ export function standardNShort(status: string | null): { key: string; tone: Tone
       return { key: 'fleet.sn.noSession', tone: 'ink' }
     case 'no_process':
       return { key: 'fleet.sn.noProcess', tone: 'amber' }
+    case 'manager_only':
+      // На компьютере работает только «Менеджер» Стандарт-Н: ePharm поставили на компьютер менеджера, а не на кассу.
+      return { key: 'fleet.sn.managerOnly', tone: 'amber' }
     case DATABASE_UNAVAILABLE:
       return { key: 'fleet.sn.noDatabase', tone: 'red' }
     case 'ambiguous_session':

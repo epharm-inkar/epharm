@@ -228,6 +228,36 @@ describe('FleetPanel', () => {
     expect(screen.getByTestId('fleet-card-ph_b-KASSA2')).toHaveTextContent('нет доступа к базе')
   })
 
+  it('помечает компьютер, где ePharm стоит не на кассе, а рядом с «Менеджером» Стандарт-Н', () => {
+    mockFleet(
+      fleet({
+        registers: [register({ deviceId: 'MANAGER-PC', pharmacyId: 'ph_m', staffSourceStatus: 'manager_only', appVersion: '1.0.100' })],
+      }),
+    )
+    render(<FleetPanel />)
+    const row = screen.getByTestId('fleet-row-ph_m-MANAGER-PC')
+    expect(row).toHaveTextContent('только «Менеджер»')
+    expect(
+      within(row).getByTitle('Источник Standard-N: Только «Менеджер» Стандарт-Н: ePharm стоит не на кассе'),
+    ).toBeInTheDocument()
+  })
+
+  it('на телефоне та же метка стоит в карточке кассы', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width'),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    mockFleet(
+      fleet({
+        registers: [register({ deviceId: 'MANAGER-PC', pharmacyId: 'ph_m', staffSourceStatus: 'manager_only', appVersion: '1.0.100' })],
+      }),
+    )
+    render(<FleetPanel />)
+    expect(screen.queryByTestId('fleet-table')).not.toBeInTheDocument()
+    expect(screen.getByTestId('fleet-card-ph_m-MANAGER-PC')).toHaveTextContent('только «Менеджер»')
+  })
+
   it('показывает, что назначено на экраны, и сколько касс это крутят', () => {
     render(<FleetPanel />)
     const block = screen.getByTestId('fleet-playlists')

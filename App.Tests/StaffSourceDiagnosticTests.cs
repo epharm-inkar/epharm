@@ -23,6 +23,9 @@ namespace CustomerDisplay.Core.Tests
             Assert.Equal("database_unavailable", shell.StaffSourceStatus);
             shell.ObserveStaffSourceTest(() => new("ambiguous_process", "set:synthetic"));
             Assert.Equal("ambiguous_process", shell.StaffSourceStatus);
+            // 1.0.100: only the Standard-N manager program runs, ePharm stands on the manager's computer, not on a till.
+            shell.ObserveStaffSourceTest(() => new("manager_only"));
+            Assert.Equal("manager_only", shell.StaffSourceStatus);
             shell.ObserveStaffSourceTest(() => new("private database detail"));
             Assert.Equal("unknown", shell.StaffSourceStatus);
             shell.ObserveStaffSourceTest(() => throw new InvalidOperationException("synthetic"));
@@ -69,5 +72,7 @@ namespace CustomerDisplay
             StartStaffSourceDiagnostics();
         }
         internal void StopStaffSourceDiagnosticsTest() => StopStaffSourceDiagnostics();
+        // The real OS reading, for the Windows process tests.
+        internal static StaffProcessPresence ObserveStaffProcessTest() => ObserveStaffProcess();
     }
 }
