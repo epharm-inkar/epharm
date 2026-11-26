@@ -14,7 +14,7 @@ import {
   type SetStateAction,
   type ReactElement,
 } from 'react'
-import { Button, Field, Input, Modal, Toggle, useToast } from '@/ui'
+import { Button, Field, HelpTip, Input, Modal, Toggle, useToast } from '@/ui'
 import { IconChevDown, IconClose, IconPlus } from '@/ui/icons'
 import type {
   AccTriggerOptionDto,
@@ -351,9 +351,10 @@ export function PromoRulesEditor({
 
   return (
     <div className="card flex flex-col gap-4 p-5" data-testid="promo-rules-editor">
-      <div className="flex items-center justify-between">
-        <div className="text-[13px] font-extrabold uppercase tracking-[0.06em] text-ink-500">
-          {t('pr.section')}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-[0.06em] text-ink-500">
+          <span>{t('pr.section')}</span>
+          <HelpTip topic={t('pr.section')}>{t('help.promoDetail.rules')}</HelpTip>
         </div>
         <span className="text-[12px] font-semibold text-ink-500" data-testid="promo-rules-counts">
           Подготовлено пар: {cfg.replacements.length + cfg.crossSells.length} · включено:{' '}
@@ -364,6 +365,7 @@ export function PromoRulesEditor({
         sectionKey="replacements"
         titleKey="pr.replacements"
         hintKey="pr.replacementsHint"
+        helpKey="help.promoDetail.replacements"
         addLabelKey="pr.addReplacement"
         items={cfg.replacements}
         disabled={disabled}
@@ -384,6 +386,7 @@ export function PromoRulesEditor({
         sectionKey="crossSells"
         titleKey="pr.crossSells"
         hintKey="pr.crossSellsHint"
+        helpKey="help.promoDetail.crossSells"
         addLabelKey="pr.addCrossSell"
         items={cfg.crossSells}
         disabled={disabled}
@@ -401,8 +404,12 @@ export function PromoRulesEditor({
       />
 
       {/* Цель — одна на всю кампанию (применяется ко всем парам). */}
-      <Field label={t('pr.campaignGoal')} hint={t('pr.campaignGoalHint')}>
-        <div className="grid grid-cols-3 gap-2">
+      <Field
+        label={t('pr.campaignGoal')}
+        hint={t('pr.campaignGoalHint')}
+        help={t('help.promoDetail.goal')}
+      >
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <InlineValidatedField error={validationErrors.goalLabel} path="goalLabel">
             <Input
               value={cfg.goalLabel ?? ''}
@@ -497,6 +504,7 @@ function RuleSection({
   sectionKey,
   titleKey,
   hintKey,
+  helpKey,
   addLabelKey,
   items,
   disabled,
@@ -515,6 +523,7 @@ function RuleSection({
   sectionKey: ListKey
   titleKey: string
   hintKey: string
+  helpKey: string
   addLabelKey: string
   items: PromoRuleProductRef[]
   disabled: boolean
@@ -534,7 +543,7 @@ function RuleSection({
   const [pickerOpen, setPickerOpen] = useState(false)
   const kind: PairKind = sectionKey === 'replacements' ? 'replacement' : 'crossSell'
   return (
-    <Field label={`${t(titleKey)} · ${items.length}`} hint={t(hintKey)}>
+    <Field label={`${t(titleKey)} · ${items.length}`} hint={t(hintKey)} help={t(helpKey)}>
       {items.length === 0 ? (
         <div className="text-[12px] font-semibold text-ink-400">{t('pr.noneChosen')}</div>
       ) : (
@@ -686,7 +695,7 @@ function PairCard({
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-0 flex-1 basis-40">
-            <div className="truncate text-[13px] font-bold text-ink-900">
+            <div className="text-[13px] font-bold text-ink-900 max-sm:line-clamp-2 max-sm:break-words sm:truncate">
               {isBroadTrigger ? r.triggerLabel || r.name : r.name}
             </div>
             {isBroadTrigger && (
@@ -877,7 +886,7 @@ function PairCard({
           <ul className="divide-hairline overflow-hidden rounded-lg border bg-white">
             <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2">
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] font-bold text-ink-900">
+                <div className="text-[12px] font-bold text-ink-900 max-sm:line-clamp-2 max-sm:break-words sm:truncate">
                   {promotedName || t('pr.previewNoName')}
                 </div>
                 <div className="text-[10px] font-semibold text-brand-green-700">
@@ -918,7 +927,9 @@ function PairCard({
                   aria-invalid={offerError ? true : undefined}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12px] font-bold text-ink-900">{offer.name}</div>
+                    <div className="text-[12px] font-bold text-ink-900 max-sm:line-clamp-2 max-sm:break-words sm:truncate">
+                      {offer.name}
+                    </div>
                     {offer.brand && (
                       <div className="truncate text-[10px] font-semibold text-ink-400">
                         {offer.brand}

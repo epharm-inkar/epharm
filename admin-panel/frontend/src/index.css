@@ -314,11 +314,14 @@
   max-width: 100%;
 }
 
+/*
+ * A table stays a real table (display: table), so it fills the box it sits in. It used to be turned
+ * into display: block with its own scroll, which made the rows an anonymous table that shrank to the
+ * content: every table ended at 55-85% of its card. A table wider than its box now scrolls inside
+ * its wrapper (<TableScroll>, or any overflow-x: auto parent), and the wrapper is what the page sees.
+ */
 .admin-console main table {
-  display: block;
   width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
 }
 
 @media (max-width: 767px) {

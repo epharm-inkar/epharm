@@ -233,10 +233,10 @@ export function PromoProductPicker({ value, onChange, requireQuery = false, requ
 
   if (value && !open) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-ink-100 bg-paper-card p-3">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-ink-100 bg-paper-card p-3 sm:flex-nowrap">
         <ProductThumb url={value.productImage} name={value.productName} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-extrabold text-ink-900">
+        <div className="min-w-0 flex-1 basis-40">
+          <div className="text-[14px] font-extrabold text-ink-900 max-sm:line-clamp-3 max-sm:break-words sm:truncate">
             {value.productName}
           </div>
           {value.brand && (
@@ -247,7 +247,7 @@ export function PromoProductPicker({ value, onChange, requireQuery = false, requ
             <div className="num truncate text-[11px] text-ink-400">iPartID: {value.ipartId}</div>
           )}
         </div>
-        <Button variant="ghost" onClick={() => setOpen(true)}>
+        <Button variant="ghost" className="max-sm:ml-auto" onClick={() => setOpen(true)}>
           {t('pp.change')}
         </Button>
       </div>

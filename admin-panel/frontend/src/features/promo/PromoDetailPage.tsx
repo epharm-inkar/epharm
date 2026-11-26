@@ -5,15 +5,17 @@
 //
 // T1: один товар Medusa, цена read-only (из Medusa, почасовой рефреш), единый
 //     бонус фармацевту, опц. override фото/описания. Порогов больше нет.
-// T2: секция «Замены и кросс-селл» — авторинг правил из кампании (см. PromoRulesEditor).
+// T2: секция «Замены и допродажи» — авторинг правил из кампании (см. PromoRulesEditor).
 
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Button,
+  Disclosure,
   Empty,
   Field,
+  HelpTip,
   Input,
   Modal,
   PageHeader,
@@ -164,6 +166,8 @@ export default function PromoDetailPage() {
   const [staleRevision, setStaleRevision] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [resetCounter, setResetCounter] = useState(0)
+  // «Дополнительно» свёрнуто по умолчанию; поля внутри остаются в форме и сохраняются как раньше.
+  const [additionalOpen, setAdditionalOpen] = useState(false)
   const loadedRevision = useRef('')
 
   // Синхронизируем форму при загрузке/смене кампании.
@@ -300,6 +304,21 @@ export default function PromoDetailPage() {
     !pending &&
     !isArchived
 
+  // Одна строка под свёрнутым «Дополнительно»: что внутри и что из этого уже задано.
+  const short = (value: string) => (value.length > 24 ? `${value.slice(0, 23)}…` : value)
+  const additionalSummary = [
+    form.barcode.trim() ? t('pd.sumBarcode', { v: form.barcode.trim() }) : t('pd.sumNoBarcode'),
+    form.ipartId.trim() ? t('pd.sumIpart', { v: form.ipartId.trim() }) : null,
+    form.overrideImage.trim() ? t('pd.sumOwnImage') : t('pd.sumCatalogImage'),
+    form.overrideDescription.trim() || form.overrideCharacteristics.trim()
+      ? t('pd.sumOwnText')
+      : t('pd.sumCatalogText'),
+    form.period.trim() ? t('pd.sumPeriod', { v: short(form.period.trim()) }) : null,
+    form.kpi.trim() ? t('pd.sumKpi', { v: short(form.kpi.trim()) }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((f) => ({ ...f, [k]: e.target.value }))
     if (k === 'budget' || k === 'pharmacistBonus') {
@@ -415,6 +434,8 @@ export default function PromoDetailPage() {
         onError: (e) => {
           setSaveErr(describeError(e))
           if (axios.isAxiosError(e) && e.response?.status === 409) setStaleRevision(true)
+          // Ошибка сервера может касаться поля из свёрнутого блока: раскрываем его, чтобы поле было видно.
+          else setAdditionalOpen(true)
           callbacks?.onError(e)
         },
       },
@@ -599,9 +620,9 @@ export default function PromoDetailPage() {
         )
       }
     >
-      <div className="grid grid-cols-3 gap-5" data-testid="promo-detail">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3" data-testid="promo-detail">
         {/* Левая колонка: редактор */}
-        <div className="col-span-2 flex min-w-0 flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
           <div className="card flex flex-col gap-3 p-4" data-testid="promo-publication-state">
             {(!changesQuery.isFetchedAfterMount || changesQuery.isFetching) && (
               <p role="status">Проверяем сохранённые условия и права…</p>
@@ -614,12 +635,17 @@ export default function PromoDetailPage() {
             )}
             {changes && (
               <>
-                <div className="flex items-center justify-between gap-3">
-                  <strong>
-                    {changes.hasPendingChanges
-                      ? 'Есть подготовленные изменения'
-                      : 'Подготовленных изменений нет'}
-                  </strong>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <span className="flex items-center gap-2">
+                    <strong>
+                      {changes.hasPendingChanges
+                        ? 'Есть подготовленные изменения'
+                        : 'Подготовленных изменений нет'}
+                    </strong>
+                    <HelpTip topic={t('help.promoDetail.publicationTopic')}>
+                      {t('help.promoDetail.publication')}
+                    </HelpTip>
+                  </span>
                   <span className="text-[12px] text-ink-500">Ревизия {changes.revision}</span>
                 </div>
                 <p className="text-[13px] text-ink-500">
@@ -664,7 +690,7 @@ export default function PromoDetailPage() {
                 )}
               </>
             )}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -700,19 +726,36 @@ export default function PromoDetailPage() {
             </div>
           )}
 
-          {/* Товарная акция: товар Medusa + цена (read-only) + бонус + даты + override */}
-          <div className="card flex flex-col gap-4 p-5">
-            <div className="text-[13px] font-extrabold uppercase tracking-[0.06em] text-ink-500">
-              {t('pd.productSection')}
+          {/* Главное: название, товар, цена, бонус, сроки, бюджет; сверху статус и охват сети. */}
+          <div className="card flex flex-col gap-4 p-5" data-testid="promo-main">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <div className="text-[13px] font-extrabold uppercase tracking-[0.06em] text-ink-500">
+                {t('pd.mainTitle')}
+              </div>
+              <div
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-semibold text-ink-600"
+                data-testid="promo-main-facts"
+              >
+                <StatusChip status={promo.status} />
+                <span>{t('pd.network', { n: promo.pharmacies })}</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label={t('pd.fldTitle')}>
+                <Input value={form.title} onChange={set('title')} disabled={editingDisabled} />
+              </Field>
+              <Field label={t('pd.fldBrand')}>
+                <Input value={form.brand} onChange={set('brand')} disabled={editingDisabled} />
+              </Field>
             </div>
             {/* Продвигаемый товар выбирается ТОЛЬКО при создании кампании (1:1) и здесь
-                не меняется — показываем read-only. Замены/кросс-селл к нему — ниже. */}
+                не меняется — показываем read-only. Замены/допродажи к нему — ниже. */}
             <Field label={t('pm.fldProduct')} hint={t('pd.productLocked')}>
               <div
                 className="rounded-xl border border-ink-100 bg-paper-card px-3 py-2.5"
                 data-testid="detail-product-readonly"
               >
-                <div className="text-[14px] font-extrabold text-ink-900">
+                <div className="break-words text-[14px] font-extrabold text-ink-900">
                   {form.product?.productName || t('pd.noProduct')}
                 </div>
                 {form.product?.brand && (
@@ -729,8 +772,87 @@ export default function PromoDetailPage() {
                 )}
               </div>
             </Field>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* Цена из Medusa — read-only (обновляется каждый час, не редактируется). */}
+              <Field label={t('pm.fldPrice')} hint={t('pm.priceHint')}>
+                <div
+                  className="inp flex items-center bg-paper-input font-bold text-ink-700"
+                  data-testid="detail-price-readonly"
+                >
+                  {promo.price ? formatKzt(promo.price) : t('sf.priceNa')}
+                </div>
+              </Field>
+              <Field
+                label={t('pm.fldBonus')}
+                hint={t('pm.bonusHint')}
+                error={moneyErrors.pharmacistBonus}
+                help={t('help.promoDetail.bonus')}
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={PROMO_RULE_LIMITS.maxInt}
+                  step={1}
+                  value={form.pharmacistBonus}
+                  aria-invalid={moneyErrors.pharmacistBonus ? true : undefined}
+                  onChange={set('pharmacistBonus')}
+                  disabled={editingDisabled}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label={t('pm.fldDateStart')}>
+                <Input
+                  type="date"
+                  value={form.dateStart}
+                  onChange={set('dateStart')}
+                  disabled={editingDisabled}
+                />
+              </Field>
+              <Field label={t('pm.fldDateEnd')}>
+                <Input
+                  type="date"
+                  value={form.dateEnd}
+                  onChange={set('dateEnd')}
+                  disabled={editingDisabled}
+                />
+              </Field>
+            </div>
+            <div className="space-y-2">
+              <CampaignBudgetMode
+                unlimited={form.budgetUnlimited}
+                canConfigure={canConfigureBudget}
+                disabled={editingDisabled}
+                onChange={(budgetUnlimited) => setForm((current) => ({ ...current, budgetUnlimited }))}
+              />
+              <Field
+                label={t('pd.fldBudget')}
+                error={moneyErrors.budget}
+                help={t('help.promoDetail.budget')}
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={Number.MAX_SAFE_INTEGER}
+                  step={1}
+                  value={form.budget}
+                  aria-invalid={moneyErrors.budget ? true : undefined}
+                  onChange={set('budget')}
+                  disabled={editingDisabled || form.budgetUnlimited}
+                />
+              </Field>
+            </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-4">
+          {/* Дополнительно: свёрнуто, пока не нужно; в строке под заголовком видно, что внутри. */}
+          <Disclosure
+            title={t('pd.addTitle')}
+            summary={additionalSummary}
+            open={additionalOpen}
+            onOpenChange={setAdditionalOpen}
+            testId="promo-additional"
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label={t('pr.barcode')}>
                 <Input
                   className="num"
@@ -750,54 +872,32 @@ export default function PromoDetailPage() {
                 />
               </Field>
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              {/* Цена из Medusa — read-only (обновляется каждый час, не редактируется). */}
-              <Field label={t('pm.fldPrice')} hint={t('pm.priceHint')}>
-                <div
-                  className="inp flex items-center bg-paper-input font-bold text-ink-700"
-                  data-testid="detail-price-readonly"
-                >
-                  {promo.price ? formatKzt(promo.price) : t('sf.priceNa')}
-                </div>
-              </Field>
-              <Field
-                label={t('pm.fldBonus')}
-                hint={t('pm.bonusHint')}
-                error={moneyErrors.pharmacistBonus}
-              >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label={t('pd.fldPeriod')}>
                 <Input
-                  type="number"
-                  min={0}
-                  max={PROMO_RULE_LIMITS.maxInt}
-                  step={1}
-                  value={form.pharmacistBonus}
-                  aria-invalid={moneyErrors.pharmacistBonus ? true : undefined}
-                  onChange={set('pharmacistBonus')}
+                  value={form.period}
+                  onChange={set('period')}
+                  placeholder={t('pd.periodPh')}
+                  disabled={editingDisabled}
+                />
+              </Field>
+              <Field label={t('pd.fldKpi')} optional>
+                <Input
+                  value={form.kpi}
+                  onChange={set('kpi')}
+                  placeholder={t('pd.kpiPh')}
                   disabled={editingDisabled}
                 />
               </Field>
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label={t('pm.fldDateStart')}>
-                <Input
-                  type="date"
-                  value={form.dateStart}
-                  onChange={set('dateStart')}
-                  disabled={editingDisabled}
-                />
-              </Field>
-              <Field label={t('pm.fldDateEnd')}>
-                <Input
-                  type="date"
-                  value={form.dateEnd}
-                  onChange={set('dateEnd')}
-                  disabled={editingDisabled}
-                />
-              </Field>
-            </div>
-
+            <Field label={t('pd.fldCover')} optional>
+              <Input
+                value={form.cover}
+                onChange={set('cover')}
+                placeholder={t('pd.coverPh')}
+                disabled={editingDisabled}
+              />
+            </Field>
             <Field label={t('pm.fldOverrideImage')} hint={t('pm.overrideHint')} optional>
               <Input
                 value={form.overrideImage}
@@ -863,85 +963,28 @@ export default function PromoDetailPage() {
                 </ul>
               </div>
             )}
-          </div>
+          </Disclosure>
 
-          <div className="card flex flex-col gap-4 p-5">
-            <div className="text-[13px] font-extrabold uppercase tracking-[0.06em] text-ink-500">
-              {t('pd.mainData')}
+          {!isArchived && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button variant="ghost" onClick={goBack}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                disabled={
+                  !canEdit ||
+                  (!hasLocalChanges && (promo.status !== 'draft' || changes?.hasPendingChanges))
+                }
+                onClick={() => handleSave()}
+                data-testid="promo-changes-save"
+              >
+                {saveChanges.isPending ? t('pm.creating') : 'Сохранить изменения'}
+              </Button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label={t('pd.fldTitle')}>
-                <Input value={form.title} onChange={set('title')} disabled={editingDisabled} />
-              </Field>
-              <Field label={t('pd.fldBrand')}>
-                <Input value={form.brand} onChange={set('brand')} disabled={editingDisabled} />
-              </Field>
-              <Field label={t('pd.fldPeriod')}>
-                <Input
-                  value={form.period}
-                  onChange={set('period')}
-                  placeholder={t('pd.periodPh')}
-                  disabled={editingDisabled}
-                />
-              </Field>
-              <div className="space-y-2">
-                <CampaignBudgetMode
-                  unlimited={form.budgetUnlimited}
-                  canConfigure={canConfigureBudget}
-                  disabled={editingDisabled}
-                  onChange={(budgetUnlimited) => setForm((current) => ({ ...current, budgetUnlimited }))}
-                />
-                <Field label={t('pd.fldBudget')} error={moneyErrors.budget}>
-                <Input
-                  type="number"
-                  min={0}
-                  max={Number.MAX_SAFE_INTEGER}
-                  step={1}
-                  value={form.budget}
-                  aria-invalid={moneyErrors.budget ? true : undefined}
-                  onChange={set('budget')}
-                  disabled={editingDisabled || form.budgetUnlimited}
-                />
-                </Field>
-              </div>
-              <Field label={t('pd.fldKpi')} optional>
-                <Input
-                  value={form.kpi}
-                  onChange={set('kpi')}
-                  placeholder={t('pd.kpiPh')}
-                  disabled={editingDisabled}
-                />
-              </Field>
-              <Field label={t('pd.fldCover')} optional>
-                <Input
-                  value={form.cover}
-                  onChange={set('cover')}
-                  placeholder={t('pd.coverPh')}
-                  disabled={editingDisabled}
-                />
-              </Field>
-            </div>
-            {!isArchived && (
-              <div className="hairline flex items-center justify-end gap-2 border-t pt-3">
-                <Button variant="ghost" onClick={goBack}>
-                  {t('common.cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  disabled={
-                    !canEdit ||
-                    (!hasLocalChanges && (promo.status !== 'draft' || changes?.hasPendingChanges))
-                  }
-                  onClick={() => handleSave()}
-                  data-testid="promo-changes-save"
-                >
-                  {saveChanges.isPending ? t('pm.creating') : 'Сохранить изменения'}
-                </Button>
-              </div>
-            )}
-          </div>
+          )}
 
-          {/* T2 — Замены и кросс-селл (правила, авторинг из кампании) */}
+          {/* T2 — Замены и допродажи (правила, авторинг из кампании) */}
           {changes && (
             <PromoRulesEditor
               key={`${promo.id}:${changes.revision}`}
@@ -958,10 +1001,10 @@ export default function PromoDetailPage() {
           )}
         </div>
 
-        {/* Правая колонка: превью + бюджет + мета */}
-        <div className="flex min-w-0 flex-col gap-4">
+        {/* Правая колонка: превью + бюджет + мета. На телефоне стоит первой: статус и расход видны сразу. */}
+        <div className="order-first flex min-w-0 flex-col gap-4 lg:order-none">
           <div
-            className="relative h-36 overflow-hidden rounded-xl"
+            className="relative h-28 overflow-hidden rounded-xl sm:h-36"
             data-testid="promo-detail-cover"
             style={{ background: `linear-gradient(135deg, ${cover}, ${cover}cc)` }}
           >
@@ -969,10 +1012,12 @@ export default function PromoDetailPage() {
               <StatusChip status={promo.status} />
             </div>
             <div className="absolute bottom-4 left-5 right-5 text-white">
-              <div className="mb-1 text-[11px] font-bold uppercase tracking-[0.08em] opacity-85">
+              <div className="mb-1 truncate text-[11px] font-bold uppercase tracking-[0.08em] opacity-85">
                 {form.brand || '—'}
               </div>
-              <div className="text-[19px] font-extrabold leading-tight">{form.title || '—'}</div>
+              <div className="line-clamp-2 break-words text-[19px] font-extrabold leading-tight">
+                {form.title || '—'}
+              </div>
             </div>
           </div>
 
@@ -982,9 +1027,9 @@ export default function PromoDetailPage() {
               <span>{t('pd.budgetSpent')}</span>
               {promo.budgetUnlimited !== true && promo.budget > 0 && <span className="num text-ink-900">{progressPct}%</span>}
             </div>
-            <div className="mb-2 flex items-center justify-between text-[13px]">
-              <span className="num font-extrabold text-ink-900">{formatKzt(promo.spent)}</span>
-              <span className="num font-semibold text-ink-500">/ {promo.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(promo.budget)}</span>
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2 text-[13px]">
+              <span className="num whitespace-nowrap font-extrabold text-ink-900">{formatKzt(promo.spent)}</span>
+              <span className="num whitespace-nowrap font-semibold text-ink-500">/ {promo.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(promo.budget)}</span>
             </div>
             {promo.budgetUnlimited !== true && promo.budget > 0 && <ProgressBar value={promo.spent} max={progressMax} />}
             {changes?.hasPendingChanges && (editable.budget !== promo.budget || (editable.budgetUnlimited === true) !== (promo.budgetUnlimited === true)) && (
@@ -995,11 +1040,13 @@ export default function PromoDetailPage() {
             )}
           </div>
 
-          <div className="card-soft grid grid-cols-2 gap-3 p-4 text-[13px]">
+          <div className="card-soft grid grid-cols-2 gap-x-3 gap-y-3 p-4 text-[13px]">
             <Meta label={t('pd.metaPharm')} value={`${promo.pharmacies}`} />
             <Meta label={t('pd.metaCreated')} value={promo.createdAt.slice(0, 10)} />
             <Meta label={t('pd.metaUpdated')} value={promo.updatedAt.slice(0, 10)} />
-            <Meta label={t('pd.metaId')} value={promo.id} mono />
+            <div className="col-span-2">
+              <Meta label={t('pd.metaId')} value={promo.id} mono copy />
+            </div>
           </div>
         </div>
       </div>
@@ -1060,7 +1107,7 @@ export default function PromoDetailPage() {
             </p>
             {[
               ...changes.bundle.rules.replacements.map((pair) => ({ pair, kind: 'Замена' })),
-              ...changes.bundle.rules.crossSells.map((pair) => ({ pair, kind: 'Кросс-селл' })),
+              ...changes.bundle.rules.crossSells.map((pair) => ({ pair, kind: 'Допродажа' })),
             ].map(({ pair, kind }, index) => (
               <div key={index} className="rounded-lg border border-ink-100 p-3">
                 <strong>
@@ -1140,11 +1187,56 @@ function Shell({
   )
 }
 
-function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Meta({
+  label,
+  value,
+  mono,
+  copy,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+  /** A «Копировать» button for an identifier: it is longer than the card and wraps. */
+  copy?: boolean
+}) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-ink-400">{label}</div>
-      <div className={`mt-0.5 font-extrabold text-ink-900 ${mono ? 'num' : ''}`}>{value}</div>
+      <div className="mt-0.5 flex items-start justify-between gap-2">
+        <div className={`min-w-0 break-all font-extrabold text-ink-900 ${mono ? 'num' : ''}`}>
+          {value}
+        </div>
+        {copy && <CopyButton value={value} />}
+      </div>
     </div>
+  )
+}
+
+function CopyButton({ value }: { value: string }) {
+  const t = useT()
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  const copy = () => {
+    const written = navigator.clipboard?.writeText(value)
+    if (!written) return
+    written
+      .then(() => {
+        setCopied(true)
+        window.clearTimeout(timer.current)
+        timer.current = window.setTimeout(() => setCopied(false), 1500)
+      })
+      // The clipboard can be blocked; the identifier stays on screen to select by hand.
+      .catch(() => undefined)
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      data-testid="copy-promo-id"
+      className="flex-none rounded-md border border-ink-200 bg-paper-card px-2 py-1 text-[11px] font-bold text-ink-600 hover:border-ink-300 hover:text-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-green-600/40"
+    >
+      {copied ? t('pd.copied') : t('pd.copyId')}
+    </button>
   )
 }

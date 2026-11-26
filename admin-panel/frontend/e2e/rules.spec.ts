@@ -13,7 +13,7 @@ test.beforeEach(async ({ loggedInPage }) => {
 test.describe('Rules — список', () => {
   test('seed-данные: substitution + crosssell + 0 archive', async ({ loggedInPage }) => {
     await expect(loggedInPage.getByRole('button', { name: /Замены/ })).toBeVisible()
-    await expect(loggedInPage.getByRole('button', { name: /Кросс-селл/ })).toBeVisible()
+    await expect(loggedInPage.getByRole('button', { name: /Допродажи/ })).toBeVisible()
     await expect(loggedInPage.getByRole('button', { name: /Архив/ })).toBeVisible()
 
     const rows = loggedInPage.locator('[data-testid^="rule-row-"]')
@@ -31,9 +31,9 @@ test.describe('Rules — список', () => {
 })
 
 test.describe('Rules — табы', () => {
-  test('переключение «Кросс-селл» меняет список', async ({ loggedInPage }) => {
-    await loggedInPage.getByRole('button', { name: /Кросс-селл/ }).click()
-    // На пустом архиве показывается empty state OR rules. На кросс-сейл — 2 rules.
+  test('переключение «Допродажи» меняет список', async ({ loggedInPage }) => {
+    await loggedInPage.getByRole('button', { name: /Допродажи/ }).click()
+    // На пустом архиве показывается empty state OR rules. На допродажах 2 rules.
     const rows = loggedInPage.locator('[data-testid^="rule-row-"]')
     await expect(rows.first()).toBeVisible({ timeout: 5_000 })
   })

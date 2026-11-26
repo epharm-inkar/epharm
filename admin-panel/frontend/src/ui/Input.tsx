@@ -1,5 +1,6 @@
 // Input + SearchInput + Field — admin §8.2
 import type { InputHTMLAttributes, ReactNode } from 'react'
+import { HelpTip } from './HelpTip'
 import { IconSearch } from './icons'
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -58,14 +59,21 @@ interface FieldProps {
   hint?: ReactNode
   error?: ReactNode
   optional?: boolean
+  /**
+   * Plain explanation of the field: a "?" at the end of the label line. It sits next to the label,
+   * not inside it, so a click on the "?" never reaches the input and the input keeps its name.
+   */
+  help?: ReactNode
   children: ReactNode
 }
 
-export function Field({ label, hint, error, optional, children }: FieldProps) {
-  return (
+export function Field({ label, hint, error, optional, help, children }: FieldProps) {
+  const field = (
     <label className="block">
       {label && (
-        <span className="mb-1.5 block text-[12px] font-semibold text-ink-700">
+        <span
+          className={`mb-1.5 block text-[12px] font-semibold text-ink-700 ${help ? 'pr-7' : ''}`}
+        >
           {label}
           {optional && <span className="ml-1 font-medium text-ink-400">— необязательно</span>}
         </span>
@@ -74,5 +82,14 @@ export function Field({ label, hint, error, optional, children }: FieldProps) {
       {hint && !error && <span className="mt-1 block text-[12px] text-ink-400">{hint}</span>}
       {error && <span className="mt-1 block text-[12px] text-accent-danger">{error}</span>}
     </label>
+  )
+  if (!help) return field
+  return (
+    <div className="relative">
+      {field}
+      <span className="absolute right-0 top-[-1px]">
+        <HelpTip topic={typeof label === 'string' ? label : undefined}>{help}</HelpTip>
+      </span>
+    </div>
   )
 }

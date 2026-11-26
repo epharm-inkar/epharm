@@ -570,8 +570,8 @@ function LinksPanel() {
     })
 
   return (
-    <div className="grid min-h-[480px] md:grid-cols-[340px_1fr]">
-      <div className="border-r border-ink-100 p-5">
+    <div className="grid min-h-[480px] grid-cols-1 md:grid-cols-[340px_1fr]">
+      <div className="min-w-0 border-ink-100 p-5 max-md:border-b md:border-r">
         <div className="mb-1 text-[15px] font-extrabold text-ink-900">Точное соответствие</div>
         <div className="mb-5 text-[12px] text-ink-500">
           Заказ маршрутизируется только по внешнему ID. Совпадение адреса не используется.
@@ -622,7 +622,7 @@ function LinksPanel() {
           </Button>
         </div>
       </div>
-      <div>
+      <div className="min-w-0">
         <div className="hairline border-b p-4">
           <SearchInput
             value={query}
@@ -648,7 +648,7 @@ function LinksPanel() {
             {filtered.map((link) => (
               <button
                 key={link.externalId}
-                className="grid w-full grid-cols-[180px_1fr_auto] gap-4 px-5 py-3 text-left hover:bg-paper-hover"
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 px-5 py-3 text-left hover:bg-paper-hover sm:grid-cols-[180px_minmax(0,1fr)_auto]"
                 onClick={() =>
                   setForm({
                     externalId: link.externalId,
@@ -658,14 +658,17 @@ function LinksPanel() {
                   })
                 }
               >
-                <span className="font-mono text-[11px] font-bold text-ink-700">
+                <span className="min-w-0 break-all font-mono text-[11px] font-bold text-ink-700">
                   {link.externalId}
                 </span>
-                <span>
-                  <span className="block text-[13px] font-extrabold text-ink-900">
+                {/* On a phone the name and address go under the ID and the status (own row). */}
+                <span className="order-last col-span-2 min-w-0 sm:order-none sm:col-span-1">
+                  <span className="block break-words text-[13px] font-extrabold text-ink-900">
                     {link.pharmacyName}
                   </span>
-                  <span className="block text-[11px] text-ink-500">{link.pharmacyAddress}</span>
+                  <span className="block break-words text-[11px] text-ink-500">
+                    {link.pharmacyAddress}
+                  </span>
                 </span>
                 <span
                   className={`text-[11px] font-bold ${link.active ? 'text-accent-success' : 'text-ink-400'}`}

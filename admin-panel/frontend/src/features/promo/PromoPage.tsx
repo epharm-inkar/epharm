@@ -18,6 +18,7 @@ import {
 import {
   IconArchive,
   IconArrowUp,
+  IconBox,
   IconFinance,
   IconGrid,
   IconLift,
@@ -40,6 +41,7 @@ import {
   useRestorePromo,
   useUpdatePromo,
 } from '@/lib/queries/promo'
+import { useStorefrontProduct } from '@/lib/queries/storefront'
 import { useT } from '@/i18n'
 import { CreatePromoModal } from './CreatePromoModal'
 
@@ -59,9 +61,22 @@ function readViewMode(): ViewMode {
 }
 
 // Эффективное фото товара для превью: ручной override → снимок из Medusa.
-// Возвращаем уже прогнанный через image-прокси URL либо null (тогда — градиент-заглушка).
+// Возвращаем уже прогнанный через image-прокси URL либо null.
 function promoPhoto(promo: Promo): string | null {
   const raw = promo.overrideImage?.trim() || promo.productImage?.trim() || ''
+  return raw ? proxyMedia(raw) : null
+}
+
+/**
+ * Фото для карточки и строки списка. Если у кампании своего фото нет (ни ручного, ни снимка), берём
+ * фото товара из каталога, как это делает страница кампании. Нет и его: null, и карточка рисует
+ * спокойный нейтральный блок с названием товара, а не выдуманную картинку.
+ */
+function usePromoPhoto(promo: Promo): string | null {
+  const own = promoPhoto(promo)
+  const { data } = useStorefrontProduct(own ? null : promo.medusaProductId)
+  if (own) return own
+  const raw = data?.imageUrl?.trim() || data?.images?.[0]?.trim() || ''
   return raw ? proxyMedia(raw) : null
 }
 
@@ -171,10 +186,11 @@ export default function PromoPage() {
       <PageHeader
         title={t('page.promo.title')}
         subtitle={t('page.promo.subtitle')}
+        help={t('help.promo.page')}
         actions={
           // Bug M fix: убрал «Экспорт» — onClick не был подключён, кнопка выглядела
           // сломанной. Вернётся в Этапе 7 (Operational polish) с реальной CSV-выгрузкой.
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ViewModeToggle mode={viewMode} onChange={setViewMode} />
             <Button
               variant="ghost"
@@ -197,8 +213,8 @@ export default function PromoPage() {
         }
       />
 
-      {/* 4 KPI metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* 4 KPI metrics: two by two on a phone */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <Metric
           label={t('pm.mActive')}
           value={`${metrics.activeCount}`}
@@ -212,6 +228,7 @@ export default function PromoPage() {
           sub={metrics.unlimitedCount > 0 ? t('budget.unlimitedCount', { n: metrics.unlimitedCount }) : undefined}
           accent="blue"
           icon={<IconFinance size={18} />}
+          help={metrics.unlimitedCount > 0 ? t('help.promo.finiteTotal') : undefined}
         />
         <Metric
           label={t('pm.mSpent')}
@@ -219,6 +236,7 @@ export default function PromoPage() {
           sub={metrics.unlimitedCount === 0 && metrics.totalBudget > 0 ? `${metrics.spentPct}%` : undefined}
           accent="amber"
           icon={<IconArrowUp size={18} />}
+          help={t('help.promo.spent')}
         />
         <Metric
           label={t('pm.mRoi')}
@@ -350,9 +368,12 @@ interface PromoCardProps {
 
 function PromoCard({ promo, onOpen, onToggle, onArchive, onRestore }: PromoCardProps) {
   const t = useT()
-  const cover = promo.cover || '#6F665B'
-  const photo = promoPhoto(promo)
+  const photo = usePromoPhoto(promo)
   const isArchive = promo.status === 'archived'
+  const unlimited = promo.budgetUnlimited === true
+  // Название товара в нейтральном блоке нужно, только если оно говорит больше, чем название кампании.
+  const showProductName =
+    !!promo.productName && promo.productName.trim().toLowerCase() !== promo.title.trim().toLowerCase()
 
   // Outer = div role="button" (НЕ настоящий <button>) — иначе nested-button
   // невалиден по HTML и провоцирует баги. tabIndex+Enter/Space делают
@@ -375,53 +396,89 @@ function PromoCard({ promo, onOpen, onToggle, onArchive, onRestore }: PromoCardP
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={onKeyDownOuter}
-      className="card-soft block w-full cursor-pointer overflow-hidden text-left transition hover:shadow-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green-600"
+      className="card-soft flex w-full min-w-0 cursor-pointer flex-col overflow-hidden text-left transition hover:shadow-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-green-600"
       data-testid={`promo-card-${promo.id}`}
       aria-label={`${t('pm.openDetails')} — ${promo.title}`}
     >
-      {/* Превью товара в формате 3:4: фото из Medusa (через image-прокси), либо
-          фирменный градиент-заглушка, если фото нет. Поверх — статус и название. */}
-      <div
-        className="relative aspect-[3/4] w-full overflow-hidden bg-paper-input"
-        style={photo ? undefined : { background: `linear-gradient(135deg, ${cover}, ${cover}cc)` }}
-      >
-        {photo && (
-          <img
-            src={photo}
-            alt={promo.productName || promo.title}
-            loading="lazy"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+      {/* Превью товара в формате 3:4: фото кампании или товара из каталога (через image-прокси).
+          Фото нет совсем: спокойный нейтральный блок с названием товара, без выдуманной картинки.
+          Поверх — статус, бренд и название кампании. */}
+      <div className="relative aspect-[3/4] w-full overflow-hidden bg-paper-input">
+        {photo ? (
+          <>
+            <img
+              src={photo}
+              alt={promo.productName || promo.title}
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {/* Скрим внизу — чтобы белый текст названия читался на любом фото. */}
+            <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/70 to-transparent" />
+          </>
+        ) : (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-5 pb-20 pt-12 text-center text-ink-400"
+            data-testid={`promo-card-nophoto-${promo.id}`}
+          >
+            <IconBox size={30} />
+            {showProductName && (
+              <span className="line-clamp-3 break-words text-[13px] font-semibold leading-5 text-ink-500">
+                {promo.productName}
+              </span>
+            )}
+          </div>
         )}
-        {/* Скрим внизу — чтобы белый текст названия читался на любом фото. */}
-        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/70 to-transparent" />
         <div className="absolute left-3 top-3">
           <StatusChip status={promo.status} />
         </div>
-        <div className="absolute bottom-3 left-4 right-4 text-white">
-          <div className="text-[11px] font-bold uppercase tracking-[0.06em] opacity-80">
+        <div
+          className={`absolute bottom-3 left-4 right-4 ${photo ? 'text-white' : 'text-ink-900'}`}
+        >
+          <div className="truncate text-[11px] font-bold uppercase tracking-[0.06em] opacity-80">
             {promo.brand}
           </div>
-          <div className="truncate text-[15px] font-extrabold leading-tight drop-shadow">
+          <div
+            className={`line-clamp-2 break-words text-[15px] font-extrabold leading-tight ${photo ? 'drop-shadow' : ''}`}
+            title={promo.title}
+          >
             {promo.title}
           </div>
         </div>
       </div>
-      <div className="p-4">
-        <div className="mb-2 flex items-center justify-between text-[12px] font-semibold text-ink-500">
-          <span>{promo.period || '—'}</span>
-          <span>{t('pm.cardPharm', { n: promo.pharmacies })}</span>
+      <div className="flex flex-1 flex-col gap-2.5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[12px] font-semibold text-ink-500">
+          <span className="whitespace-nowrap">{promo.period || '—'}</span>
+          <span className="whitespace-nowrap">{t('pm.cardPharm', { n: promo.pharmacies })}</span>
         </div>
-        <div className="mb-1 flex items-center justify-between text-[12px] font-bold">
-          <span className="text-ink-500">{t('pm.cardBudget')}</span>
-          <span className="num text-ink-900">
-            {formatKzt(promo.spent)} / {promo.budgetUnlimited === true ? t('budget.unlimited') : formatKzt(promo.budget)}
-          </span>
+        {/* Бюджет: подпись над значением, а не в одной строке с ним. Значение переносится только
+            между «расход» и «лимит», сами числа и «Без лимита бюджета» не ломаются. */}
+        <div data-testid={`promo-card-budget-${promo.id}`}>
+          <div className="text-[11px] font-bold uppercase tracking-[0.04em] text-ink-400">
+            {t('pm.cardBudget')}
+          </div>
+          <div className="num mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[13px] font-bold text-ink-900">
+            <span className="whitespace-nowrap">{formatKzt(promo.spent)}</span>{' '}
+            <span className="whitespace-nowrap text-ink-600">
+              / {unlimited ? t('budget.unlimited') : formatKzt(promo.budget)}
+            </span>
+          </div>
+          {!unlimited && promo.budget > 0 && (
+            <div className="mt-1.5">
+              <ProgressBar value={promo.spent} max={promo.budget} />
+            </div>
+          )}
         </div>
-        {promo.budgetUnlimited !== true && promo.budget > 0 && <ProgressBar value={promo.spent} max={promo.budget} />}
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="truncate text-[12px] font-bold text-ink-700">
-            {promo.kpi || t('pm.openDetails')}
+        {promo.kpi && (
+          <p
+            className="line-clamp-2 break-words text-[12px] font-semibold leading-4 text-ink-700"
+            title={promo.kpi}
+          >
+            {promo.kpi}
+          </p>
+        )}
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pt-0.5">
+          <span className="whitespace-nowrap text-[12px] font-bold text-brand-green-700">
+            {t('pm.openDetails')}
           </span>
           <div className="flex flex-none items-center gap-1">
             {isArchive ? (
@@ -576,8 +633,7 @@ interface PromoRowProps {
 
 function PromoRow({ promo, onOpen, onToggle, onArchive, onRestore }: PromoRowProps) {
   const t = useT()
-  const photo = promoPhoto(promo)
-  const cover = promo.cover || '#6F665B'
+  const photo = usePromoPhoto(promo)
   const isArchive = promo.status === 'archived'
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -602,17 +658,16 @@ function PromoRow({ promo, onOpen, onToggle, onArchive, onRestore }: PromoRowPro
       {/* Кампания: мини-превью товара 3:4 + название + бренд */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-3">
-          <div
-            className="hairline h-12 w-9 flex-none overflow-hidden rounded-md border bg-paper-input"
-            style={photo ? undefined : { background: cover }}
-          >
-            {photo && (
+          <div className="hairline flex h-12 w-9 flex-none items-center justify-center overflow-hidden rounded-md border bg-paper-input text-ink-300">
+            {photo ? (
               <img
                 src={photo}
                 alt={promo.productName || promo.title}
                 loading="lazy"
                 className="h-full w-full object-cover"
               />
+            ) : (
+              <IconBox size={16} />
             )}
           </div>
           <div className="min-w-0">

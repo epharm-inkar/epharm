@@ -278,11 +278,10 @@ function FleetTable({
       tabIndex={0}
       className="scrollbar-thin max-w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-green-400"
     >
-      {/* !table: общий стиль админки делает таблицы display:block, а тогда ширины колонок
-          не действуют и узкая колонка растягивает строку в несколько этажей. */}
+      {/* Таблица фиксированной раскладки: ширины колонок из <colgroup> действуют, строка не растягивается. */}
       {/* «Управление» (только HQ) узкая: связь и эфир отдают ей 30 px, чтобы на ноутбуке 1440 px
           таблица по-прежнему помещалась без прокрутки. */}
-      <table className="!table w-full min-w-[1100px] table-fixed text-[12px]" data-testid="fleet-table">
+      <table className="w-full min-w-[1100px] table-fixed text-[12px]" data-testid="fleet-table">
         <colgroup>
           <col />
           <col className="w-[160px]" />

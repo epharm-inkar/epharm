@@ -105,7 +105,7 @@ export default function AccessManagement() {
         {data?.capabilities.canViewAccounts && (
           <>
             <div
-              className="flex gap-2 border-b border-paper-line pb-3"
+              className="flex flex-wrap gap-2 border-b border-paper-line pb-3"
               role="tablist"
               aria-label="Управление доступом"
             >
@@ -136,11 +136,11 @@ export default function AccessManagement() {
               />
             ) : (
               <>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[13px] text-ink-500">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 text-[13px] text-ink-500">
                     Новый аккаунт создаётся без прав. Права назначаются отдельным действием.
                   </p>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button variant="outline" onClick={reload}>
                       Обновить список
                     </Button>

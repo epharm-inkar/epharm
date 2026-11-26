@@ -216,6 +216,13 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Changed
 
+- HQ admin look and tips (owner, 26.11.2026): every table fills its card (the shared rule that turned tables into
+  `display: block` is gone; a wide table scrolls inside its wrapper, `TableScroll`, not the page); the campaign cards
+  keep «Бюджет» and its value readable, show the catalogue picture or a neutral block with the product name; the
+  campaign page has «Главное» and a folded «Дополнительно» (same fields, same save), its identifier wraps and has a
+  «Копировать» button; small «?» tips (`HelpTip`, ru and kk) explain the analytics figures, the campaign terms, the
+  rules, the training roles and the media plans; phone layouts of the touched pages stack instead of overflowing. The
+  admin says «Допродажа» (was «Кросс-селл»); API values and `crosssell` are unchanged.
 - Payouts are in development (owner, 26.11.2026): «Финансы / выплаты» shows «Функционал выплат находится в
   разработке» at the top, «Сформировать выплату» and «Утвердить выплату» are disabled with the reason as a tooltip, and
   reading the batches and the Excel report stays. The pharmacist cabinet's profile shows the same notice instead of

@@ -8,6 +8,7 @@ import {
   Button,
   Empty,
   Field,
+  HelpTip,
   Input,
   Metric,
   Modal,
@@ -71,14 +72,17 @@ export default function AIExamPage() {
               {t('ai.newQuestion')}
             </Button>
           ) : (
-            <span className="chip chip-ink" data-testid="ai-exam-read-only">
-              Только просмотр
+            <span className="inline-flex items-center gap-1.5">
+              <span className="chip chip-ink" data-testid="ai-exam-read-only">
+                Только просмотр
+              </span>
+              <HelpTip topic="Только просмотр">{t('help.exam.readOnly')}</HelpTip>
             </span>
           )
         }
       />
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <Metric
           label={t('ai.mBank')}
           value={formatNum(questions.length)}

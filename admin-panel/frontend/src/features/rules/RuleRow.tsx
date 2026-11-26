@@ -71,11 +71,14 @@ export function RuleRow({
         </span>
       )}
 
-      <ProductBlock product={triggerProduct ?? undefined} fallback={rule.trigger} />
-      <span className="flex-none self-center text-ink-300">
-        <IconArrowRight size={14} />
-      </span>
-      <ProductBlock product={recProduct ?? undefined} accent />
+      {/* On a phone the two products stand one under the other (a name gets the whole row, not 80 px). */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+        <ProductBlock product={triggerProduct ?? undefined} fallback={rule.trigger} />
+        <span className="flex-none self-center text-ink-300 max-sm:ml-[13px] max-sm:self-start max-sm:rotate-90">
+          <IconArrowRight size={14} />
+        </span>
+        <ProductBlock product={recProduct ?? undefined} accent />
+      </div>
 
       <div className="hairline ml-7 flex min-w-0 basis-full flex-wrap items-center justify-end gap-3 border-t pt-2 sm:gap-5 xl:ml-0 xl:basis-auto xl:flex-none xl:flex-nowrap xl:border-0 xl:pl-2 xl:pt-0">
         <div className="w-14 text-right">

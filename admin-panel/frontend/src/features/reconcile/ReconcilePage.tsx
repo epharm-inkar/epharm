@@ -10,6 +10,7 @@ import {
   Metric,
   PageHeader,
   SectionCard,
+  TableScroll,
   Tabs,
   useToast,
   type TabItem,
@@ -131,7 +132,7 @@ export default function ReconcilePage() {
         <RecommendationRewardsQueue />
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
             <Metric
               label={t('rec.mQueue')}
               value={s?.queue ?? 0}
@@ -163,7 +164,7 @@ export default function ReconcilePage() {
             <div className="px-5 pt-4">
               <Tabs<RecTab> items={TABS} value={tab} onChange={setTab} />
             </div>
-            <div className="flex-1">
+            <TableScroll className="flex-1">
               {isLoading && receipts.length === 0 ? (
                 <Empty
                   title={t('rec.loading')}
@@ -209,11 +210,11 @@ export default function ReconcilePage() {
                   </tbody>
                 </table>
               )}
-            </div>
+            </TableScroll>
           </div>
 
           <SectionCard title={t('rec.howTitle')} subtitle={t('rec.howSub')}>
-            <div className="grid grid-cols-3 gap-3 text-[13px]">
+            <div className="grid grid-cols-1 gap-3 text-[13px] md:grid-cols-3">
               <div className="card-soft p-4">
                 <div className="mb-2 flex items-center gap-2 text-brand-green-700">
                   <IconCheck size={16} />

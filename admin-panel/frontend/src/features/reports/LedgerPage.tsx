@@ -128,7 +128,7 @@ function LedgerWorkspace({ canExport }: { canExport: boolean }) {
               .
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {read.data.totals.map((total) => (
               <div key={total.source} className="card p-4">
                 <p className="text-[12px] text-ink-500">

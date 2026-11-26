@@ -1,5 +1,46 @@
 # Admin Console
 
+## 26.11.2026: tables fill their cards, «?» tips, campaign page in two groups
+
+**Tables** (`index.css`, `ui/TableScroll`). The shared rule `.admin-console main table` no longer sets `display: block`.
+That rule made the rows of every table an anonymous table that shrank to its content, so a table ended at 46 to 97% of
+its card at 1440 px and 32 to 98% at 1920 px (analytics journal, media plans, ledger, payouts, courses, results, certificates, storefront, orders, coverage,
+access). A table is a real table again (`width: 100%`); a wide one scrolls inside its wrapper, `TableScroll` or any
+`overflow-x-auto` parent, never the page. `TableScroll` now also wraps the two tables that had no scroll box (Reconcile,
+training analytics). `ui/TableScroll.test.tsx` reads `index.css` and fails if the block rule comes back. `Metric` keeps a
+figure on one line (the note drops under it), `SectionCard`, `PageHeader` and the `Tabs` strip wrap their action row on a phone; fixed-column grids of
+figures became two by two (Lift, AI exam, Reconcile, training, ledger, pharmacy card). On a phone a product name wraps
+(`max-sm:line-clamp-2`, `sm:truncate` keeps the one-line ellipsis from 640 px) in the Rules rows, which now stand one product
+under the other, and in the campaign product cards; the fulfillment links form and list stack in one column.
+
+**«?» tips** (`ui/HelpTip`). A small button named «Что это? <topic>». A mouse hover or a tap opens a bubble, Escape or a press
+outside closes it, Tab away closes it; the text is also the button's accessible description, so a screen reader reads it
+without opening anything. The bubble is a fixed layer on `<body>` kept inside the screen (also at 375 px). `PageHeader`,
+`SectionCard`, `Metric` and `Field` take `help`; `Field` puts the "?" beside its label, outside it, so a click never reaches the
+input and the input keeps its name. Texts are `help.*` in `i18n/dict.ts` (ru and kk, one to three plain sentences, each checked
+against the code); the training and media plan pages have no kk, so their texts are Russian literals. Where they stand:
+analytics journal and its five figures, promo list (page, «Освоено», «Сумма ограниченных бюджетов»), campaign page (prepared
+changes, budget with «Без лимита», bonus, goal, replacements, add-ons), Rules, training header and the «Только просмотр» chip
+(also in the AI exam), media plans header. The bonus is paid for every sale of a promo product however it was sold; replacements
+and add-ons only show the till tip that reminds the pharmacist, and the texts say so.
+
+**Campaign card** (`features/promo/PromoPage`). The «Бюджет» label stands above its value; the spent amount and the limit
+(or «Без лимита бюджета») wrap only between each other, never inside a number. «Открыть подробности» is never cut, the KPI line
+takes two lines. A campaign with no photo of its own takes the product picture from the catalogue (`useStorefrontProduct`, the
+same source as the campaign page); with none at all the card shows a neutral block with the product name, not a made-up
+image. The four figures go two by two on a phone.
+
+**Campaign page** (`features/promo/PromoDetailPage`, `CreatePromoModal`, `ui/Disclosure`). Fields are grouped, none removed,
+validation and the save request are the same: «Главное» (name, brand, product, price, bonus, dates, budget; status and network
+size on top) is always open; «Дополнительно» (barcode, iPartID, period, KPI, cover colour, own photo and gallery, own description
+and characteristics) is folded and says in one line what is inside; a server error on save opens it. Replacements, add-ons and the
+goal stay in their own card. The columns stack on a phone (the summary column first), the pairs of fields stack under 640 px, the
+identifier in the side card wraps and has a «Копировать» button. In the create modal the dates moved out of the folded settings.
+There is no tier editor in the form (`tiers` is a legacy field filled by the server).
+
+**Term.** The admin says «Допродажа» (plural «Допродажи») for what the code calls `crosssell` / `crossSells`; the wire values,
+enum names and query parameters are unchanged. «Замена» stays.
+
 ## 26.11.2026: «ИИН указали сами» and where an IIN and a name came from
 
 **Pharmacists page** (`features/pharmacists`). The button «ИИН указали сами (N)», N = open claims, beside «Продавцы

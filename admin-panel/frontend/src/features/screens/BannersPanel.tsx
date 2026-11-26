@@ -162,7 +162,7 @@ function BannerRow({
   return (
     <li
       data-testid={`banner-${b.id}`}
-      className="hairline flex items-center gap-3 border-b px-4 py-2.5 last:border-b-0"
+      className="hairline flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5 last:border-b-0"
     >
       {/* Переупорядочивание стрелками ↑↓. */}
       <div className="flex flex-none flex-col text-ink-300">
@@ -199,7 +199,7 @@ function BannerRow({
         )}
       </div>
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[8rem] flex-1">
         <div className="truncate text-[13px] font-bold text-ink-900">{b.title}</div>
         <div className="truncate text-[11px] text-ink-500">{b.subtitle || t('bn.noSubtitle')}</div>
       </div>

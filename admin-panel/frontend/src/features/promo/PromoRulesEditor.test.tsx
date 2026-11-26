@@ -220,7 +220,7 @@ describe('PromoRulesEditor — per-pair скрипт + «Добавить»', ()
     )
   })
 
-  it('один триггер в замене и кросс-селле имеет независимые подписанные поля бонуса', async () => {
+  it('один триггер в замене и допродаже имеет независимые подписанные поля бонуса', async () => {
     const trigger = mkView().config.replacements[0]
     rulesHooks.usePromoRules.mockReturnValue({
       data: mkView({ crossSells: [{ ...trigger, bonus: 50, active: false }] }),
@@ -439,7 +439,7 @@ describe('PromoRulesEditor — per-pair скрипт + «Добавить»', ()
   it('добавленный товар несёт штрих-код в config при сохранении', async () => {
     const user = userEvent.setup()
     renderEditor()
-    // Открываем модалку «Добавить кросс-селл», кликаем найденный товар (с EAN).
+    // Открываем модалку «Добавить допродажу», кликаем найденный товар (с EAN).
     await user.click(screen.getByTestId('pr-add-crossSells'))
     await user.click(screen.getByText('Платочки'))
     // Закрываем модалку (Esc) и сохраняем.
@@ -728,7 +728,7 @@ describe('PromoRulesEditor — превью кассы (структура ка�
     expect(within(preview).getByText('1 990 ₸')).toBeInTheDocument()
   })
 
-  it('кросс-селл: триггер = выбранный товар в чеке, предложение = товар кампании', () => {
+  it('допродажа: триггер = выбранный товар в чеке, предложение = товар кампании', () => {
     rulesHooks.usePromoRules.mockReturnValue({
       data: mkView({
         replacements: [],
@@ -741,7 +741,7 @@ describe('PromoRulesEditor — превью кассы (структура ка�
     })
     renderEditor()
     expect(screen.getByText('УЖЕ В ЧЕКЕ')).toBeInTheDocument()
-    expect(screen.getByTestId('pr-preview-section-prod_c')).toHaveTextContent('Кросс-селл · 1')
+    expect(screen.getByTestId('pr-preview-section-prod_c')).toHaveTextContent('Допродажа · 1')
     // Триггер = выбранный товар, предложение = товар кампании.
     expect(
       within(screen.getByTestId('pr-preview-trigger-prod_c')).getByText('Платочки Zewa'),

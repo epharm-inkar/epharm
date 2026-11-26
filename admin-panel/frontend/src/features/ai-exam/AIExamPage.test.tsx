@@ -155,6 +155,9 @@ describe('AIExamPage — delete (Блок 2)', () => {
     renderPage()
 
     expect(screen.getByTestId('ai-exam-read-only')).toHaveTextContent('Только просмотр')
+    expect(screen.getByRole('button', { name: 'Что это? Только просмотр' })).toHaveAccessibleDescription(
+      /Править его могут системный администратор и руководитель обучения/,
+    )
     expect(screen.getByTestId('exam-question-q_read_only')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Новый вопрос/ })).not.toBeInTheDocument()
     expect(screen.queryByTestId('exam-question-delete-q_read_only')).not.toBeInTheDocument()

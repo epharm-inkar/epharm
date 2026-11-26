@@ -17,9 +17,9 @@ interface TabsProps<V extends string> {
 export function Tabs<V extends string>({ items, value, onChange, trailing }: TabsProps<V>) {
   return (
     // Bug K fix: gap-4 (вместо gap-7) + min-w-0 на trailing, flex-none + whitespace-nowrap
-    // на tabs — иначе длинные русские лейблы («Кросс-селл») переносятся на 2 строки,
+    // на tabs — иначе длинные русские лейблы («Допродажи») переносятся на 2 строки,
     // когда trailing-блок (search+filter) занимает много места.
-    <div className="hairline flex items-end justify-between gap-4 border-b">
+    <div className="hairline flex min-w-0 max-w-full flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b">
       {/* На телефоне вкладки прокручиваются вбок, а не обрезаются; с md как раньше. */}
       <div className="scrollbar-thin flex min-w-0 items-center gap-6 overflow-x-auto md:flex-none md:overflow-visible">
         {items.map((it) => (

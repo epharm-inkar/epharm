@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useUiStore } from '@/app/store'
 import { canExportCampaignReports } from '@/features/reports/campaignReports'
-import { Button, Empty, IconButton, Metric, PageHeader, SectionCard } from '@/ui'
+import { Button, Empty, HelpTip, IconButton, Metric, PageHeader, SectionCard } from '@/ui'
 import {
   IconArrowUp,
   IconBox,
@@ -178,11 +178,22 @@ function fmtWhen(iso: string): string {
   })
 }
 
-function MiniKpi({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function MiniKpi({
+  label,
+  value,
+  accent,
+  help,
+}: {
+  label: string
+  value: string
+  accent?: boolean
+  help?: string
+}) {
   return (
-    <div className="hairline rounded-md border bg-paper-card p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-500">
-        {label}
+    <div className="hairline min-w-0 rounded-md border bg-paper-card p-3">
+      <div className="flex items-start justify-between gap-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-500">
+        <span className="min-w-0 break-words">{label}</span>
+        {help && <HelpTip topic={label}>{help}</HelpTip>}
       </div>
       <div
         className={`num mt-1 text-[18px] font-bold ${accent ? 'text-brand-green-700' : 'text-ink-900'}`}
@@ -239,7 +250,7 @@ function RecommendationsSection() {
   }
 
   return (
-    <SectionCard title={t('recan.title')} subtitle={t('recan.subtitle')}>
+    <SectionCard title={t('recan.title')} subtitle={t('recan.subtitle')} help={t('help.recan.journal')}>
       <p className="mb-3 text-[12px] font-semibold text-ink-600" data-testid="recan-period">
         {t('recan.period', { n: a.windowDays })}
       </p>
@@ -264,18 +275,32 @@ function RecommendationsSection() {
         className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
         data-testid="recan-kpis"
       >
-        <MiniKpi label={t('recan.shown')} value={formatNum(a?.shown ?? 0)} />
+        <MiniKpi
+          label={t('recan.shown')}
+          value={formatNum(a?.shown ?? 0)}
+          help={t('help.recan.shown')}
+        />
         <MiniKpi
           label={t('recan.converted')}
           value={`${formatNum(a?.converted ?? 0)} · ${a?.convRate ?? 0}%`}
           accent
+          help={t('help.recan.converted')}
         />
-        <MiniKpi label={t('recan.under2m')} value={formatNum(a?.convertedUnder2m ?? 0)} />
+        <MiniKpi
+          label={t('recan.under2m')}
+          value={formatNum(a?.convertedUnder2m ?? 0)}
+          help={t('help.recan.under2m')}
+        />
         <MiniKpi
           label={t('recan.avgTime')}
           value={a?.avgSecondsToSale != null ? fmtSecs(a.avgSecondsToSale) : '—'}
+          help={t('help.recan.avgTime')}
         />
-        <MiniKpi label={t('recan.revenue')} value={formatKzt(a?.attributedRevenue ?? 0)} />
+        <MiniKpi
+          label={t('recan.revenue')}
+          value={formatKzt(a?.attributedRevenue ?? 0)}
+          help={t('help.recan.revenue')}
+        />
       </div>
       <p className="mb-4 text-[12px] text-ink-500" data-testid="recan-amount-note">{t('recan.amountNote')}</p>
 

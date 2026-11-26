@@ -27,7 +27,7 @@ export default function LiftPage() {
         />
       )}
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <Metric
           label={t('lift.mNetwork')}
           value={s && !s.insufficientData ? `+${s.networkLiftPct}%` : '—'}
