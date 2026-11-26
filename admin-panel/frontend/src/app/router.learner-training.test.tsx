@@ -441,20 +441,14 @@ describe('real learner training navigation and payment placeholder', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(4))
     const requestCount = vi.mocked(globalThis.fetch).mock.calls.length
     const storageWrites = vi.spyOn(Storage.prototype, 'setItem')
-    const user = userEvent.setup()
-    await user.click(
-      within(card).getByRole('button', { name: 'Как подключить карту', exact: true }),
-    )
-    expect(within(card).getByRole('status')).toHaveTextContent(
-      'Привязка карты появится позже. Сейчас реквизиты не запрашиваются, выплаты на карту недоступны.',
-    )
+    // Payouts are in development (26.11.2026): the notice is always there and nothing offers to link a card.
+    const notice = within(card).getByRole('status')
+    expect(notice).toHaveTextContent('Функционал выплат находится в разработке')
+    expect(notice).toHaveTextContent('Реквизиты не запрашиваются и не сохраняются.')
+    expect(within(card).queryByRole('button')).not.toBeInTheDocument()
+    expect(card).not.toHaveTextContent('появится позже')
     expect(document.querySelector('input, textarea, select, iframe')).toBeNull()
     expect(screen.queryByText('Карта привязана', { exact: true })).not.toBeInTheDocument()
-    expect(globalThis.fetch).toHaveBeenCalledTimes(requestCount)
-    expect(storageWrites).not.toHaveBeenCalled()
-    await user.click(within(card).getByRole('button', { name: 'Скрыть информацию', exact: true }))
-    expect(within(card).queryByRole('status')).not.toBeInTheDocument()
-    expect(within(card).getByText('Не подключена', { exact: true })).toBeInTheDocument()
     expect(globalThis.fetch).toHaveBeenCalledTimes(requestCount)
     expect(storageWrites).not.toHaveBeenCalled()
   })

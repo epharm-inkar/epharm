@@ -1,7 +1,8 @@
 // Dashboard — admin §3.2 / ТЗ §3.2 — обзорный экран HQ-команды.
 // Этап 3.6: подключён backend через useDashboardSummary (read-only агрегация).
-// KPI + топ-3 списка из реальных данных. Time-series блоки (lift-график, heatmap)
-// остаются Empty — временных рядов в БД пока нет (честно, без фейковых цифр).
+// KPI + топ-3 списка из реальных данных. 26.11.2026: страница начинается с блока «Фармацевты в
+// ePharm» (сколько фармацевтов работают с ePharm и график по дням); пустые блоки «Динамика
+// принятых рекомендаций» (Pilot vs Control) и «Карта активности» убраны: данных под ними нет.
 
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -23,6 +24,7 @@ import { useDashboardSummary, useRecommendationAnalytics } from '@/lib/queries/d
 import { describeError } from '@/lib/describeError'
 import { formatKzt, formatNum } from '@/mocks/fixtures'
 import { useT } from '@/i18n'
+import { PharmacistsUsage } from './PharmacistsUsage'
 
 export default function DashboardPage() {
   const t = useT()
@@ -42,6 +44,9 @@ export default function DashboardPage() {
           ) : undefined
         }
       />
+
+      {/* Первым: сколько фармацевтов работают с ePharm (те же данные, что вкладка «Покрытие») */}
+      <PharmacistsUsage />
 
       {!s && (
         <div role={isError ? 'alert' : 'status'} data-testid="dash-summary-state">
@@ -67,7 +72,7 @@ export default function DashboardPage() {
 
       {s && <>
       {/* 4 KPI tiles */}
-      <div className="grid grid-cols-4 gap-4" data-testid="dash-summary-kpis">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4" data-testid="dash-summary-kpis">
         <Metric
           label={t('dash.mImpr')}
           value={formatNum(s?.impressions ?? 0)}
@@ -100,27 +105,8 @@ export default function DashboardPage() {
       </div>
       <p className="text-[12px] text-ink-500" data-testid="dash-payout-note">{t('dash.payoutNote')}</p>
 
-      {/* Двухколоночный блок: график lift + heatmap (time-series — данных пока нет) */}
-      <div className="grid grid-cols-2 gap-5">
-        <SectionCard title={t('dash.dynTitle')} subtitle={t('dash.dynSub')}>
-          <Empty
-            title={t('dash.notEnough')}
-            body={t('dash.dynBody')}
-            icon={<IconReconcile size={26} />}
-          />
-        </SectionCard>
-
-        <SectionCard title={t('dash.heatTitle')} subtitle={t('dash.heatSub')}>
-          <Empty
-            title={t('dash.noActivity')}
-            body={t('dash.heatBody')}
-            icon={<IconPharmacist size={26} />}
-          />
-        </SectionCard>
-      </div>
-
       {/* Топ списки */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <SectionCard title={t('dash.topRules')} subtitle={t('dash.topRulesSub')}>
           <TopList
             rows={(s?.topRules ?? []).map((r) => ({

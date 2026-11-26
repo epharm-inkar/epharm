@@ -66,6 +66,7 @@ class PharmacistActivityIntegrationTest {
         pharmacist("act_cabinet_old", "990101300003")
         pharmacist("act_silent", "990101300004")
         pharmacist("act_new_today", "990101300005", created = now)
+        pharmacist("act_tip_today", "990101300006")
         jdbc.update(
             "insert into pos_sales (id, pharmacist_id, pharmacy_id, total_amount, items, printed_at, pharmacist_source) values (?, 'act_sale', 'ph_x', 100, '[]'::jsonb, ?, 'posm_internal')",
             "sale_${UUID.randomUUID()}", Timestamp.from(now.minus(2, ChronoUnit.HOURS)),
@@ -73,6 +74,11 @@ class PharmacistActivityIntegrationTest {
         jdbc.update(
             "insert into recommendation_events (id, session_id, pharmacist_id, pharmacy_id, rule_id, kind, recommend_sku, shown_at) values (?, 's', 'act_tip', 'ph_x', 'r', 'crosssell', 'sku', ?)",
             "rec_${UUID.randomUUID()}", Timestamp.from(now.minus(3, ChronoUnit.DAYS)),
+        )
+        // A tip the till showed a moment ago: worked «today» (the same Almaty day, however close to midnight).
+        jdbc.update(
+            "insert into recommendation_events (id, session_id, pharmacist_id, pharmacy_id, rule_id, kind, recommend_sku, shown_at) values (?, 's', 'act_tip_today', 'ph_x', 'r', 'crosssell', 'sku', ?)",
+            "rec_${UUID.randomUUID()}", Timestamp.from(now),
         )
         jdbc.update(
             "insert into mobile_refresh_tokens (id, pharmacist_id, token_hash, expires_at, created_at) values (?, 'act_cabinet_old', ?, ?, ?)",
@@ -95,5 +101,20 @@ class PharmacistActivityIntegrationTest {
         assertThat(coverage.coveragePct).isBetween(0.0, 100.0)
         // The pharmacist created today joins the system today, not before.
         assertThat(coverage.daily.last().total - coverage.daily[coverage.daily.size - 2].total).isGreaterThanOrEqualTo(1)
+
+        // «Worked today» is one day, not the seven: the tip shown a moment ago counts, the sale of two hours
+        // ago may fall on yesterday's Almaty date near midnight, and the tip of three days ago never does.
+        assertThat(coverage.activeToday).isGreaterThanOrEqualTo(1)
+        assertThat(coverage.activeToday).isEqualTo(coverage.daily.last().active1d)
+        assertThat(coverage.activeToday).isLessThan(coverage.active7d)
+        assertThat(coverage.coverageTodayPct).isBetween(0.0, coverage.coveragePct)
+        val threeDaysAgo = coverage.daily[coverage.daily.size - 4]
+        assertThat(threeDaysAgo.active1d).isGreaterThanOrEqualTo(1)
+    }
+
+    @Test
+    fun `the window reaches back a year so the page can chart the whole life of the system`() {
+        assertThat(activity.coverage(10_000).daily).hasSize(PharmacistActivityService.MAX_COVERAGE_DAYS)
+        assertThat(activity.coverage(1).daily).hasSize(PharmacistActivityService.MIN_COVERAGE_DAYS)
     }
 }

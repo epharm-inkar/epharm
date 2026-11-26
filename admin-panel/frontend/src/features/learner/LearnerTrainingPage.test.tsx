@@ -1563,12 +1563,44 @@ describe('learner training portal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Профиль' }))
     const bank = await screen.findByRole('region', { name: 'Банковская карта' })
     expect(within(bank).getByText('Не подключена')).toBeInTheDocument()
-    await userEvent.click(within(bank).getByRole('button', { name: 'Как подключить карту' }))
-    expect(within(bank).getByRole('status')).toHaveTextContent('реквизиты не запрашиваются')
+    // Payouts are in development: a plain notice, no button that offers to link a card.
+    expect(within(bank).getByRole('status')).toHaveTextContent(
+      'Функционал выплат находится в разработке',
+    )
+    expect(within(bank).getByRole('status')).toHaveTextContent('Реквизиты не запрашиваются')
+    expect(within(bank).queryByRole('button')).not.toBeInTheDocument()
     expect(bank.querySelector('input, textarea, form')).toBeNull()
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(
       true,
     )
+  })
+
+  it('says on the profile in Kazakh that payouts are in development, with no way to link a card', async () => {
+    useUiStore.setState({ language: 'kk' })
+    localStorage.setItem('epharm.learner.tokens', JSON.stringify(tokens))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const path = String(input)
+      if (path === '/api/mobile/auth/me')
+        return json({
+          id: 'ph-1',
+          name: 'Айжан',
+          phone: '+77070000000',
+          pharmacyName: 'Аптека',
+          city: 'Алматы',
+        })
+      if (path === '/api/mobile/training')
+        return json({ total: 0, inProgress: 0, completed: 0, overdue: 0, assignments: [] })
+      if (path === '/api/mobile/me/balance') return json({ balanceKzt: 1500 })
+      return json({ items: [] })
+    })
+    renderPortal('/learn/profile')
+    const bank = await screen.findByRole('region', { name: 'Банк картасы' })
+    const notice = within(bank).getByRole('status')
+    expect(notice).toHaveTextContent('Төлемдер функционалы әзірленуде')
+    expect(notice).toHaveTextContent('Деректемелер сұралмайды және сақталмайды')
+    expect(within(bank).queryByRole('button')).not.toBeInTheDocument()
+    // Nothing in Russian is left in the card section.
+    expect(bank.textContent).not.toMatch(/[Фф]ункционал выплат/)
   })
 
   it('selects an offline event through the same mobile training endpoint', async () => {

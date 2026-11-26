@@ -3,11 +3,11 @@ import { Button, Empty, Metric } from '@/ui'
 import { IconPharmacist } from '@/ui/icons'
 import { describeError } from '@/lib/describeError'
 import { usePharmacistCoverage } from '@/lib/queries/pharmacists'
-import { CoverageChart } from './CoverageChart'
-
-/** The admin accent (brand terracotta) for the data line; the total is a quiet dashed reference. */
-const ACCENT = '#B95336'
-const REFERENCE = '#8A8A84'
+import {
+  CoverageChart,
+  COVERAGE_ACCENT as ACCENT,
+  COVERAGE_REFERENCE as REFERENCE,
+} from './CoverageChart'
 
 const percent = (value: number) => `${value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}%`
 

@@ -58,11 +58,14 @@ class PharmacistActivityService(
 
     /**
      * Coverage by day for the last [days] days (Almaty dates): pharmacists in the system that day, how
-     * many worked with ePharm in the seven days up to it, and the share. Today's row is the headline.
+     * many worked with ePharm that day and in the seven days up to it, and the shares. Today's row is the
+     * headline. The window reaches back [MAX_COVERAGE_DAYS] days, so the page «Аналитика» can chart the
+     * whole life of the system («с запуска», Grigoriy, 26.11.2026); days before the first pharmacist are
+     * empty rows that the screen drops.
      */
     @Transactional(readOnly = true)
     fun coverage(days: Int): PharmacistCoverageDto {
-        val span = days.coerceIn(7, 120)
+        val span = days.coerceIn(MIN_COVERAGE_DAYS, MAX_COVERAGE_DAYS)
         val today = LocalDate.now(clock.withZone(ALMATY))
         val first = today.minusDays((span - 1).toLong())
         // Activity window starts six days before the first chart day, so its seven-day count is complete.
@@ -101,38 +104,20 @@ class PharmacistActivityService(
             at, at, at,
         )
 
-        data class Person(val joined: LocalDate, val source: String, val blocked: Boolean)
         val people = jdbc.query(
             """
             select id, (created_at at time zone 'Asia/Almaty')::date as joined, account_source, status
               from pharmacists
             """.trimIndent(),
         ) { rs, _ ->
-            rs.getString("id") to Person(
+            rs.getString("id") to CoveragePerson(
                 joined = rs.getObject("joined", LocalDate::class.java),
                 source = rs.getString("account_source"),
                 blocked = rs.getString("status") == "blocked",
             )
         }.toMap()
 
-        fun activeIn(set: Map<String, Set<LocalDate>>, id: String, from: LocalDate, to: LocalDate) =
-            set[id]?.any { !it.isBefore(from) && !it.isAfter(to) } == true
-
-        val daily = (0 until span).map { offset ->
-            val day = first.plusDays(offset.toLong())
-            val weekStart = day.minusDays(6)
-            val inSystem = people.filter { (_, person) -> !person.joined.isAfter(day) && !person.blocked }.keys
-            val active = inSystem.count { activeIn(activeDays, it, weekStart, day) }
-            val sellers = inSystem.count { activeIn(saleDays, it, weekStart, day) }
-            PharmacistCoverageDayDto(
-                date = day,
-                total = inSystem.size,
-                active7d = active,
-                sellers7d = sellers,
-                coveragePct = percent(active, inSystem.size),
-                joined = people.values.count { it.joined == day },
-            )
-        }
+        val daily = CoverageMath.days(people, activeDays, saleDays, first, span)
         val now = daily.last()
         val weekStart = today.minusDays(6)
         val inSystem = people.filter { (_, person) -> !person.blocked }
@@ -143,18 +128,63 @@ class PharmacistActivityService(
             registered = inSystem.values.count { it.source != "standardn" },
             active7d = now.active7d,
             sellers7d = now.sellers7d,
-            cabinet7d = inSystem.keys.count { activeIn(cabinetDays, it, weekStart, today) },
+            cabinet7d = inSystem.keys.count { CoverageMath.activeIn(cabinetDays, it, weekStart, today) },
             coveragePct = now.coveragePct,
             daily = daily,
             generatedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS),
+            activeToday = now.active1d,
+            coverageTodayPct = now.coverage1dPct,
         )
     }
 
-    private fun percent(part: Int, whole: Int): Double =
-        if (whole == 0) 0.0 else Math.round(part * 1000.0 / whole) / 10.0
-
     companion object {
         val ALMATY: ZoneId = ZoneId.of("Asia/Almaty")
+        const val MIN_COVERAGE_DAYS = 7
+
+        /** About a year: the system is months old, so this is «since the launch» with room to grow. */
+        const val MAX_COVERAGE_DAYS = 366
+    }
+}
+
+/** A pharmacist as the coverage counts see them. [blocked] is the current status, not the status on a past day. */
+internal data class CoveragePerson(val joined: LocalDate, val source: String, val blocked: Boolean)
+
+/** The arithmetic of the coverage rows, apart from the database so that it can be tested on plain data. */
+internal object CoverageMath {
+    fun activeIn(set: Map<String, Set<LocalDate>>, id: String, from: LocalDate, to: LocalDate) =
+        set[id]?.any { !it.isBefore(from) && !it.isAfter(to) } == true
+
+    fun percent(part: Int, whole: Int): Double =
+        if (whole == 0) 0.0 else Math.round(part * 1000.0 / whole) / 10.0
+
+    /**
+     * One row per day from [first] for [span] days. A pharmacist is «in the system» on a day from the day
+     * they joined, unless blocked. «Worked» is a sale, a tip shown or a cabinet sign-in (any of
+     * [activeDays]) on that very day (`active1d`) or in the seven days up to it (`active7d`).
+     */
+    fun days(
+        people: Map<String, CoveragePerson>,
+        activeDays: Map<String, Set<LocalDate>>,
+        saleDays: Map<String, Set<LocalDate>>,
+        first: LocalDate,
+        span: Int,
+    ): List<PharmacistCoverageDayDto> = (0 until span).map { offset ->
+        val day = first.plusDays(offset.toLong())
+        val weekStart = day.minusDays(6)
+        val inSystem = people.filter { (_, person) -> !person.joined.isAfter(day) && !person.blocked }.keys
+        val workedThatDay = inSystem.count { activeDays[it]?.contains(day) == true }
+        val active = inSystem.count { activeIn(activeDays, it, weekStart, day) }
+        val sellers = inSystem.count { activeIn(saleDays, it, weekStart, day) }
+        PharmacistCoverageDayDto(
+            date = day,
+            total = inSystem.size,
+            active7d = active,
+            sellers7d = sellers,
+            coveragePct = percent(active, inSystem.size),
+            joined = people.values.count { it.joined == day },
+            active1d = workedThatDay,
+            coverage1dPct = percent(workedThatDay, inSystem.size),
+        )
     }
 }
 
@@ -169,6 +199,10 @@ data class PharmacistCoverageDayDto(
     val coveragePct: Double,
     /** New in the system that day (registered or brought from Standard-N). */
     val joined: Int,
+    /** Worked with ePharm on this very day (Almaty): a sale, a tip shown or a cabinet sign-in. */
+    val active1d: Int,
+    /** The share of [total] that worked on this very day, in percent. */
+    val coverage1dPct: Double,
 )
 
 data class PharmacistCoverageDto(
@@ -182,4 +216,7 @@ data class PharmacistCoverageDto(
     val coveragePct: Double,
     val daily: List<PharmacistCoverageDayDto>,
     val generatedAt: Instant,
+    /** Worked with ePharm today so far (the day is not over): the same rule as [active7d], for one day. */
+    val activeToday: Int,
+    val coverageTodayPct: Double,
 )
