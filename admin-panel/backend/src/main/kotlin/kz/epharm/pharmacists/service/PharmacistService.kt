@@ -85,6 +85,8 @@ class PharmacistService(
             pharmacyName = pharmacy.name,
             city = pharmacy.city,
             joinedAt = LocalDate.now(),
+            // HQ typed the IIN and the name (V126).
+            iinSource = "hq", nameSource = "hq",
         ).also {
             it.tier = req.tier
             it.status = req.status
@@ -120,7 +122,11 @@ class PharmacistService(
                 HttpStatus.CONFLICT,
             )
         }
-        req.name?.let { entity.name = it.trim() }
+        req.name?.let {
+            // A name HQ changed by hand is HQ's (V126): the Standard-N directory no longer rewrites it.
+            if (it.trim() != entity.name) entity.nameSource = "hq"
+            entity.name = it.trim()
+        }
         req.phone?.let { entity.phone = it.trim() }
         req.password?.let { entity.passwordHash = passwordEncoder.encode(it) }
         req.tier?.let { entity.tier = it }

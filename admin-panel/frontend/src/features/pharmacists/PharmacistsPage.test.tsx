@@ -26,6 +26,14 @@ const pharmacistHooks = vi.hoisted(() => ({
 
 vi.mock('@/lib/queries/pharmacists', () => pharmacistHooks)
 
+// «ИИН указали сами»: the list of claims is its own module, so the page never asks the server in these tests.
+const identityClaimHooks = vi.hoisted(() => ({
+  useIdentityClaims: vi.fn(),
+  useConfirmIdentityClaim: vi.fn(),
+  useRejectIdentityClaim: vi.fn(),
+}))
+vi.mock('@/lib/queries/identityClaims', () => identityClaimHooks)
+
 const pharmacyHooks = vi.hoisted(() => ({
   usePharmacies: vi.fn(),
 }))
@@ -103,6 +111,9 @@ beforeEach(() => {
     },
   })
   setPharmacists([])
+  identityClaimHooks.useIdentityClaims.mockReturnValue({ data: [], isLoading: false, isError: false, isFetching: false, refetch: vi.fn() })
+  identityClaimHooks.useConfirmIdentityClaim.mockReturnValue({ mutate: vi.fn(), isPending: false })
+  identityClaimHooks.useRejectIdentityClaim.mockReturnValue({ mutate: vi.fn(), isPending: false })
   pharmacyHooks.usePharmacies.mockReturnValue({
     data: [
       {
@@ -229,6 +240,45 @@ describe('PharmacistsPage — рендер', () => {
     accessHooks.useAdministrativeCapabilities.mockReturnValue({ canManageStandardNMappings: true })
     renderPage()
     expect(screen.getByRole('button', { name: 'Продавцы Standard-N' })).toBeInTheDocument()
+  })
+
+  it('shows «ИИН указали сами» with the number of open claims to HQ, and opens the list', async () => {
+    accessHooks.useAdministrativeCapabilities.mockReturnValue({ canManageStandardNMappings: true })
+    const claim = (id: string, status: string) => ({
+      id, kind: 'person', status, pharmacyId: 'ph_1', pharmacyName: 'Europharma №100', standardNUserId: '18',
+      standardNUserName: 'Бузурбаева Л', iin: '900115300013', fullName: 'Бузурбаева Лаура Ермековна', pharmacistId: null,
+      pharmacistName: null, conflicts: [], directoryIin: null, decidedByName: null, decidedAt: null, decisionReason: null,
+      createdAt: '2026-11-26T10:00:00Z',
+    })
+    identityClaimHooks.useIdentityClaims.mockReturnValue({
+      data: [claim('a', 'pending'), claim('b', 'pending'), claim('c', 'confirmed')],
+      isLoading: false, isError: false, isFetching: false, refetch: vi.fn(),
+    })
+    renderPage()
+    expect(identityClaimHooks.useIdentityClaims).toHaveBeenCalledWith(true)
+    await userEvent.click(screen.getByRole('button', { name: 'ИИН указали сами (2)' }))
+    expect(screen.getByRole('dialog', { name: 'ИИН указали сами' })).toBeInTheDocument()
+  })
+
+  it('does not ask for claims, and shows no button, to a role that cannot decide them', () => {
+    accessHooks.useAdministrativeCapabilities.mockReturnValue({ canManageStandardNMappings: false })
+    renderPage()
+    expect(identityClaimHooks.useIdentityClaims).toHaveBeenCalledWith(false)
+    expect(screen.queryByRole('button', { name: /ИИН указали сами/ })).not.toBeInTheDocument()
+  })
+
+  it('says under the name where the IIN and the name of a card came from', () => {
+    setPharmacists([
+      mkPharmacist({ id: 'u_1', iinSource: 'standardn', nameSource: 'standardn' }),
+      mkPharmacist({ id: 'u_2', name: 'Лаура Бузурбаева', iin: '900115300013', iinSource: 'standardn', nameSource: 'self' }),
+      mkPharmacist({ id: 'u_3', name: 'Старая Регистрация' }),
+    ])
+    renderPage()
+    const notes = screen.getAllByTestId('identity-source').map((node) => node.textContent)
+    expect(notes).toEqual([
+      'ИИН и ФИО: из Стандарт-Н',
+      'ИИН: из Стандарт-Н · ФИО: указал(а) сам(а), подтверждено',
+    ])
   })
 
   it('H1 + 4 metrics: всего, работали за 7 дней, покрытие, продажи; без Pending', () => {

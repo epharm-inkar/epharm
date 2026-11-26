@@ -10,6 +10,8 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using CustomerDisplay.Models.Posm;
+using CustomerDisplay.Services;
 using QRCoder;
 
 namespace CustomerDisplay
@@ -19,6 +21,13 @@ namespace CustomerDisplay
     /// obligatory course; while it is not done the ePharm icon keeps its red dot (1.0.99).
     /// </summary>
     public sealed record StaffSelfTask(string Title, string Instructions, long? RewardKzt, string Status, int ProgressPct, DateTimeOffset? DueAt, bool Required = false);
+
+    /// <summary>
+    /// A Standard-N user the server does not know yet (1.0.101: no IIN in the central directory). State: <c>unknown</c> (the
+    /// form for the IIN and the full name), <c>pending</c> (sent, the office checks) or <c>rejected</c> (the office said no,
+    /// Reason says why, the form comes back). PersonKey is the Standard-N user id: typed values are dropped when it changes.
+    /// </summary>
+    public sealed record StaffSelfIdentity(string State, string IinMasked = "", string FullName = "", string Reason = "", string PersonKey = "");
 
     /// <summary>One credited recommendation in the pharmacist's history.</summary>
     public sealed record StaffSelfReward(string Kind, string Product, long BonusKzt, DateTimeOffset At);
@@ -50,6 +59,11 @@ namespace CustomerDisplay
         public int? MessagesPending { get; init; }
         /// <summary>Notices of the last 30 days, closed ones included.</summary>
         public int MessagesTotal { get; init; }
+        /// <summary>
+        /// Set when the server does not know the Standard-N user at this till: the window shows the form for the IIN and the
+        /// full name instead of the profile, or says that it was sent (1.0.101). FullName stays empty then.
+        /// </summary>
+        public StaffSelfIdentity? Identity { get; init; }
     }
 
     /// <summary>
@@ -71,12 +85,17 @@ namespace CustomerDisplay
         public event Action? WhatIsEpharmRequested;
         /// <summary>«Уведомления»: the host opens the history of notices from HQ.</summary>
         public event Action? OpenMessagesRequested;
+        /// <summary>«Отправить» in the IIN form (1.0.101): the checked IIN (digits only) and the clean full name.</summary>
+        public event Action<string, string>? SubmitIdentityRequested;
         private TextBlock? _tasksText;
         private TextBlock? _messagesText;
 
         private readonly TextBox _phone = NewField("+7 ___ ___ __ __");
         private readonly PasswordBox _password = NewPassword();
         private readonly PasswordBox _passwordRepeat = NewPassword();
+        private readonly TextBox _iin = NewField("ИИН");
+        private readonly TextBox _fullName = NewField("Фамилия Имя Отчество");
+        private Button? _identitySend;
         /// <summary>«Сменить пароль» pressed: the two fields show although a password is already set.</summary>
         private bool _changingPassword;
 
@@ -122,8 +141,23 @@ namespace CustomerDisplay
         /// <summary>Replaces what the window shows (after saving the profile or a periodic refresh).</summary>
         public void Update(StaffSelfModel model)
         {
+            // Typed values belong to the person who typed them: another Standard-N user at the till starts empty.
+            if (!string.Equals(Model.Identity?.PersonKey, model.Identity?.PersonKey, StringComparison.Ordinal)) ClearIdentityInputs();
             Model = model;
             Content = BuildCard(model);
+        }
+
+        /// <summary>After a successful send, or when another person is at the till: the IIN form starts empty.</summary>
+        public void ClearIdentityInputs()
+        {
+            _iin.Text = "";
+            _fullName.Text = "";
+        }
+
+        /// <summary>The send did not go through: «Отправить» works again with what was typed.</summary>
+        public void EndIdentitySend()
+        {
+            if (_identitySend != null) _identitySend.IsEnabled = true;
         }
 
         /// <summary>Shows a short status line under the header (saved, error) without rebuilding the window.</summary>
@@ -157,6 +191,13 @@ namespace CustomerDisplay
             body.Children.Add(BuildAbout());
             _status = new TextBlock { FontSize = 13, Margin = new Thickness(16, 10, 16, 0), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
             body.Children.Add(_status);
+            if (model.Identity != null && model.FullName.Length == 0)
+            {
+                body.Children.Add(BuildIdentity(model.Identity));
+                if (model.TasksCount != null) body.Children.Add(BuildTasks(model));
+                card.Child = root;
+                return card;
+            }
             if (!string.IsNullOrWhiteSpace(model.Notice) && model.FullName.Length == 0)
             {
                 body.Children.Add(new Border
@@ -178,6 +219,102 @@ namespace CustomerDisplay
             body.Children.Add(BuildCabinet(model));
             card.Child = root;
             return card;
+        }
+
+        /// <summary>
+        /// A Standard-N user the server does not know (no IIN in the directory): the form for the IIN and the full name, or
+        /// the note that it was sent. The server checks it again and the office confirms it; nothing is credited before that.
+        /// </summary>
+        private UIElement BuildIdentity(StaffSelfIdentity identity)
+        {
+            var pending = identity.State == PosmSelfIdentityDto.Pending;
+            var box = new Border
+            {
+                Margin = new Thickness(16, 14, 16, 16), CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 12, 14, 13),
+                Background = Brush(pending ? "#EEF7F3" : "#FFF6F5"),
+                BorderBrush = Brush(pending ? "#BFE3D6" : "#F6C9C4"), BorderThickness = new Thickness(1),
+            };
+            var stack = new StackPanel();
+            var head = new Grid { Margin = new Thickness(0, 0, 0, 9) };
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var dot = new Ellipse { Width = 9, Height = 9, Fill = Brush(pending ? "#1F8A70" : "#E0392B"), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 5, 0, 0) };
+            var title = new TextBlock
+            {
+                Text = pending ? "Отправлено, офис проверит" : "Укажите свой ИИН и ФИО, чтобы ePharm начислял вам бонусы",
+                Foreground = Brush(pending ? "#1F6B57" : "#B23127"), FontSize = 14, FontWeight = FontWeights.Bold,
+                Margin = new Thickness(8, 0, 0, 0), TextWrapping = TextWrapping.Wrap,
+            };
+            Grid.SetColumn(title, 1);
+            head.Children.Add(dot);
+            head.Children.Add(title);
+            stack.Children.Add(head);
+
+            if (pending)
+            {
+                var sent = string.Join("  ·  ", new[]
+                {
+                    identity.IinMasked.Length > 0 ? "ИИН " + identity.IinMasked : "",
+                    identity.FullName,
+                }.Where(part => part.Length > 0));
+                if (sent.Length > 0)
+                    stack.Children.Add(new TextBlock { Text = sent, Foreground = Brush("#374151"), FontSize = 14, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) });
+                stack.Children.Add(new TextBlock
+                {
+                    Text = "Пока офис не подтвердил, бонусы не начисляются. Когда подтвердит, здесь появится ваш профиль.",
+                    Foreground = Brush("#6B7280"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap,
+                });
+                box.Child = stack;
+                return box;
+            }
+
+            if (identity.State == PosmSelfIdentityDto.Rejected)
+            {
+                stack.Children.Add(new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(identity.Reason)
+                        ? "Офис не подтвердил данные. Проверьте их и отправьте снова."
+                        : "Офис не подтвердил: " + identity.Reason.Trim().TrimEnd('.') + ". Проверьте данные и отправьте снова.",
+                    Foreground = Brush("#B23127"), FontSize = 13, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8),
+                });
+            }
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Данные проверит офис. До проверки бонусы не начисляются.",
+                Foreground = Brush("#6B7280"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10),
+            });
+
+            // The inputs live across rebuilds (Update): take them out of the previous tree first.
+            Detach(_iin);
+            Detach(_fullName);
+            _iin.MaxLength = 16;
+            _fullName.MaxLength = 120;
+            stack.Children.Add(FieldLabel("ИИН (12 цифр)"));
+            stack.Children.Add(_iin);
+            var nameLabel = FieldLabel("Фамилия Имя Отчество");
+            nameLabel.Margin = new Thickness(0, 8, 0, 4);
+            stack.Children.Add(nameLabel);
+            stack.Children.Add(_fullName);
+
+            var send = new Button
+            {
+                Content = "Отправить", Margin = new Thickness(0, 11, 0, 0), Height = 42, FontSize = 15, FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.White, Background = Brush("#1F8A70"), BorderThickness = new Thickness(0), Cursor = Cursors.Hand,
+            };
+            send.Click += (_, _) =>
+            {
+                var iin = IdentityClaimRules.CheckIin(_iin.Text);
+                if (!iin.Ok) { ShowStatus(iin.Error!, error: true); _iin.Focus(); return; }
+                var name = IdentityClaimRules.CheckFullName(_fullName.Text);
+                if (!name.Ok) { ShowStatus(name.Error!, error: true); _fullName.Focus(); return; }
+                send.IsEnabled = false;
+                _identitySend = send;
+                ShowStatus("Отправляем…", error: false);
+                SubmitIdentityRequested?.Invoke(iin.Value, name.Value);
+            };
+            stack.Children.Add(send);
+            box.Child = stack;
+            return box;
         }
 
         private UIElement BuildHeader(StaffSelfModel model)

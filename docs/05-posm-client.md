@@ -2,6 +2,37 @@
 
 Path: `App/` and `Models/`.
 
+## IIN and full name typed at the till: 1.0.101 (26.11.2026)
+
+The owner's request of 26.11.2026 («давать им возможность самостоятельно заполнять свой ИИН»). 41 people who sell every
+day have no IIN in the Standard-N directory, so the personal window answered «Не нашли вас в справочнике Стандарт-Н:
+попросите МАС заполнить ИИН…» and ePharm never made them a card. Since 1.0.101 the window asks for the IIN and the
+full name instead.
+
+- The server answers `POST /api/posm/self` for such a user with the old message and the new code
+  `STANDARDN_USER_UNKNOWN` (404). `EpharmApiClient` now reads the error `code` (`PosmSelfResult.Code`,
+  `IdentityUnknown`). The till then asks `POST /api/posm/self/identity` where the user stands: `unknown` shows the form,
+  `pending` says «Отправлено, офис проверит» with the masked IIN and the name, `rejected` shows «Офис не подтвердил:
+  причина» and the form again; `known`, or no answer (an older server), leaves the plain message the window always had.
+- The form (`StaffSelfWindow.BuildIdentity`): «Укажите свой ИИН и ФИО, чтобы ePharm начислял вам бонусы», the fields
+  «ИИН (12 цифр)» and «Фамилия Имя Отчество», the button «Отправить». `Services/IdentityClaimRules.cs` checks the IIN
+  (twelve ASCII digits and the Kazakhstan control digit; spaces and hyphens typed between digit groups are dropped) and
+  the name (two to six words, letters, a hyphen or an apostrophe inside, each word at least two letters) before anything
+  is sent; the server checks again and decides (`POST /api/posm/self/identity/claim`). Typed values survive the
+  8-minute refresh of the window and are dropped when another Standard-N user is at the till. A send that fails shows
+  the server's text and keeps what was typed. The IIN and the name never reach the till log.
+- The icon by the clock keeps its red dot («ePharm: заполните профиль») while the person is unknown or refused, and
+  has none once the claim is sent.
+- «Отправить» makes a pending claim only: no card, no mapping, no bonus. The office confirms in «Фармацевты» → «ИИН
+  указали сами»; from then on the user's receipts belong to the card and the window shows the profile as for everybody
+  (phone, password, cabinet). The server side is in `docs/02-backend.md`, «Identity claims».
+- Release order: server and admin first, then the till pilot. A server without the change answers with the old text,
+  and a 1.0.101 till shows it.
+- Tests (App.Tests, no window): `IdentityClaimRulesTests` (the same vectors as the server's `IdentityClaimRulesTest`),
+  `IdentityClaimDtosTests`. The window states are in `App.Ui.Tests/StaffSelfShowcase.cs` (`staff-self-9-iin-form`,
+  `-10-iin-sent`, `-11-iin-rejected`); the Windows CI job renders them into the `staff-ui-proof` artifact. The window
+  was not run on a real till: that is the pilot's check.
+
 ## Renamed cashier programs and manager-only computers: 1.0.100 (26.11.2026)
 
 Measured on production on 26.11.2026: 68 of 506 online tills reported the staff source status `no_process`, so ePharm

@@ -41,6 +41,21 @@ All notable production changes to Epharm are recorded here. The format follows
   `POST .../matrix?period=...&dryRun=...` replaces the matrix of a month from a CSV (HQ_HEAD, SYSTEM_ADMIN). Tables
   `sales_premium_matrix` (the November matrix of 188 products is seeded) and `sales_premium_figures` (V125). The four
   routes are in the API inventory (H08.07 to H08.11), which the CI check «ops / config contracts» needed.
+- «ИИН указали сами» (owner, 26.11.2026, POSM 1.0.101): 41 people who sell every day have no IIN in the Standard-N
+  directory, so ePharm never made them a card. The till's personal window now asks such a person for the IIN and the
+  full name (the IIN is checked for twelve digits and the Kazakhstan control digit on the till and again on the server),
+  says «Отправлено, офис проверит» and shows the office's reason if it refuses. HQ confirms in «Фармацевты» → «ИИН
+  указали сами» (SYSTEM_ADMIN, HQ_HEAD): confirming creates the card (source «указал(а) сам(а), подтверждено») or
+  attaches to the active card of the same pharmacy that holds the IIN, and writes the HQ mapping with its audit, so the
+  user's later receipts belong to the card. A pending claim pays nothing. When the Standard-N directory later has the
+  person, it wins: the claim yields, the card shows the directory's data, a different IIN is flagged for HQ in
+  «Расхождения», and the mapping the claim made is switched off; cards are never merged. The cabinet profile shows where
+  the IIN and the name came from and lets a pharmacist whose card has fewer than two words in the name propose the full
+  name (same flow). Limits: 5 sends per hour per Standard-N user, 20 per till. New: `posm.identity`, table
+  `pharmacist_identity_claims` and the card columns `iin_source`, `name_source` (V126), error code
+  `STANDARDN_USER_UNKNOWN`, routes `POST /api/posm/self/identity`, `POST /api/posm/self/identity/claim`,
+  `GET /api/admin/posm/identity-claims`, `POST /api/admin/posm/identity-claims/{id}/confirm|reject`,
+  `GET /api/mobile/me/identity`, `POST /api/mobile/me/identity/name`.
 - Admin Analytics opens with «Фармацевты в ePharm» (owner, 26.11.2026): how many pharmacists are in the system
   (everyone except blocked), how many worked with ePharm today and in the last 7 days with the shares, and two
   charts by day since the launch (people, and their share of the system). «Скачать график» saves both charts with the

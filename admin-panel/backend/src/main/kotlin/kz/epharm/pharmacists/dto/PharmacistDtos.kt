@@ -40,6 +40,9 @@ data class PharmacistDto(
     val lastActiveAt: Instant? = null,
     /** Sum of [receipts30d], ₸: the pharmacist's own receipts at the current pharmacy, refunds excluded. */
     val sales30d: Long? = null,
+    /** Where the IIN and the name on the card came from: registration, standardn, self or hq (V126). */
+    val iinSource: String = "registration",
+    val nameSource: String = "registration",
 ) {
     companion object {
         fun of(e: PharmacistEntity): PharmacistDto = PharmacistDto(
@@ -58,6 +61,7 @@ data class PharmacistDto(
             standardNIdentityMatchMethod = e.standardNIdentityMatchMethod,
             standardNIdentityMatchStatus = e.standardNIdentityMatchStatus,
             standardNIdentityCheckedAt = e.standardNIdentityCheckedAt,
+            iinSource = e.iinSource, nameSource = e.nameSource,
         )
     }
 }

@@ -178,6 +178,24 @@ const test = base.extend<{ learnerApi: LearnerApi; learnerSession: boolean }>({
               )
             return json(route, { items: [], days: 30 })
           }
+          if (path === '/api/mobile/me/identity') {
+            // «ФИО в карточке» on the profile (26.11.2026): where the IIN and the name on the card came from,
+            // personal data like the wallet. A complete name: the block shows its source and offers no form.
+            if (api.personalFailure)
+              return json(
+                route,
+                { code: api.personalFailure.code, message: 'Личные данные недоступны' },
+                api.personalFailure.status,
+              )
+            return json(route, {
+              name: accounts[id].name,
+              nameSource: 'registration',
+              iinSource: 'registration',
+              nameIncomplete: false,
+              canPropose: false,
+              claim: null,
+            })
+          }
           if (path === '/api/mobile/me/balance' || path === '/api/mobile/me/recommendations') {
             if (api.personalFailure)
               return json(
@@ -358,6 +376,9 @@ for (const viewport of [
       const card = page.getByRole('region', { name: 'Банковская карта', exact: true })
       await expect(card.getByText('Не подключена', { exact: true })).toBeVisible()
       await expect(page.getByText(/36\s*941\s*₸/).first()).toBeVisible()
+      // The profile asks the server once where the name on the card came from (26.11.2026). Wait for that answer, so
+      // that the count below is the settled one and only the card itself is proven to stay request-free.
+      await expect(page.getByTestId('identity-name-source')).toHaveText('ИИН и ФИО: при регистрации')
       const requestCount = learnerApi.requests.length
       const storage = await page.evaluate(() => JSON.stringify({ ...localStorage }))
       // Payouts are in development: the notice is always shown, nothing offers to link a card.

@@ -39,8 +39,9 @@ class StandardNAccountService(
         val id = "ph_${UUID.randomUUID()}"
         val inserted = jdbc.update(
             """
-            INSERT INTO pharmacists(id, name, iin, phone, password_hash, tier, status, pharmacy_id, pharmacy_name, city, account_source)
-            VALUES (?, ?, ?, '', NULL, 'Silver', 'active', ?, ?, ?, 'standardn')
+            INSERT INTO pharmacists(id, name, iin, phone, password_hash, tier, status, pharmacy_id, pharmacy_name, city, account_source,
+                iin_source, name_source)
+            VALUES (?, ?, ?, '', NULL, 'Silver', 'active', ?, ?, ?, 'standardn', 'standardn', 'standardn')
             ON CONFLICT (iin) DO NOTHING
             """.trimIndent(),
             id,
@@ -82,7 +83,8 @@ class StandardNAccountService(
         jdbc.update(
             """
             UPDATE pharmacists SET status = 'active', name = ?, phone = '', password_hash = NULL, pharmacy_id = ?,
-                pharmacy_name = ?, city = ?, account_source = 'standardn', updated_at = now()
+                pharmacy_name = ?, city = ?, account_source = 'standardn', iin_source = 'standardn', name_source = 'standardn',
+                updated_at = now()
             WHERE id = ? AND status = 'pending'
             """.trimIndent(),
             directoryName(person), pharmacyId, pharmacy?.first, pharmacy?.second ?: "", id,

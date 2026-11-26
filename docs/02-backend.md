@@ -332,6 +332,80 @@ older manual/Excel writers safe. Rehearse the exact recovery artifact before rel
 The isolated HTTP/SQL workload and acceptance criteria are in
 [`tools/loadtests/recommendation-rewards`](../tools/loadtests/recommendation-rewards/README.md).
 
+## Identity claims: IIN and full name typed by a pharmacist (26.11.2026)
+
+The owner's request of 26.11.2026. ePharm names a pharmacist by the Standard-N user and that user's IIN in the central
+directory. 41 people who sell every day have no IIN in Standard-N (for example Standard-N user 18 at Buzurbaeva 23: 87
+receipts a day, never a pharmacist), and some directory names are cut short (no patronymic, a nickname). Their receipts
+reach ePharm as `standardn_unmapped`: no card, no cabinet, no bonus. Now the pharmacist types the IIN and the full name,
+HQ confirms, and the directory wins as soon as it has the person. Package `posm.identity`, table
+`pharmacist_identity_claims` and the card columns `iin_source`, `name_source` (V126).
+
+Two kinds of claim, one flow. `person`: a Standard-N user without a card types IIN and full name at the till; the key
+is pharmacy + USER_ID (the text that `pos_sales.reported_pharmacist_id` and `posm_pharmacist_mappings.external_user_id`
+hold: a positive whole number, no leading zeros). `name`: an active card whose name has fewer than two words proposes
+a full name in the cabinet; the key is the card. Statuses: `pending`, `confirmed`, `rejected`, `superseded`. Partial
+unique indexes allow one open claim per key: sending again rewrites the open claim (a typo corrected before HQ looked),
+and HQ confirms only what the reviewer saw (the confirm body repeats `iin` and `fullName`; a changed claim gets 409).
+
+| Route | Who | Answer |
+| --- | --- | --- |
+| `POST /api/posm/self/identity` | till, device key | `{state, iinMasked?, fullName?, reason?}`; `state` is `known`, `unknown`, `pending` or `rejected` |
+| `POST /api/posm/self/identity/claim` | till, individual device key | the same shape, `pending` |
+| `GET /api/admin/posm/identity-claims?status=` | `SYSTEM_ADMIN`, `HQ_HEAD` | up to 500 claims, open ones first; `status` one of the four or all |
+| `POST /api/admin/posm/identity-claims/{id}/confirm` | same | the claim, `confirmed`; body `{iin, fullName}` as the reviewer saw them |
+| `POST /api/admin/posm/identity-claims/{id}/reject` | same | the claim, `rejected`; body `{reason}`, 3 to 500 characters |
+| `GET /api/mobile/me/identity` | pharmacist JWT | `{name, nameSource, iinSource, nameIncomplete, canPropose, claim?}` |
+| `POST /api/mobile/me/identity/name` | pharmacist JWT | the same shape; body `{fullName}` |
+
+**A pending claim pays nothing.** Receipts reach a card only through an active HQ mapping or the directory; a pending
+claim makes neither, so the user's receipts stay `standardn_unmapped` and no bonus is reserved. Confirming a `person`
+claim creates the card (`account_source`, `iin_source` and `name_source` are `self`; active, no phone, no password, the
+pharmacy of the till; it publishes `PharmacistCardReady`, so a sales premium waiting for the IIN is credited after the
+commit) or, when an active card of the same pharmacy already holds the IIN, attaches to that card without rewriting it. Either way it writes the active mapping (pharmacy + USER_ID -> card) through
+`PosmPharmacistMappingService.upsert`: the same locks and an audit row `created` with the HQ user as actor, which is the
+record `docs/22-unified-pharmacist-wallet.md` asks for before money flows. Lock order: `UnifiedAuthorityLock`, the claim
+row, the account lock, the card. Refused with 409, the claim stays open: a card with that IIN in another pharmacy,
+blocked or pending; an active mapping or a directory row for the user (the claim is out of date); an inactive
+pharmacy. Confirming a `name` claim writes the name on the card (`name_source` `self`) and creates no mapping.
+
+Till rules (`IdentityClaimRules`, repeated by the till in `IdentityClaimRules.cs` and by the cabinet in
+`identityName.ts`): the IIN is twelve ASCII digits with the Kazakhstan control digit (`IinUtil`); the full name is two
+to six words of letters of any script, with a hyphen or an apostrophe inside, each word at least two letters, at most
+255 characters; the USER_ID is a positive whole number. 400 for any of them, 403 for a fleet-key till or another
+pharmacy's till, 409 when the person is already known (directory, confirmed claim in force, active HQ mapping), 429
+`OTP_TOO_MANY_ATTEMPTS` with `Retry-After` after 5 attempts per hour for one Standard-N user and 20 for one till
+(`IdentityClaimLimiter` on `posm_staff_rate_limits`, own transaction: refused attempts count too). The answer to the
+till never says whether the IIN belongs to someone else's card; HQ sees it. The cabinet allows 5 proposals per hour per
+card.
+
+`POST /api/posm/self` and the feeds behind it (`/cabinet-link`, `/contact`, `/tasks`, `/messages`) answer a user nobody
+knows with 404, the old message and the new code `STANDARDN_USER_UNKNOWN` (`PosmSelfPersonResolver`, one place). A user
+whose confirmed claim is in force (the mapping made at confirmation is active, points at the claim's card, and the card
+sits in this pharmacy) is a known person and gets the window; HQ revoking that mapping ends it, as for any mapping.
+
+Flags HQ sees in `conflicts` (computed when the list opens, so they are current): `iin_other_card` (a card holds this
+IIN: name, pharmacy, status), `iin_other_claim`, `iin_in_directory` (the directory has this IIN for another Standard-N
+user), `mapping_exists`; stored on the claim: `iin_other_card` at sending and `directory_iin_differs`.
+
+**The directory wins** (`IdentityClaimDirectoryReconciler`, after every directory sync, the manual one too; one
+transaction under `UnifiedAuthorityLock`; idempotent; a failure never fails the sync). A claim whose Standard-N user
+the directory now has, through the pharmacy's profile link, yields:
+
+- same IIN: `superseded` (`directory_same_iin`), the card's IIN source becomes `standardn`, its name becomes the
+  directory's when that is a full name;
+- another IIN: `superseded` with `directory_iin_differs` and `directory_iin`; the mapping the claim made is switched
+  off (audit `revoked`, no actor) so that receipts follow the directory person. The self-made card stays as it is:
+  cards are never merged, what to do with it is HQ's decision. The flag stays in «Расхождения» for 30 days;
+- a `name` claim whose IIN the directory knows with a full name: the card takes the directory name (`name_source`
+  `standardn`), the claim is `superseded` (`directory_name`).
+
+A name HQ typed by hand (`name_source` `hq`) is never rewritten. A superseded claim is decided by the system:
+`decided_by` is empty, and who confirmed it earlier stays in the mapping and its audit. The cabinet proposal checks the
+directory when it is sent: if the directory already holds a full name for the IIN, the card takes it and no claim is
+made. Not covered: cards created before V126 keep the name the directory had at creation; only cards a claim touched
+follow the directory afterwards.
+
 ## Cabinet sign-in by phone, password change from the till (25.11.2026)
 
 Pharmacists no longer register: the card comes from the Standard-N directory and the till's personal window

@@ -4414,6 +4414,67 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H15.18",
+    "group": "H15",
+    "name": "Фармацевт без ИИН в Стандарт-Н указывает ИИН и ФИО в окне на кассе, офис подтверждает",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/self-service-iin",
+      "ui": [
+        "App/StaffSelfWindow.cs",
+        "App/MainWindow.StaffSelf.cs"
+      ],
+      "api": [
+        "POST /api/posm/self/identity",
+        "POST /api/posm/self/identity/claim"
+      ],
+      "jobs": [],
+      "data": [
+        "pharmacist_identity_claims",
+        "pharmacists",
+        "posm_pharmacist_mappings",
+        "standardn_pharmacist_directory",
+        "pharmacies",
+        "posm_staff_rate_limits"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/PosmSelfIdentityController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimSubmissionService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimRules.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimLimiter.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimStore.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/self/PosmSelfPersonResolver.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V126__pharmacist_identity_claims.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimIntegrationTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimSubmissionServiceTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimHttpIntegrationTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimRulesTest.kt",
+        "App/Services/IdentityClaimRules.cs",
+        "App.Tests/IdentityClaimRulesTests.cs"
+      ]
+    },
+    "target": {
+      "section": "Аптеки и товары",
+      "subsection": "POSM / совместимость устройств",
+      "actions": [
+        "Фармацевт без ИИН в Стандарт-Н указывает ИИН и ФИО в окне на кассе, офис подтверждает"
+      ],
+      "scope": "Device-auth кассы (X-Posm-Key, только индивидуальный ключ), аптека кассы; человек = пользователь Стандарт-Н на кассе, которого нет в справочнике и нет подтверждённой заявки"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "ИИН: 12 цифр и контрольная цифра, ФИО не меньше двух слов; касса и сервер проверяют одинаково",
+      "Не больше 5 заявок в час на человека и 20 на кассу; неверные данные тоже считаются; ответ 429 с Retry-After",
+      "Заявка ждёт HQ: карточки, привязки и начислений нет, чеки этого пользователя остаются без продавца",
+      "Касса с общим ключом сети и касса другой аптеки получают 403; человек, которого уже знает справочник или привязка, получает 409",
+      "Ответ кассе не говорит, что ИИН уже у чужой карточки"
+    ],
+    "risks": [
+      "Человек может ввести чужой действительный ИИН: защита это проверка HQ и пометка «ИИН уже у другой карточки» в списке заявок"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H16.01",
     "group": "H16",
     "name": "Открыть контекст подписанного QR challenge",
@@ -8475,6 +8536,54 @@
     "state": "source_confirmed",
     "acceptance": [
       "Возвращаются только допустимые исходные поля; выбор не меняет свою identity/права автоматически"
+    ],
+    "risks": [],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "L19.10",
+    "group": "L19",
+    "name": "Профиль кабинета: откуда взяты ИИН и ФИО, предложить полное ФИО, если в карточке меньше двух слов",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/self-service-iin",
+      "ui": [
+        "admin-panel/frontend/src/features/learner/IdentityNameClaim.tsx",
+        "admin-panel/frontend/src/features/learner/LearnerTrainingPage.tsx"
+      ],
+      "api": [
+        "GET /api/mobile/me/identity",
+        "POST /api/mobile/me/identity/name"
+      ],
+      "jobs": [],
+      "data": [
+        "pharmacists",
+        "pharmacist_identity_claims",
+        "standardn_pharmacist_directory",
+        "posm_staff_rate_limits"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/MobileIdentityController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimSubmissionService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimRules.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimHttpIntegrationTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimSubmissionServiceTest.kt",
+        "admin-panel/frontend/src/features/learner/IdentityNameClaim.test.tsx"
+      ]
+    },
+    "target": {
+      "section": "ЛК фармацевта",
+      "subsection": "Рекомендации / баланс / сертификаты / профиль",
+      "actions": [
+        "Профиль кабинета: откуда взяты ИИН и ФИО, предложить полное ФИО, если в карточке меньше двух слов"
+      ],
+      "scope": "Свой PharmacistPrincipal; предложение ждёт HQ и не меняет карточку до подтверждения"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Форма только у активной карточки с именем из одного слова; не больше 5 предложений в час на карточку",
+      "Предложение не меняет карточку и не двигает чеки до подтверждения HQ; private/no-store",
+      "Если справочник Стандарт-Н уже знает полное имя этого ИИН, карточка берёт его сразу и ничего не спрашивает"
     ],
     "risks": [],
     "owner": "ePharm unification integration owner"
@@ -17193,6 +17302,66 @@
     ],
     "risks": [
       "Current-head runtime/ingress/cutover acceptance is recorded separately; source coverage is not deployment proof"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H16.81",
+    "group": "H16",
+    "name": "ИИН указали сами: список заявок, подтвердить с созданием карточки и привязки, отклонить с причиной",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/self-service-iin",
+      "ui": [
+        "admin-panel/frontend/src/features/pharmacists/IdentityClaimsModal.tsx",
+        "admin-panel/frontend/src/features/pharmacists/PharmacistsPage.tsx",
+        "admin-panel/frontend/src/features/pharmacists/IdentitySourceNote.tsx"
+      ],
+      "api": [
+        "GET /api/admin/posm/identity-claims",
+        "POST /api/admin/posm/identity-claims/{id}/confirm",
+        "POST /api/admin/posm/identity-claims/{id}/reject"
+      ],
+      "jobs": [],
+      "data": [
+        "pharmacist_identity_claims",
+        "pharmacists",
+        "posm_pharmacist_mappings",
+        "posm_pharmacist_mapping_audit",
+        "standardn_pharmacist_directory"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/AdminIdentityClaimController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimAdminService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimDirectoryReconciler.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimModels.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/posm/identity/IdentityClaimStore.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/pharmacists/service/StandardNPharmacistSyncService.kt",
+        "admin-panel/backend/src/main/resources/unified-admin-routes.json",
+        "admin-panel/backend/src/main/resources/db/migration/V126__pharmacist_identity_claims.sql",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimHttpIntegrationTest.kt",
+        "admin-panel/backend/src/test/kotlin/kz/epharm/posm/identity/IdentityClaimIntegrationTest.kt",
+        "admin-panel/frontend/src/features/pharmacists/IdentityClaimsModal.test.tsx"
+      ]
+    },
+    "target": {
+      "section": "Фармацевты",
+      "subsection": "Связь исполнителя / продавцы Standard-N",
+      "actions": [
+        "ИИН указали сами: список заявок, подтвердить с созданием карточки и привязки, отклонить с причиной"
+      ],
+      "scope": "SYSTEM_ADMIN и HQ_HEAD, как у сопоставлений продавцов; управляемые учётные записи получают отказ (NOT_READY)"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Подтверждение создаёт карточку (источник self) или привязывает к активной карточке той же аптеки с этим ИИН и пишет активное сопоставление с аудитом от HQ",
+      "Подтверждается только то, что видел проверяющий: другие ИИН или ФИО дают 409",
+      "Карточка с этим ИИН в другой аптеке, заблокированная или ожидающая, и пользователь, которого уже знает справочник или привязка, дают 409",
+      "Данные Стандарт-Н главнее: заявка уступает справочнику, чужой ИИН в справочнике помечается для HQ, привязка заявки выключается, карточки не склеиваются",
+      "Решённую заявку повторно решить нельзя (409)"
+    ],
+    "risks": [
+      "Старые карточки не обновляются из справочника сами: заявка двигает только те карточки, что с ней связаны"
     ],
     "owner": "ePharm unification integration owner"
   },

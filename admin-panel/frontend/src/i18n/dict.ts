@@ -7,6 +7,8 @@
 // + Settings. Глубокий контент (метрики/табы/пустые состояния/таблицы/формы) —
 // добавляется следующими батчами с теми же ключами.
 
+import { identityClaimsKk, identityClaimsRu } from './identityClaimsDict'
+
 export type Lang = 'ru' | 'kk'
 
 type Dict = Record<string, string>
@@ -1516,6 +1518,8 @@ export const ru: Dict = {
   'scr.profileNothingFound': 'Аптеки не найдены',
   'scr.profileNoSelected': 'В индивидуальный плейлист пока не добавлено ни одной аптеки',
   'scr.profilePharmaciesSaved': 'Индивидуальный плейлист назначен аптекам: {count}',
+  // «ИИН указали сами» (26.11.2026)
+  ...identityClaimsRu,
 }
 
 export const kk: Dict = {
@@ -3012,6 +3016,8 @@ export const kk: Dict = {
   'scr.profileNothingFound': 'Дәріханалар табылмады',
   'scr.profileNoSelected': 'Жеке плейлистке әзірше бірде-бір дәріхана қосылмаған',
   'scr.profilePharmaciesSaved': 'Жеке плейлист дәріханаларға тағайындалды: {count}',
+  // «ИИН указали сами» (26.11.2026)
+  ...identityClaimsKk,
 }
 
 export const dict: Record<Lang, Dict> = { ru, kk }
