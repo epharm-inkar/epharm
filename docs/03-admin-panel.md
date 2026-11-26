@@ -9,7 +9,9 @@ access). A table is a real table again (`width: 100%`); a wide one scrolls insid
 `overflow-x-auto` parent, never the page. `TableScroll` now also wraps the two tables that had no scroll box (Reconcile,
 training analytics). `ui/TableScroll.test.tsx` reads `index.css` and fails if the block rule comes back. `Metric` keeps a
 figure on one line (the note drops under it), `SectionCard`, `PageHeader` and the `Tabs` strip wrap their action row on a phone; fixed-column grids of
-figures became two by two (Lift, AI exam, Reconcile, training, ledger, pharmacy card).
+figures became two by two (Lift, AI exam, Reconcile, training, ledger, pharmacy card). On a phone a product name wraps
+(`max-sm:line-clamp-2`, `sm:truncate` keeps the one-line ellipsis from 640 px) in the Rules rows, which now stand one product
+under the other, and in the campaign product cards; the fulfillment links form and list stack in one column.
 
 **«?» tips** (`ui/HelpTip`). A small button named «Что это? <topic>». A mouse hover or a tap opens a bubble, Escape or a press
 outside closes it, Tab away closes it; the text is also the button's accessible description, so a screen reader reads it
