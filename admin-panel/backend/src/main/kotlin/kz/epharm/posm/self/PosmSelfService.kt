@@ -2,6 +2,7 @@ package kz.epharm.posm.self
 
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
+import kz.epharm.finance.premium.SalesPremiumLabels
 import kz.epharm.learnercredentials.LearnerPasswordVault
 import kz.epharm.mobile.auth.service.CabinetLinkService
 import kz.epharm.mobile.auth.service.MobileRefreshTokenService
@@ -122,14 +123,14 @@ class PosmSelfService(
     private fun dto(card: PharmacistEntity, device: PosmDeviceIdentity, issueLink: Boolean): PosmSelfDto {
         val earned = jdbc.queryForObject(
             """
-            SELECT coalesce(sum(earned_delta_kzt), 0) FROM pharmacist_wallet_entries
+            SELECT GREATEST(coalesce(sum(earned_delta_kzt), 0), 0) FROM pharmacist_wallet_entries
             WHERE pharmacist_id = ? AND created_at >= date_trunc('month', now() AT TIME ZONE 'Asia/Almaty') AT TIME ZONE 'Asia/Almaty'
             """.trimIndent(),
             Long::class.java, card.id,
         ) ?: 0L
         val recent = jdbc.query(
             """
-            SELECT e.source, e.amount_kzt, e.created_at, pb.product_name, r.type
+            SELECT e.source, e.amount_kzt, e.created_at, pb.product_name, r.type, e.context_key
             FROM pharmacist_wallet_entries e
             LEFT JOIN pending_bonuses pb ON e.source = 'receipt_bonus' AND pb.id = e.source_id
             LEFT JOIN rules r ON r.id = pb.rule_id
@@ -142,7 +143,7 @@ class PosmSelfService(
                 val ruleType = rs.getString(5)
                 PosmSelfRewardDto(
                     kind = ruleType ?: source,
-                    label = rs.getString(4)?.takeIf { it.isNotBlank() } ?: LABELS[source] ?: "Начисление",
+                    label = rs.getString(4)?.takeIf { it.isNotBlank() } ?: entryLabel(source, rs.getString(6)),
                     bonusKzt = rs.getLong(2),
                     at = rs.getTimestamp(3).toInstant(),
                 )
@@ -163,6 +164,10 @@ class PosmSelfService(
             cabinetUrlExpiresAt = link?.expiresAt,
         )
     }
+
+    /** The premium names its month («Премия за продажи, ноябрь 2026»); other sources keep their fixed name. */
+    private fun entryLabel(source: String, contextKey: String?): String =
+        if (source == "sales_premium") SalesPremiumLabels.entryLabel(contextKey) else LABELS[source] ?: "Начисление"
 
     private fun mask(iin: String): String = if (iin.length == 12) iin.take(6) + "•••••" + iin.takeLast(1) else ""
     private fun notFound(): Nothing = throw AppException(ErrorCode.USER_NOT_FOUND, "Сотрудник не найден", HttpStatus.NOT_FOUND)

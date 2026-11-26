@@ -1834,6 +1834,205 @@
     "owner": "ePharm unification integration owner"
   },
   {
+    "id": "H08.07",
+    "group": "H08",
+    "name": "Загрузка накопленной премии за продажи по ИИН",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/sales-premium-wallet",
+      "ui": [],
+      "api": ["POST /api/admin/finance/sales-premium/import"],
+      "jobs": [],
+      "data": [
+        "sales_premium_pending",
+        "sales_premium_imports",
+        "sales_premium_figures",
+        "pharmacists",
+        "pharmacist_wallet_entries"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumService.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumRules.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumPendingCredits.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/service/PharmacistWalletService.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V124__sales_premium_wallet.sql"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Начисления и выплаты",
+      "actions": [
+        "Загрузить накопленную премию за продажи по ИИН: сначала проверка, потом зачисление"
+      ],
+      "scope": "Только HQ_HEAD и SYSTEM_ADMIN; управляемым аккаунтам не выдаётся (NOT_READY)"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "dryRun обязателен; проверка ничего не пишет и показывает то, что сделает настоящая загрузка",
+      "Повтор файла и параллельные загрузки не начисляют второй раз; срез старше уже загруженного даёт 409",
+      "Возврат уменьшает накопленную сумму и баланс, но баланс не уходит ниже нуля, остаток виден в ответе"
+    ],
+    "risks": ["Выплаты не менялись: пакет выплат резервирует весь баланс, премия в нём тоже"],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H08.08",
+    "group": "H08",
+    "name": "Расчёт премии за продажи из Стандарт-Н сейчас: проверка и зачисление",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/sales-premium-wallet",
+      "ui": [],
+      "api": ["POST /api/admin/finance/sales-premium/recompute"],
+      "jobs": [],
+      "data": [
+        "sales_premium_matrix",
+        "sales_premium_figures",
+        "sales_premium_imports",
+        "Стандарт-Н (только чтение): PARTS, DOC_DETAIL, DOCS, SESSIONS, USERS"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumOperationsController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumCollector.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumAggregator.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/StandardNPremiumSource.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Начисления и выплаты",
+      "actions": [
+        "Пересчитать премию за продажи из Стандарт-Н сейчас: проверка (dryRun) и зачисление"
+      ],
+      "scope": "Только HQ_HEAD и SYSTEM_ADMIN; управляемым аккаунтам не выдаётся (NOT_READY)"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "dryRun обязателен; ответ содержит только итоги, без ИИН и имён",
+      "Читается весь месяц с 1-го числа по вчера, по одному запросу на товар матрицы; неполное чтение не загружается",
+      "Одновременно идёт один расчёт: второй запрос получает 409; база Стандарт-Н закрыта (ночью) даёт 503"
+    ],
+    "risks": ["Продавцы без ИИН в Стандарт-Н суммируются отдельно и не получают премию"],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H08.09",
+    "group": "H08",
+    "name": "Суточный расчёт премии за продажи из Стандарт-Н",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/sales-premium-wallet",
+      "ui": [],
+      "api": [],
+      "jobs": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumJob.kt#SalesPremiumJobScheduler; 06:40 Asia/Almaty, повтор каждые 30 минут до 11:00; выключено, пока SALES_PREMIUM_JOB_ENABLED не true"
+      ],
+      "data": [
+        "sales_premium_matrix",
+        "sales_premium_figures",
+        "sales_premium_imports",
+        "sales_premium_pending",
+        "pharmacist_wallet_entries"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumJob.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumCollector.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumService.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Начисления и выплаты",
+      "actions": [
+        "Каждое утро считать премию за продажи из Стандарт-Н и зачислять разницу на кошельки"
+      ],
+      "scope": "Только HQ_HEAD и SYSTEM_ADMIN; управляемым аккаунтам не выдаётся (NOT_READY)"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Без SALES_PREMIUM_JOB_ENABLED=true задача ничего не читает и не пишет",
+      "Пока база не открывается, попытка повторяется каждые 30 минут до 11:00; после успеха день не повторяется, в том числе после перезапуска",
+      "Накопленные суммы идемпотентны: пропущенный день добирается следующим"
+    ],
+    "risks": [
+      "Задачу включает владелец после сверки пробного расчёта (dryRun) с контрольными цифрами"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H08.10",
+    "group": "H08",
+    "name": "Ведомость премии за месяц для бухгалтерии",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/sales-premium-wallet",
+      "ui": [],
+      "api": ["GET /api/admin/finance/sales-premium/statement.csv"],
+      "jobs": [],
+      "data": [
+        "pharmacist_wallet_entries",
+        "sales_premium_pending",
+        "sales_premium_figures",
+        "standardn_pharmacist_directory"
+      ],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumOperationsController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumStatement.kt"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Начисления и выплаты",
+      "actions": ["Скачать ведомость премии за месяц: ФИО, ИИН, аптека, город, упаковок, начислено"],
+      "scope": "Только HQ_HEAD и SYSTEM_ADMIN; управляемым аккаунтам не выдаётся (NOT_READY)"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "Начислено берётся из журнала кошелька, ожидающие продавцы из таблицы ожидания; файл UTF-8 с BOM, разделитель точка с запятой",
+      "Ожидающий продавец не считается дважды, если часть суммы уже в журнале"
+    ],
+    "risks": [
+      "В файле ФИО и ИИН: скачивание пишется в журнал сервера, доступ только HQ_HEAD и SYSTEM_ADMIN"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
+    "id": "H08.11",
+    "group": "H08",
+    "name": "Матрица товаров месяца для премии за продажи",
+    "source": {
+      "repo": "epharm-inkar/epharm",
+      "revision": "feat/sales-premium-wallet",
+      "ui": [],
+      "api": ["POST /api/admin/finance/sales-premium/matrix"],
+      "jobs": [],
+      "data": ["sales_premium_matrix"],
+      "files": [
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumOperationsController.kt",
+        "admin-panel/backend/src/main/kotlin/kz/epharm/finance/premium/SalesPremiumMatrix.kt",
+        "admin-panel/backend/src/main/resources/db/migration/V125__sales_premium_matrix_and_figures.sql"
+      ]
+    },
+    "target": {
+      "section": "Мотивация фармацевтов",
+      "subsection": "Начисления и выплаты",
+      "actions": [
+        "Заменить матрицу товаров месяца (id товара Стандарт-Н и бонус за упаковку) файлом CSV"
+      ],
+      "scope": "Только HQ_HEAD и SYSTEM_ADMIN; управляемым аккаунтам не выдаётся (NOT_READY)"
+    },
+    "state": "source_confirmed",
+    "acceptance": [
+      "dryRun обязателен; проверка сравнивает файл с тем, что уже в месяце, и ничего не пишет",
+      "Файл в UTF-8, id товара GUID, бонус от 0 до 100000 тенге; повтор товара или ошибка в строке отклоняют весь файл"
+    ],
+    "risks": [
+      "Новая матрица пересчитывает весь месяц с 1-го числа при следующем расчёте, в том числе продажи до замены"
+    ],
+    "owner": "ePharm unification integration owner"
+  },
+  {
     "id": "H09.01",
     "group": "H09",
     "name": "Сводка подключённых касс и длительность соединения",

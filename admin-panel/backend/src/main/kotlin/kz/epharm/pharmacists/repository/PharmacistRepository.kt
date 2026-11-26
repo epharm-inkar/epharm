@@ -123,9 +123,12 @@ interface PharmacistRepository : JpaRepository<PharmacistEntity, String> {
         @Param("observedAt") observedAt: Instant,
     ): List<PharmacistSalesRow>
 
-    /** Net credited in the period from the append-only wallet ledger (`ix_wallet_pharmacist_created`). */
+    /**
+     * Net credited in the period from the append-only wallet ledger (`ix_wallet_pharmacist_created`). A premium
+     * correction is negative, so the net is clamped at zero: «earned» is never shown below nothing.
+     */
     @Query(nativeQuery = true, value = """
-        SELECT e.pharmacist_id AS "pharmacistId", COALESCE(SUM(e.earned_delta_kzt), 0) AS "earned"
+        SELECT e.pharmacist_id AS "pharmacistId", GREATEST(COALESCE(SUM(e.earned_delta_kzt), 0), 0) AS "earned"
         FROM pharmacist_wallet_entries e
         WHERE e.pharmacist_id IN (:ids) AND e.created_at >= :since AND e.created_at <= :observedAt
         GROUP BY e.pharmacist_id

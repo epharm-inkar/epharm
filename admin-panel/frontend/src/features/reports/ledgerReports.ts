@@ -43,6 +43,8 @@ export const ledgerSources = {
   receipt_bonus: 'Рекомендации',
   training_bonus: 'Обучение',
   merch_task: 'Задания мерча',
+  sales_premium: 'Премия за продажи',
+  sales_premium_correction: 'Корректировка премии',
   admin_adjustment: 'Ручные корректировки',
   payout_reservation: 'Резервирование выплаты',
 }

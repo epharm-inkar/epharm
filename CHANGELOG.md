@@ -16,6 +16,27 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ### Added
 
+- Sales premium from Standard-N (server, 26.11.2026): the November premium, computed outside ePharm from the central
+  Standard-N database per seller IIN, is loaded as cumulative month-to-date amounts and credited to the pharmacist
+  wallet as earned money. `POST /api/admin/finance/sales-premium/import` (SYSTEM_ADMIN, HQ_HEAD; `dryRun` first)
+  credits the difference to the ledger, so a repeated or concurrent file writes nothing; a return writes a
+  `sales_premium_correction` that never takes the balance below zero and reports the uncovered rest. Sellers without
+  an active card wait in `sales_premium_pending` and are credited when the card appears or turns active (hook after
+  the commit and a sweep every 10 minutes). Every real import leaves one audit row without IINs. The till's
+  «Заработано за месяц» and last entries ("Премия за продажи, ноябрь 2026") and the cabinet balance include it; the
+  HQ ledger report filters both new sources. Tables `sales_premium_pending`, `sales_premium_imports`, ledger
+  constraints widened (V124). Payouts are not changed: a payout batch reserves the whole balance, premium included.
+- Sales premium collected by the server (26.11.2026): the daily job `SalesPremiumJob` reads the sales and returns of the
+  month's matrix products from the central Standard-N database (read only, one query per product, the `STANDARDN_*`
+  bridge of the directory), adds them up per seller IIN (packs = minus receipts and returns, times the bonus per pack,
+  rounded once per seller, no premium for sellers without an IIN, they are only reported) and gives the cumulative
+  figures to the same import. 06:40 Asia/Almaty, retry every 30 minutes until 11:00 while the database does not open;
+  off unless `SALES_PREMIUM_JOB_ENABLED=true`. Only a complete read is imported. `POST /api/admin/finance/sales-premium/
+  recompute?period=2026-11&dryRun=true|false` runs it now (totals only, no IINs), `GET .../statement.csv?period=2026-11`
+  is the month statement for accounting (`ФИО;ИИН;аптека;город;упаковок;начислено;статус`, UTF-8 with BOM, semicolons),
+  `POST .../matrix?period=...&dryRun=...` replaces the matrix of a month from a CSV (HQ_HEAD, SYSTEM_ADMIN). Tables
+  `sales_premium_matrix` (the November matrix of 188 products is seeded) and `sales_premium_figures` (V125). The four
+  routes are in the API inventory (H08.07 to H08.11), which the CI check «ops / config contracts» needed.
 - «ИИН указали сами» (owner, 26.11.2026, POSM 1.0.101): 41 people who sell every day have no IIN in the Standard-N
   directory, so ePharm never made them a card. The till's personal window now asks such a person for the IIN and the
   full name (the IIN is checked for twelve digits and the Kazakhstan control digit on the till and again on the server),

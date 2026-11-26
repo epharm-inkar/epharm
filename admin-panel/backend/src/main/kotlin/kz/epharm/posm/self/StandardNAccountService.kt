@@ -1,10 +1,12 @@
 package kz.epharm.posm.self
 
+import kz.epharm.finance.premium.PharmacistCardReady
 import kz.epharm.pharmacists.entity.PharmacistEntity
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.posm.service.StandardNDirectoryPerson
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -23,29 +25,33 @@ class StandardNAccountService(
     private val jdbc: JdbcTemplate,
     private val pharmacists: PharmacistRepository,
     @Value("\${app.posm.identity.standardn-directory.auto-accounts:true}") private val enabled: Boolean,
+    /** A new card may have a sales premium waiting for its IIN; it is credited after this transaction commits. */
+    private val events: ApplicationEventPublisher? = null,
 ) {
     /** Own transaction: callers resolve identity inside read-only transactions. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun ensure(person: StandardNDirectoryPerson, pharmacyId: String): PharmacistEntity? {
         // Before any JPA read: the update must not be hidden by a card already loaded in this transaction.
-        if (enabled) adoptPendingRegistration(person, pharmacyId)
+        if (enabled) adoptPendingRegistration(person, pharmacyId)?.let { events?.publishEvent(PharmacistCardReady(it)) }
         pharmacists.findByIin(person.iin)?.let { return it }
         if (!enabled) return null
         val pharmacy = pharmacy(pharmacyId)
-        jdbc.update(
+        val id = "ph_${UUID.randomUUID()}"
+        val inserted = jdbc.update(
             """
             INSERT INTO pharmacists(id, name, iin, phone, password_hash, tier, status, pharmacy_id, pharmacy_name, city, account_source,
                 iin_source, name_source)
             VALUES (?, ?, ?, '', NULL, 'Silver', 'active', ?, ?, ?, 'standardn', 'standardn', 'standardn')
             ON CONFLICT (iin) DO NOTHING
             """.trimIndent(),
-            "ph_${UUID.randomUUID()}",
+            id,
             directoryName(person),
             person.iin,
             pharmacyId,
             pharmacy?.first,
             pharmacy?.second ?: "",
         )
+        if (inserted > 0) events?.publishEvent(PharmacistCardReady(id))
         // A concurrent receipt of the same person may have won the insert; both read the same card.
         return pharmacists.findByIin(person.iin)
     }
@@ -54,14 +60,15 @@ class StandardNAccountService(
      * INK-209: a card left in 'pending' by the old registration takes the directory person, because the directory
      * says who sells under this IIN at this pharmacy. That registration may have been made with someone else's IIN,
      * so its phone, name and password are not carried over and its sessions end; the replaced values go to
-     * pharmacist_registration_replacements for HQ review. Active and blocked cards are never touched.
+     * pharmacist_registration_replacements for HQ review. Active and blocked cards are never touched. Returns the id
+     * of the card that turned active, so that a sales premium waiting for its IIN is credited after the commit.
      */
-    private fun adoptPendingRegistration(person: StandardNDirectoryPerson, pharmacyId: String) {
+    private fun adoptPendingRegistration(person: StandardNDirectoryPerson, pharmacyId: String): String? {
         val old = jdbc.queryForList(
             "SELECT id, name, phone, pharmacy_id, password_hash, created_at FROM pharmacists " +
                 "WHERE iin = ? AND status = 'pending' FOR UPDATE",
             person.iin,
-        ).singleOrNull() ?: return
+        ).singleOrNull() ?: return null
         val id = old["id"] as String
         val pharmacy = pharmacy(pharmacyId)
         jdbc.update(
@@ -91,6 +98,7 @@ class StandardNAccountService(
             id,
         )
         log.warn("INK-209: pending registration {} taken over by the Standard-N directory person at {}", id, pharmacyId)
+        return id
     }
 
     private fun pharmacy(pharmacyId: String): Pair<String?, String>? = jdbc.query(

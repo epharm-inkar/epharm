@@ -4,6 +4,7 @@ import kz.epharm.auth.domain.AdminRole
 import kz.epharm.auth.access.AdministrativeScope
 import kz.epharm.auth.security.AdminPrincipal
 import kz.epharm.pharmacies.repository.PharmacyRepository
+import kz.epharm.finance.premium.PharmacistCardReady
 import kz.epharm.finance.service.PharmacistWalletService
 import kz.epharm.pharmacists.dto.ActivatePharmacistRequest
 import kz.epharm.pharmacists.dto.CreatePharmacistRequest
@@ -14,6 +15,7 @@ import kz.epharm.pharmacists.entity.PharmacistStatus
 import kz.epharm.pharmacists.repository.PharmacistRepository
 import kz.epharm.shared.error.AppException
 import kz.epharm.shared.error.ErrorCode
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.core.context.SecurityContextHolder
@@ -33,6 +35,8 @@ class PharmacistService(
     private val administrativeScope: AdministrativeScope,
     private val credentialVault: kz.epharm.learnercredentials.LearnerPasswordVault,
     private val activityService: PharmacistActivityService? = null,
+    /** Tells the sales premium that a card can hold money now; handled after this transaction commits. */
+    private val events: ApplicationEventPublisher? = null,
 ) {
 
     @Transactional(readOnly = true)
@@ -89,6 +93,7 @@ class PharmacistService(
         }
         val saved=pharmacistRepository.saveAndFlush(entity)
         credentialVault.capture(saved.id,saved.passwordHash!!,req.password)
+        if (saved.status == PharmacistStatus.active) events?.publishEvent(PharmacistCardReady(saved.id))
         return projected(saved)
     }
 
@@ -156,7 +161,9 @@ class PharmacistService(
         entity.pharmacyName = pharmacy.name
         entity.city = pharmacy.city
         entity.status = PharmacistStatus.active
-        return projected(pharmacistRepository.save(entity))
+        val saved = pharmacistRepository.save(entity)
+        events?.publishEvent(PharmacistCardReady(saved.id))
+        return projected(saved)
     }
 
     @Transactional
@@ -178,7 +185,9 @@ class PharmacistService(
             )
         }
         entity.status = PharmacistStatus.active
-        return projected(pharmacistRepository.save(entity))
+        val saved = pharmacistRepository.save(entity)
+        events?.publishEvent(PharmacistCardReady(saved.id))
+        return projected(saved)
     }
 
     private fun loadPharmacy(id: String) = (findPharmacy(id) ?: throw AppException(
