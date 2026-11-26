@@ -3,8 +3,8 @@
 ## 26.11.2026: tables fill their cards, «?» tips, campaign page in two groups
 
 **Tables** (`index.css`, `ui/TableScroll`). The shared rule `.admin-console main table` no longer sets `display: block`.
-That rule made the rows of every table an anonymous table that shrank to its content, so a table ended at 55 to 85% of
-its card (analytics journal, media plans, ledger, payouts, courses, results, certificates, storefront, orders, coverage,
+That rule made the rows of every table an anonymous table that shrank to its content, so a table ended at 46 to 97% of
+its card at 1440 px and 32 to 98% at 1920 px (analytics journal, media plans, ledger, payouts, courses, results, certificates, storefront, orders, coverage,
 access). A table is a real table again (`width: 100%`); a wide one scrolls inside its wrapper, `TableScroll` or any
 `overflow-x-auto` parent, never the page. `TableScroll` now also wraps the two tables that had no scroll box (Reconcile,
 training analytics). `ui/TableScroll.test.tsx` reads `index.css` and fails if the block rule comes back. `Metric` keeps a
