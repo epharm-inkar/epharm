@@ -6,6 +6,10 @@
 	# this host. Certificate renewal is performed by INKAR IT and deployed manually.
 	auto_https disable_certs
 	servers {
+		# HTTP/3 (QUIC over UDP) stalled large responses for staff reaching this host through the
+		# INKAR VPN (26.11.2026): a 9.6 MB video stopped at 5.3 MB over h3 and came whole in 1 s over
+		# TCP, and one stalled QUIC connection froze every admin and /learn tab. TCP only.
+		protocols h1 h2
 		trusted_proxies static 10.10.1.74/32 10.10.1.80/32
 		trusted_proxies_strict
 		client_ip_headers X-Forwarded-For
