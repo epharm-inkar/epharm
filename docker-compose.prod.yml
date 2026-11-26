@@ -246,6 +246,12 @@ services:
       STANDARDN_USER: ${STANDARDN_USER:-}
       STANDARDN_PASSWORD: ${STANDARDN_PASSWORD:-}
       STANDARDN_SYNC_DELAY_MS: ${STANDARDN_SYNC_DELAY_MS:-21600000}
+      # Daily sales premium from the same read-only Standard-N bridge (26.11.2026). Off until the owner says so;
+      # needs STANDARDN_DIRECTORY_ENABLED=true and the STANDARDN_USER / STANDARDN_PASSWORD above.
+      SALES_PREMIUM_JOB_ENABLED: ${SALES_PREMIUM_JOB_ENABLED:-false}
+      SALES_PREMIUM_JOB_START: '${SALES_PREMIUM_JOB_START:-06:40}'
+      SALES_PREMIUM_JOB_DEADLINE: '${SALES_PREMIUM_JOB_DEADLINE:-11:00}'
+      SALES_PREMIUM_JOB_RETRY_MINUTES: ${SALES_PREMIUM_JOB_RETRY_MINUTES:-30}
       # The website is authoritative; historical Medusa snapshots remain local compatibility data.
       MEDUSA_ENABLED: ${MEDUSA_ENABLED:-false}
       STOREFRONT_CATALOG_ENABLED: ${STOREFRONT_CATALOG_ENABLED:-true}

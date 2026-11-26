@@ -66,9 +66,15 @@ object SalesPremiumRules {
     fun sourceIdBase(period: String, pharmacistId: String, through: LocalDate): String =
         "$CONTEXT_PREFIX$period:$pharmacistId:$through"
 
-    fun validate(request: SalesPremiumImportRequest, today: LocalDate): ValidatedImport {
-        val period = request.period.trim()
+    /** The trimmed period when it is `YYYY-MM`; anything else is a 400. */
+    fun requirePeriod(raw: String?): String {
+        val period = raw?.trim().orEmpty()
         if (!PERIOD.matches(period)) invalid("Период должен быть в формате ГГГГ-ММ, например 2026-11")
+        return period
+    }
+
+    fun validate(request: SalesPremiumImportRequest, today: LocalDate): ValidatedImport {
+        val period = requirePeriod(request.period)
         if (YearMonth.from(request.through) != YearMonth.parse(period)) {
             invalid("Дата среза должна быть внутри периода $period")
         }

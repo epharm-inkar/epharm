@@ -2,6 +2,20 @@ package kz.epharm.finance.premium
 
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.util.UUID
+import kz.epharm.auth.security.AdminPrincipal
+
+/**
+ * Who loaded a figure, for the audit row: an administrator (their id and role) or the daily collector. The collector
+ * has no login, so it carries a fixed all-zero id and the role `SYSTEM_JOB`, which no administrator can have.
+ */
+data class PremiumActor(val id: UUID, val role: String) {
+    companion object {
+        val SYSTEM_JOB = PremiumActor(UUID(0L, 0L), "SYSTEM_JOB")
+
+        fun of(principal: AdminPrincipal) = PremiumActor(principal.userId, principal.role.name)
+    }
+}
 
 /** One seller of the file. [amountKzt] is cumulative for the month through the cut-off date, [packs] is informational. */
 data class SalesPremiumRow(val iin: String, val amountKzt: BigDecimal, val packs: Double? = null)

@@ -102,6 +102,16 @@ app:
     password: ${STANDARDN_PASSWORD:}
     sync-delay-ms: ${STANDARDN_SYNC_DELAY_MS:21600000}
     initial-delay-ms: ${STANDARDN_INITIAL_DELAY_MS:30000}
+  finance:
+    sales-premium:
+      job:
+        # Daily collection of the sales premium from the central Standard-N database (read only, through the same
+        # STANDARDN_* settings as the directory above). OFF unless true. Times are Asia/Almaty; while the database does
+        # not open (it is closed at night) the job retries every retry-minutes until the deadline.
+        enabled: ${SALES_PREMIUM_JOB_ENABLED:false}
+        start: ${SALES_PREMIUM_JOB_START:06:40}
+        deadline: ${SALES_PREMIUM_JOB_DEADLINE:11:00}
+        retry-minutes: ${SALES_PREMIUM_JOB_RETRY_MINUTES:30}
   merch:
     staff-access-enabled: ${MERCH_STAFF_ACCESS_ENABLED:false}
     # These switches do not migrate data or enable the legacy CRM writer.

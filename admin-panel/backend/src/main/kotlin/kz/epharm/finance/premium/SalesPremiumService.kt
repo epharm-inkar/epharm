@@ -2,6 +2,7 @@ package kz.epharm.finance.premium
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import jakarta.persistence.EntityManager
+import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Clock
 import java.time.LocalDate
@@ -60,7 +61,15 @@ class SalesPremiumService(
      * payout generation does, so the two never wait for each other in a circle.
      */
     @Transactional
-    fun apply(request: SalesPremiumImportRequest, actor: AdminPrincipal): SalesPremiumImportResult {
+    fun apply(request: SalesPremiumImportRequest, actor: AdminPrincipal): SalesPremiumImportResult =
+        applyAs(request, PremiumActor.of(actor))
+
+    /**
+     * The same load for any actor, the daily collector included. It is a method of its own, not an overload of
+     * [apply]: a call without a transaction proxy in between would not start one, so both carry the annotation.
+     */
+    @Transactional
+    fun applyAs(request: SalesPremiumImportRequest, actor: PremiumActor): SalesPremiumImportResult {
         val input = SalesPremiumRules.validate(request, LocalDate.now(clock))
         jdbc.jdbcTemplate.queryForList("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "sales-premium:import:${input.period}")
         requireNotStale(input)
@@ -80,6 +89,7 @@ class SalesPremiumService(
             tally.held(held)
         }
         plan.ambiguous.forEach(tally::ambiguous)
+        storeFigures(input)
         val summary = tally.result(dryRun = false, auditId = null)
         val auditId = writeAudit(input, summary, actor)
         log.info(
@@ -158,16 +168,35 @@ class SalesPremiumService(
         )
     }
 
+    /**
+     * The latest figure of every seller of the file, credited or waiting: the packs live nowhere else (the ledger
+     * holds tenge only) and the month statement reads them from here. A file without packs clears them.
+     */
+    private fun storeFigures(input: ValidatedImport) {
+        val batch = input.rows.map { row ->
+            MapSqlParameterSource().addValue("iin", row.iin).addValue("period", input.period)
+                .addValue("packs", row.packs?.let { BigDecimal.valueOf(it).setScale(3, RoundingMode.HALF_UP) })
+                .addValue("amount", row.amountKzt).addValue("through", input.through)
+        }.toTypedArray()
+        jdbc.batchUpdate(
+            """INSERT INTO sales_premium_figures(iin, period, packs, amount_kzt, through, updated_at)
+                VALUES (:iin, :period, :packs, :amount, :through, now())
+                ON CONFLICT (period, iin) DO UPDATE
+                SET packs = EXCLUDED.packs, amount_kzt = EXCLUDED.amount_kzt, through = EXCLUDED.through, updated_at = now()""",
+            batch,
+        )
+    }
+
     /** No IIN, name or phone: the hash recognises a file, the ledger entries hold the per-person amounts. */
-    private fun writeAudit(input: ValidatedImport, summary: SalesPremiumImportResult, actor: AdminPrincipal): UUID {
+    private fun writeAudit(input: ValidatedImport, summary: SalesPremiumImportResult, actor: PremiumActor): UUID {
         val id = UUID.randomUUID()
         val withoutIins = summary.copy(ambiguous = summary.ambiguous.copy(iins = emptyList()))
         jdbc.update(
             """INSERT INTO sales_premium_imports(id, period, through, actor_id, actor_role, payload_sha256, rows_count, summary)
                 VALUES (:id, :period, :through, :actor, :role, :hash, :rows, CAST(:summary AS jsonb))""",
             MapSqlParameterSource().addValue("id", id).addValue("period", input.period)
-                .addValue("through", input.through).addValue("actor", actor.userId)
-                .addValue("role", actor.role.name).addValue("hash", input.payloadSha256)
+                .addValue("through", input.through).addValue("actor", actor.id)
+                .addValue("role", actor.role).addValue("hash", input.payloadSha256)
                 .addValue("rows", input.rows.size).addValue("summary", json.writeValueAsString(withoutIins)),
         )
         return id
