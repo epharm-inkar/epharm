@@ -1,6 +1,11 @@
 package kz.epharm.posm.identity
 
 import io.mockk.every
+import io.mockk.just
+import io.mockk.mockkObject
+import io.mockk.runs
+import io.mockk.unmockkObject
+import kz.epharm.auth.access.UnifiedAuthorityLock
 import io.mockk.mockk
 import io.mockk.verify
 import kz.epharm.pharmacists.entity.PharmacistEntity
@@ -18,8 +23,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
+import org.springframework.jdbc.core.JdbcTemplate
 import java.time.Instant
 import java.util.Optional
 import java.util.UUID
@@ -31,7 +38,11 @@ class IdentityClaimSubmissionServiceTest {
     private val pharmacists = mockk<PharmacistRepository>()
     private val mappings = mockk<PosmPharmacistMappingRepository>()
     private val limiter = mockk<IdentityClaimLimiter>(relaxed = true)
-    private val service = IdentityClaimSubmissionService(store, directory, pharmacists, mappings, limiter)
+    private val jdbc = mockk<JdbcTemplate>(relaxed = true)
+    private val admin = mockk<IdentityClaimAdminService>()
+    // HQ decides in most tests here; the tests of ePharm taking a clean claim itself build their own service.
+    private val service = IdentityClaimSubmissionService(store, directory, pharmacists, mappings, limiter, jdbc, admin, autoConfirm = false)
+    private val auto = IdentityClaimSubmissionService(store, directory, pharmacists, mappings, limiter, jdbc, admin, autoConfirm = true)
 
     private val device = PosmDeviceIdentity("dev-1", "ph-1", legacy = false)
     private val iin = "900115300013"
@@ -164,6 +175,46 @@ class IdentityClaimSubmissionServiceTest {
         val error = refused(HttpStatus.TOO_MANY_REQUESTS) { service.tillSubmit(device, request()) }
         assertEquals(120L, error.retryAfterSeconds)
         verify(exactly = 0) { store.upsertPerson(any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    // ── till: ePharm takes a clean claim itself (owner, 26.11.2026) ─────────
+
+    @AfterEach fun releaseLock() = unmockkObject(UnifiedAuthorityLock)
+
+    private fun lockless() {
+        mockkObject(UnifiedAuthorityLock)
+        every { UnifiedAuthorityLock.acquire(any()) } just runs
+    }
+
+    @Test fun `with the switch off nothing is taken without HQ`() {
+        service.tillSubmit(device, request())
+        verify(exactly = 0) { admin.autoConfirm(any()) }
+    }
+
+    @Test fun `a clean claim taken by ePharm answers known, under the HQ lock`() {
+        lockless()
+        val id = UUID.randomUUID()
+        every { store.upsertPerson(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns id
+        every { admin.autoConfirm(id) } returns "ph_new"
+        val state = auto.tillSubmit(device, request())
+        assertEquals("known", state.state)
+        assertNull(state.iinMasked)
+        verify(exactly = 1) { UnifiedAuthorityLock.acquire(jdbc) }
+    }
+
+    @Test fun `a claim ePharm leaves for HQ answers pending as before`() {
+        lockless()
+        val id = UUID.randomUUID()
+        every { store.upsertPerson(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns id
+        every { admin.autoConfirm(id) } returns null
+        assertEquals("pending", auto.tillSubmit(device, request()).state)
+    }
+
+    @Test fun `the IIN of an existing card is never taken without HQ`() {
+        lockless()
+        every { pharmacists.findByIin(iin) } returns PharmacistEntity(id = "ph_other", name = "Другая Карточка", iin = iin, pharmacyId = "ph-9")
+        assertEquals("pending", auto.tillSubmit(device, request()).state)
+        verify(exactly = 0) { admin.autoConfirm(any()) }
     }
 
     // ── cabinet ─────────────────────────────────────────────────────────────

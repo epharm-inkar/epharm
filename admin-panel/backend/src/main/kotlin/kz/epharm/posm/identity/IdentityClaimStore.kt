@@ -129,16 +129,35 @@ class IdentityClaimStore(private val jdbc: JdbcTemplate) {
         UUID.randomUUID(), pharmacyId, pharmacistId, iin, fullName,
     ).single()
 
-    fun markConfirmed(id: UUID, actor: UUID, pharmacistId: String, mappingId: UUID?) {
+    /** [actor] null with a [reason]: ePharm took the claim itself, see [IdentityClaimRules.AUTO_CONFIRMED]. */
+    fun markConfirmed(id: UUID, actor: UUID?, pharmacistId: String, mappingId: UUID?, reason: String? = null) {
         jdbc.update(
             """
             UPDATE pharmacist_identity_claims
-            SET status = 'confirmed', decided_by = ?, decided_at = now(), pharmacist_id = ?, mapping_id = ?, updated_at = now()
+            SET status = 'confirmed', decided_by = ?, decided_at = now(), pharmacist_id = ?, mapping_id = ?,
+                decision_reason = ?, updated_at = now()
             WHERE id = ? AND status = 'pending'
             """.trimIndent(),
-            actor, pharmacistId, mappingId, id,
+            actor, pharmacistId, mappingId, reason, id,
         )
     }
+
+    /** Another open claim (of any kind) names this IIN: two people say it is theirs, HQ looks. */
+    fun otherOpenWithIin(iin: String, exceptId: UUID): Boolean = jdbc.queryForObject(
+        "SELECT EXISTS(SELECT 1 FROM pharmacist_identity_claims WHERE status = 'pending' AND iin = ? AND id <> ?)",
+        Boolean::class.java, iin, exceptId,
+    ) == true
+
+    /** HQ once rejected a claim of this Standard-N user or with this IIN: the next one goes to HQ again. */
+    fun rejectedBefore(pharmacyId: String, userId: String, iin: String): Boolean = jdbc.queryForObject(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM pharmacist_identity_claims
+            WHERE status = 'rejected' AND (iin = ? OR (kind = 'person' AND pharmacy_id = ? AND standardn_user_id = ?))
+        )
+        """.trimIndent(),
+        Boolean::class.java, iin, pharmacyId, userId,
+    ) == true
 
     fun markRejected(id: UUID, actor: UUID, reason: String) {
         jdbc.update(

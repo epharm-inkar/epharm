@@ -36,7 +36,9 @@ import java.util.UUID
  * The seven routes of the identity claims over HTTP: who may call them, the status codes, the JSON the till, the admin
  * and the cabinet read. Synthetic data only.
  */
-@SpringBootTest
+// These tests are about HQ deciding: every claim waits for HQ here. ePharm taking clean claims itself is
+// IdentityClaimAutoConfirmIntegrationTest.
+@SpringBootTest(properties = ["epharm.identity-claims.auto-confirm=false"])
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
