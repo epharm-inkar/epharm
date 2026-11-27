@@ -2,6 +2,7 @@ import type {
   CertificateStatus,
   EventParticipantStatus,
   OfflineEventStatus,
+  TrainingAssignmentDto,
   TrainingAssignmentStatus,
   TrainingFormat,
   TrainingProgramStatus,
@@ -99,6 +100,46 @@ export function dateTime(value: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+export interface ProgramProgress {
+  programId: string
+  name: string
+  total: number
+  completed: number
+  inProgress: number
+  notStarted: number
+  overdue: number
+}
+
+/**
+ * Прохождение по каждой программе (Григорий, 27.11.2026: «по каждой программе график по прохождению»): назначения без
+ * отменённых, разложенные на завершено, в процессе (любой этап, ожидание, пересдача, пауза), не начато и просрочено.
+ */
+export function programProgress(assignments: readonly TrainingAssignmentDto[]): ProgramProgress[] {
+  const byProgram = new Map<string, ProgramProgress>()
+  for (const assignment of assignments) {
+    if (assignment.status === 'cancelled') continue
+    const row = byProgram.get(assignment.programId) ?? {
+      programId: assignment.programId,
+      name: assignment.programName,
+      total: 0,
+      completed: 0,
+      inProgress: 0,
+      notStarted: 0,
+      overdue: 0,
+    }
+    const key: keyof Omit<ProgramProgress, 'programId' | 'name' | 'total'> =
+      assignment.status === 'completed'
+        ? 'completed'
+        : assignment.status === 'overdue'
+          ? 'overdue'
+          : assignment.status === 'scheduled' || assignment.status === 'not_started'
+            ? 'notStarted'
+            : 'inProgress'
+    byProgram.set(assignment.programId, { ...row, total: row.total + 1, [key]: row[key] + 1 })
+  }
+  return [...byProgram.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, 'ru'))
 }
 
 export function dateOnly(value: string | null): string {
