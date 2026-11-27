@@ -536,6 +536,31 @@ describe('Обучение — операционный раздел', () => {
     expect(screen.queryByText('Нет доступа')).not.toBeInTheDocument()
   })
 
+  it('рисует прохождение по каждой программе (27.11.2026)', () => {
+    lmsHooks.useTrainingAssignments.mockReturnValue(
+      queryResult([
+        assignment,
+        { ...assignment, id: 'assignment-done', status: 'completed' },
+        { ...assignment, id: 'assignment-cancelled', status: 'cancelled' },
+      ] as TrainingAssignmentDto[]),
+    )
+    renderPage()
+    const chart = screen.getByTestId('training-program-progress')
+    expect(within(chart).getByText('Прохождение по программам')).toBeInTheDocument()
+    expect(within(chart).getByText(program.name)).toBeInTheDocument()
+    expect(within(chart).getByText(/завершили 1 из 2 · 50%/)).toBeInTheDocument()
+    expect(
+      within(chart).getByRole('img', {
+        name: `${program.name}: завершено 1, в процессе 0, не начато 1, просрочено 0 из 2`,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('без назначений график прохождения не показывается', () => {
+    renderPage()
+    expect(screen.queryByTestId('training-program-progress')).not.toBeInTheDocument()
+  })
+
   it('показывает сводные показатели', () => {
     renderPage()
     expect(screen.getByRole('heading', { level: 1, name: 'Обучение' })).toBeInTheDocument()
@@ -939,6 +964,8 @@ describe('Обучение — операционный раздел', () => {
     renderPage('/lms?tab=certificates')
 
     expect(screen.getByText('Без оценки')).toBeInTheDocument()
+    // Не только дата, но и время выдачи (27.11.2026).
+    expect(screen.getByText(/^04\.11\.2026, \d{2}:\d{2}$/)).toBeInTheDocument()
   })
 
   it('показывает срок действия и статус сертификата, как обещает подзаголовок', () => {

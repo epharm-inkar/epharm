@@ -93,6 +93,7 @@ import {
   chipClass,
   dateOnly,
   dateTime,
+  programProgress,
 } from './training-ui'
 import { CourseEditorDrawer } from './CourseEditorDrawer'
 import { CertificateEditorModal } from './CertificateEditorModal'
@@ -336,7 +337,11 @@ export default function LMSPage() {
           )}
         </>
       ) : tab === 'overview' ? (
-        <OverviewTab dashboard={dashboard} loading={dashboardQuery.isLoading} />
+        <OverviewTab
+          dashboard={dashboard}
+          loading={dashboardQuery.isLoading}
+          assignments={assignments}
+        />
       ) : tab === 'programs' ? (
         <ProgramsTab
           programs={programs}
@@ -507,12 +512,70 @@ export default function LMSPage() {
   )
 }
 
+// brand-green-* в этой теме терракотовый и рядом с красным «Просрочено» сливается: завершённым настоящий зелёный.
+const PROGRESS_PARTS = [
+  ['completed', 'Завершено', 'bg-accent-success'],
+  ['inProgress', 'В процессе', 'bg-accent-amber'],
+  ['notStarted', 'Не начато', 'bg-ink-300'],
+  ['overdue', 'Просрочено', 'bg-accent-danger'],
+] as const
+
+/** График прохождения по каждой программе (Григорий, 27.11.2026). */
+function ProgramProgressSection({ assignments }: { assignments: TrainingAssignmentDto[] }) {
+  const rows = programProgress(assignments)
+  if (rows.length === 0) return null
+  return (
+    <section className="card p-5" data-testid="training-program-progress">
+      <h2 className="text-[15px] font-extrabold text-ink-900">Прохождение по программам</h2>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-500">
+        {PROGRESS_PARTS.map(([key, label, color]) => (
+          <span key={key} className="inline-flex items-center gap-1.5">
+            <span className={`h-2.5 w-2.5 rounded-sm ${color}`} aria-hidden="true" />
+            {label}
+          </span>
+        ))}
+      </div>
+      <ul className="mt-4 space-y-4">
+        {rows.map((row) => (
+          <li key={row.programId}>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[13px]">
+              <span className="min-w-0 break-words font-semibold text-ink-800">{row.name}</span>
+              <span className="num shrink-0 text-ink-600">
+                завершили {row.completed} из {row.total} ·{' '}
+                {Math.round((row.completed * 100) / row.total)}%
+              </span>
+            </div>
+            <div
+              className="mt-1.5 flex h-3 gap-[2px]"
+              role="img"
+              aria-label={`${row.name}: завершено ${row.completed}, в процессе ${row.inProgress}, не начато ${row.notStarted}, просрочено ${row.overdue} из ${row.total}`}
+            >
+              {PROGRESS_PARTS.map(([key, label, color]) =>
+                row[key] > 0 ? (
+                  <div
+                    key={key}
+                    className={`min-w-[6px] rounded-sm ${color}`}
+                    style={{ flexGrow: row[key], flexBasis: 0 }}
+                    title={`${label}: ${row[key]}`}
+                  />
+                ) : null,
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 function OverviewTab({
   dashboard,
   loading,
+  assignments,
 }: {
   dashboard: ReturnType<typeof useTrainingDashboard>['data']
   loading: boolean
+  assignments: TrainingAssignmentDto[]
 }) {
   if (loading || !dashboard) return <LoadingBlock label="Загружаем показатели обучения…" />
   return (
@@ -583,6 +646,7 @@ function OverviewTab({
           </dl>
         </section>
       </div>
+      <ProgramProgressSection assignments={assignments} />
       <section className="card p-5">
         <h2 className="text-[15px] font-extrabold text-ink-900">Назначения по формату</h2>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
@@ -1440,7 +1504,10 @@ function CertificatesTab({
               <td className="num px-3 py-3">
                 {certificate.score == null ? 'Без оценки' : `${certificate.score}%`}
               </td>
-              <td className="num px-3 py-3 text-ink-600">{dateOnly(certificate.issuedAt)}</td>
+              {/* Дата и время выдачи (Григорий, 27.11.2026): видно, когда человек закончил программу. */}
+              <td className="num whitespace-nowrap px-3 py-3 text-ink-600">
+                {dateTime(certificate.issuedAt)}
+              </td>
               <td className="num px-3 py-3 text-ink-600">
                 {certificate.expiresAt ? dateOnly(certificate.expiresAt) : 'Бессрочно'}
               </td>
