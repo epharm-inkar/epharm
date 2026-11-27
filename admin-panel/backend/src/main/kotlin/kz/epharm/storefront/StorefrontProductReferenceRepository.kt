@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kz.epharm.medusa.dto.MedusaProduct
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Propagation
+import org.springframework.transaction.annotation.Transactional
 
 /** Website IDs need their original handle after a restart; names are never identity keys. */
 @Repository
@@ -11,6 +13,12 @@ class StorefrontProductReferenceRepository(
     private val jdbc: JdbcTemplate,
     private val mapper: ObjectMapper,
 ) {
+    /**
+     * Writes in its own transaction. Readers call the website inside read-only transactions (the bonus tab):
+     * there PostgreSQL refuses the INSERT and aborts the caller's whole transaction, so every later query of the
+     * request fails with 25P02 (27.11.2026, «Не удалось загрузить» on every product of the bonus tab).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun remember(origin: String, products: List<MedusaProduct>) {
         val valid = products.filter { it.id.isNotBlank() && !it.handle.isNullOrBlank() }
         if (valid.isEmpty()) return

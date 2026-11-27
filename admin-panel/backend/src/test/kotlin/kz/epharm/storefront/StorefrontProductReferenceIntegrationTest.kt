@@ -9,6 +9,8 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -34,6 +36,38 @@ class StorefrontProductReferenceIntegrationTest {
     }
 
     @Autowired private lateinit var references: StorefrontProductReferenceRepository
+    @Autowired private lateinit var transactions: PlatformTransactionManager
+
+    /**
+     * 27.11.2026: the bonus tab opens a product inside a read-only transaction. The website fetch saved its
+     * reference in that same transaction, PostgreSQL refused the INSERT and aborted the transaction, and every
+     * later statement of the request failed (25P02), so pharmacists saw «Не удалось загрузить» on every product.
+     */
+    @Test
+    fun `product fetched inside a read-only transaction is remembered and the transaction stays usable`() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/product/read-only-handle") { exchange ->
+            val body = """{"product":{"id":"read-only-card","slug":"read-only-handle","name":"Урсозим","price":7540,"description":"Описание"}}""".toByteArray()
+            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+        try {
+            val origin = "http://127.0.0.1:${server.address.port}"
+            val readOnly = TransactionTemplate(transactions).apply { isReadOnly = true }
+            readOnly.executeWithoutResult {
+                val fetched = StorefrontCatalogClient(true, origin, 1_000, 1_000, references)
+                    .getProduct("read-only-card", "read-only-handle")
+                assertThat(fetched?.handle).isEqualTo("read-only-handle")
+                // The next statement of the same transaction must still run (it failed with 25P02 before the fix).
+                val reread = StorefrontCatalogClient(true, origin, 1_000, 1_000, references).cachedProduct("read-only-card")
+                assertThat(reread?.handle).isEqualTo("read-only-handle")
+            }
+        } finally {
+            server.stop(0)
+        }
+    }
 
     @Test
     fun `website-only product survives client restart and refreshes price by its original handle`() {
