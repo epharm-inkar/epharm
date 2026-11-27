@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useUiStore } from '@/app/store'
-import { EarnSection } from './EarnSection'
+import { EarnSection, RatingTab, SHOW_RATING } from './EarnSection'
 import type { EarnLeaderboard, EarnProductDetail, EarnProducts, EarnSummary } from './earnTypes'
 
 const products: EarnProducts = {
@@ -139,7 +139,7 @@ describe('«Бонусы» tab', () => {
     expect(screen.getByText('По продажам вашей аптеки за 30 дней')).toBeInTheDocument()
     expect(await screen.findByTestId('earn-today')).toHaveTextContent('400 ₸')
     expect(screen.getByText('Хорошо идёте!')).toBeInTheDocument()
-    expect(screen.getByText('3-е место за неделю')).toBeInTheDocument()
+    if (SHOW_RATING) expect(screen.getByText('3-е место за неделю')).toBeInTheDocument()
     const card = screen.getByTestId('earn-product-p-tantum')
     expect(within(card).getByText('+200 ₸')).toBeInTheDocument()
     expect(within(card).getByText('42 уп. за неделю')).toBeInTheDocument()
@@ -189,11 +189,19 @@ describe('«Бонусы» tab', () => {
     await waitFor(() => expect(calls).toContain('/api/mobile/me/earn/summary?period=month'))
   })
 
+  it.runIf(!SHOW_RATING)('keeps the rating hidden for now: no tab and no weekly place', async () => {
+    const { fetchJson } = server()
+    render(<EarnSection fetchJson={fetchJson} />)
+    expect(await screen.findByTestId('earn-today')).not.toHaveTextContent('…')
+    expect(screen.queryByRole('tab', { name: /Рейтинг/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('tab')).toHaveLength(2)
+    expect(screen.queryByText(/место за неделю/)).not.toBeInTheDocument()
+  })
+
   it('shows the leaderboard with medals and my own place below the top', async () => {
     const { fetchJson, calls } = server()
     const user = userEvent.setup()
-    render(<EarnSection fetchJson={fetchJson} />)
-    await user.click(screen.getByRole('tab', { name: /Рейтинг/ }))
+    render(<RatingTab fetchJson={fetchJson} />)
     expect(await screen.findByText('Сапарова А.')).toBeInTheDocument()
     expect(screen.getByTestId('earn-leader-me')).toHaveTextContent('Бузурбаева Л.')
     expect(screen.getByTestId('earn-leader-me')).toHaveTextContent('26')

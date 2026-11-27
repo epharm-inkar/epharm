@@ -37,6 +37,12 @@ import {
 
 type Tab = 'products' | 'sales' | 'rating'
 
+/**
+ * Рейтинг пока скрыт (Григорий, 27.11.2026: «Рейтинг пока что скрой… потом отобразить»): ни вкладки, ни места за неделю.
+ * Вернуть: true. Код рейтинга остаётся рабочим и покрыт тестом.
+ */
+export const SHOW_RATING = false
+
 /** Cards shown at once: a phone scrolls through a dozen, not a hundred. */
 const PAGE = 12
 
@@ -85,7 +91,9 @@ export function EarnSection({ fetchJson }: { fetchJson: EarnFetch }) {
             ['sales', t('Продажи'), Receipt],
             ['rating', t('Рейтинг'), Trophy],
           ] as const
-        ).map(([id, label, Icon]) => (
+        )
+          .filter(([id]) => SHOW_RATING || id !== 'rating')
+          .map(([id, label, Icon]) => (
           <button
             key={id}
             type="button"
@@ -103,9 +111,9 @@ export function EarnSection({ fetchJson }: { fetchJson: EarnFetch }) {
         <ProductsTab fetchJson={fetchJson} />
       ) : tab === 'sales' ? (
         <SalesTab fetchJson={fetchJson} />
-      ) : (
+      ) : SHOW_RATING ? (
         <RatingTab fetchJson={fetchJson} />
-      )}
+      ) : null}
     </section>
   )
 }
@@ -144,7 +152,7 @@ function StatusCard({ summary, loading }: { summary: EarnSummary | null; loading
             <Crown size={14} className="text-accent-amber" />
             {t(LEVEL_NAMES[status?.level ?? 'start'] ?? 'Старт')}
           </span>
-          {summary?.weekPlace ? (
+          {SHOW_RATING && summary?.weekPlace ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-amber/20 px-3 py-1.5 text-xs font-extrabold text-accent-amber">
               <Trophy size={14} />
               {t('{place}-е место за неделю', { place: summary.weekPlace })}
@@ -723,7 +731,7 @@ function Tile({
 
 const MEDALS = ['#F4B73A', '#B8BCC6', '#CD8A4E']
 
-function RatingTab({ fetchJson }: { fetchJson: EarnFetch }) {
+export function RatingTab({ fetchJson }: { fetchJson: EarnFetch }) {
   const t = useLearnerT()
   const [scope, setScope] = useState<EarnScope>('pharmacists')
   const [period, setPeriod] = useState<EarnPeriod>('week')
