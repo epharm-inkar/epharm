@@ -85,7 +85,7 @@ class StorefrontCatalogClient(
                 throw IllegalStateException("Website catalogue returned an empty first page")
             }
             mapped.filter { it.id.isNotBlank() }.forEach { productsById[it.id] = it }
-            references?.remember(checkNotNull(baseUrl), mapped)
+            rememberQuietly(mapped)
             MedusaProductListResponse(
                 products = mapped,
                 count = page.count.coerceAtLeast(mapped.size),
@@ -115,12 +115,19 @@ class StorefrontCatalogClient(
                 ?.let { enrich(listOf(it)).single() }
                 ?.also {
                     productsById[it.id] = it
-                    references?.remember(checkNotNull(baseUrl), listOf(it))
+                    rememberQuietly(listOf(it))
                 }
         } catch (error: Exception) {
             log.warn("Storefront product request failed (id={}, handle={}): {}", id, handle, error.message)
             throw upstream(error)
         }
+    }
+
+    /** The saved references only speed up the next restart: a failed write must not fail the catalogue read. */
+    private fun rememberQuietly(products: List<MedusaProduct>) {
+        val origin = baseUrl ?: return
+        runCatching { references?.remember(origin, products) }
+            .onFailure { log.warn("Storefront product references not saved ({} products): {}", products.size, it.message) }
     }
 
     fun listCategories(): List<MedusaCategory> {
