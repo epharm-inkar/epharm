@@ -512,8 +512,9 @@ export default function LMSPage() {
   )
 }
 
+// brand-green-* в этой теме терракотовый и рядом с красным «Просрочено» сливается: завершённым настоящий зелёный.
 const PROGRESS_PARTS = [
-  ['completed', 'Завершено', 'bg-brand-green-500'],
+  ['completed', 'Завершено', 'bg-accent-success'],
   ['inProgress', 'В процессе', 'bg-accent-amber'],
   ['notStarted', 'Не начато', 'bg-ink-300'],
   ['overdue', 'Просрочено', 'bg-accent-danger'],
@@ -537,10 +538,8 @@ function ProgramProgressSection({ assignments }: { assignments: TrainingAssignme
       <ul className="mt-4 space-y-4">
         {rows.map((row) => (
           <li key={row.programId}>
-            <div className="flex items-baseline justify-between gap-3 text-[13px]">
-              <span className="min-w-0 truncate font-semibold text-ink-800" title={row.name}>
-                {row.name}
-              </span>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[13px]">
+              <span className="min-w-0 break-words font-semibold text-ink-800">{row.name}</span>
               <span className="num shrink-0 text-ink-600">
                 завершили {row.completed} из {row.total} ·{' '}
                 {Math.round((row.completed * 100) / row.total)}%
