@@ -2,6 +2,25 @@
 
 Path: `App/` and `Models/`.
 
+## An archived checkout no longer blinds the till: 1.0.102 (28.11.2026, INK-263)
+
+Found on 28.11.2026 by the daily Standard-N vs ePharm check: tills online, seller recognised, no receipts in ePharm.
+Diagnostics of Serkebaeva 32 (`DESKTOP-94AT3SE`) and Turkestan 10 (`KASSA1`): `observed-groups/groups.json` unchanged
+since the minute of the last sale that reached the server, every print logged «Печать без однозначно наблюдавшихся
+DOCS.ID», no «Чек поставлен в гарантированную очередь».
+
+- Cause: `unresolved-observed-groups` files are named by the receipt identity and by the checkout session. Reading the
+  hot journal matched archives by either key, so a receipt still in the journal whose checkout session was shared with
+  an older receipt archived as unresolved counted as a conflict and the read threw («An archived observed identity
+  conflicts with hot evidence; files retained.»). `LoadObservedReceiptGroups` then stays unavailable: no group is
+  loaded or saved, no print confirmed, no sale queued, and a restart reads the same files.
+- Fix: only an archive of the same receipt (same storage identity) conflicts. The sibling stays hot, can be updated and
+  ages out by the usual 6-hour rule. An archived receipt and a NEW receipt on an archived checkout are still refused.
+- Test: `UnresolvedObservedGroupArchiveTests.ArchivedCheckoutDoesNotBlindTheTillToAnotherHotReceiptOfThatCheckout`
+  (fails without the fix with the production message).
+- After the update the till needs no manual step: its journal loads again and the next receipts are sent. Receipts
+  missed since the till went blind are not in its outbox; they are restored from the central Standard-N base.
+
 ## IIN and full name typed at the till: 1.0.101 (26.11.2026)
 
 The owner's request of 26.11.2026 («давать им возможность самостоятельно заполнять свой ИИН»). 41 people who sell every
