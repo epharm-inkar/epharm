@@ -134,8 +134,11 @@ namespace CustomerDisplay.Services
                 var groups = ReadObservedGroupsLocked(archiveIndex: archiveIndex).ToDictionary(ObservedStorageKey, StringComparer.Ordinal);
                 foreach (var group in changes)
                 {
-                    if (FindUnresolvedArchivesLocked(group, archiveIndex).Count != 0) return false;
                     var key = ObservedStorageKey(group);
+                    // Never revive an archived receipt, nor start a NEW receipt on an archived checkout session. A receipt
+                    // already in the hot journal that only shares the archived checkout keeps being updated (INK-263).
+                    var archives = FindUnresolvedArchivesLocked(group, archiveIndex);
+                    if (PhysicalArchives(group, archives).Count != 0 || archives.Count != 0 && !groups.ContainsKey(key)) return false;
                     if (groups.TryGetValue(key, out var original)) ValidateObservedTransition(original, group);
                     else if (groups.Count >= 32) return false;
                     groups[key] = group;
@@ -263,7 +266,9 @@ namespace CustomerDisplay.Services
             archiveIndex ??= ReadUnresolvedArchiveIndexLocked();
             return groups.Where(group =>
             {
-                var archives = FindUnresolvedArchivesLocked(group, archiveIndex);
+                // Only an archive of this very receipt can conflict with it. A sibling receipt that merely shares the
+                // archived checkout session is its own physical evidence: it stays hot (INK-263, the till went blind).
+                var archives = PhysicalArchives(group, FindUnresolvedArchivesLocked(group, archiveIndex));
                 if (archives.Count == 0) return true;
                 if (archives.Count != 1 || archives[0].OriginalGroupJson != JsonSerializer.Serialize(group, EpharmJson.Options))
                     throw new InvalidDataException("An archived observed identity conflicts with hot evidence; files retained.");
@@ -431,6 +436,18 @@ namespace CustomerDisplay.Services
             {
                 if (!index.Verified.TryGetValue(path, out var archive)) index.Verified[path] = archive = ReadUnresolvedArchive(path);
                 return archive;
+            }).ToList();
+        }
+
+        /// <summary>The archives of this very receipt (same storage identity), not of another receipt of its checkout.</summary>
+        private static List<UnresolvedGroupArchive> PhysicalArchives(StandardNObservedReceiptGroup group,
+            IReadOnlyList<UnresolvedGroupArchive> archives)
+        {
+            var key = ObservedStorageKey(group);
+            return archives.Where(archive =>
+            {
+                var original = JsonSerializer.Deserialize<StandardNObservedReceiptGroup>(archive.OriginalGroupJson, EpharmJson.Options);
+                return original == null || ObservedStorageKey(original) == key;
             }).ToList();
         }
 

@@ -5,6 +5,16 @@ All notable production changes to Epharm are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- POSM 1.0.102 (INK-263, 28.11.2026): a till no longer goes blind for good when an older receipt of the same checkout
+  session is archived as unresolved. The archive was also matched by the checkout session, so the other receipt of
+  that checkout still in the hot journal counted as a conflict: every read threw «An archived observed identity
+  conflicts with hot evidence», the till could neither load nor save observed groups, no print was confirmed and no
+  sale was sent, across restarts (Serkebaeva 32 since 26.11 20:36, Turkestan 10 since 27.11 17:32). Only an archive
+  of the same receipt conflicts now; the sibling stays hot and ages out as usual. An archived receipt and a new
+  receipt on an archived checkout are still never revived.
+
 ### Removed
 
 - Pharmacist cabinet, 26.11.2026 (owner): the «Советы» tab is out of the menu for now (four tabs; the page still
