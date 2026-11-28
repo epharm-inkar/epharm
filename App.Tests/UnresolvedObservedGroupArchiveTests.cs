@@ -87,6 +87,30 @@ public sealed class UnresolvedObservedGroupArchiveTests : IDisposable
     }
 
     [Fact]
+    public void ArchivedCheckoutDoesNotBlindTheTillToAnotherHotReceiptOfThatCheckout()
+    {
+        // INK-263 (28.11.2026): Serkebaeva 32 and Turkestan 10 stopped sending receipts for good. Their hot journal held
+        // a receipt (27291, 164346) whose checkout session was also the checkout of an older receipt archived as
+        // unresolved. Matching by the checkout alone was read as a conflict: every read of the journal threw, the till
+        // could neither load nor save observed groups, and no print was ever confirmed again, restart or not.
+        var archived = Group(40);
+        var sibling = Group(41) with { CheckoutSessionId = archived.CheckoutSessionId };
+        Assert.True(Store().SaveObservedGroup(archived));
+        Assert.True(Store().SaveObservedGroup(sibling));
+        Assert.True(Store().ArchiveUnresolvedObservedGroup(archived, Audit(archived)));
+
+        var hot = Assert.Single(Store().ReadObservedGroups());
+        Assert.Equal(41, hot.Snapshot.DocumentId);
+        Assert.True(Store().SaveObservedGroup(Printed(sibling)));
+        Assert.True(Store().SaveObservedGroup(Group(42)));
+        Assert.Equal(new long[] { 41, 42 }, Store().ReadObservedGroups().Select(group => group.Snapshot.DocumentId).OrderBy(id => id));
+
+        // Still never revived: the archived receipt itself and a NEW receipt claiming the archived checkout stay out.
+        Assert.False(Store().SaveObservedGroup(archived));
+        Assert.False(Store().SaveObservedGroup(Group(43) with { CheckoutSessionId = archived.CheckoutSessionId }));
+    }
+
+    [Fact]
     public void ChangedGroupAndConflictingArchiveRemainIntact()
     {
         var group = Group(30); Assert.True(Store().SaveObservedGroup(group));
