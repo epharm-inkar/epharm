@@ -133,8 +133,7 @@ class StandardNPharmacistSyncService(
                 statement.executeQuery(SOURCE_SQL).use { rs ->
                     val result = ArrayList<SourceRow>(4_000)
                     while (rs.next()) {
-                        val iin = rs.getString("INN")?.trim().orEmpty()
-                        if (!iin.matches(IIN_REGEX)) continue
+                        val iin = normalizeIin(rs.getString("INN")) ?: continue
                         val profileId = rs.getLong("G_PROFILE_ID")
                         val userId = rs.getLong("USER_ID")
                         val name = repairDoubleEncoded(firstNonBlank(
@@ -200,6 +199,10 @@ class StandardNPharmacistSyncService(
 
     companion object {
         private val IIN_REGEX = Regex("^[0-9]{12}$")
+
+        /** The IIN from a Standard-N user card: 12 digits, spaces typed for readability dropped (INK-209). */
+        fun normalizeIin(raw: String?): String? = raw?.filterNot(Char::isWhitespace)?.takeIf(IIN_REGEX::matches)
+
         private val WIN1251: Charset = Charset.forName("windows-1251")
         /** UTF-8 lead bytes of Cyrillic (D0-D3) read as WIN1251 give Р, С, Т or У before a symbol or letter. */
         private val DOUBLE_ENCODED = Regex("[РСТУ][\u0080-\u00BF\u0400-\u045F\u0490-\u0491\u2013-\u2122]")
@@ -224,6 +227,7 @@ class StandardNPharmacistSyncService(
             }
             return if (repaired.any { it in 'Ѐ'..'ӿ' }) repaired else value
         }
+        // INK-209: MAS sometimes types the IIN with spaces (16 cards on 28.11); the digits are the IIN.
         private const val SOURCE_SQL = """
             select
                 u.ID as USER_ID,
@@ -240,7 +244,7 @@ class StandardNPharmacistSyncService(
                 p.ADRESS as PROFILE_ADDRESS
             from USERS u
             left join G${'$'}PROFILES p on p.ID = u.G${'$'}PROFILE_ID
-            where char_length(trim(coalesce(u.INN, ''))) = 12
+            where char_length(replace(trim(coalesce(u.INN, '')), ' ', '')) = 12
         """
     }
 }
